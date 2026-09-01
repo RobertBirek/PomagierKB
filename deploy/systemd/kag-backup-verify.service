@@ -1,0 +1,34 @@
+# kag-backup-verify.service — cotygodniowa weryfikacja ostatniego snapshotu backupu.
+# Instalacja: cp deploy/systemd/kag-backup-verify.{service,timer} /etc/systemd/system/
+#             systemctl daemon-reload && systemctl enable --now kag-backup-verify.timer
+# Jeśli repo leży gdzie indziej niż /kag — popraw WorkingDirectory i ExecStart.
+[Unit]
+Description=PomagierKB — weryfikacja ostatniego snapshotu backupu
+Documentation=file:/kag/docs/design/infra.md
+After=docker.service network-online.target
+Wants=docker.service network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+WorkingDirectory=/kag
+Environment=DATA_ROOT=/srv/kag-data
+ExecStart=/kag/deploy/scripts/verify_backup.sh
+TimeoutStartSec=45min
+Nice=10
+IOSchedulingClass=idle
+UMask=0077
+
+# Hardening (skrypt potrzebuje: docker CLI + socket, odczyt /kag, zapis DATA_ROOT/backups/verify)
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+ReadWritePaths=/srv/kag-data

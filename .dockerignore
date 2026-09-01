@@ -1,0 +1,19 @@
+# Kontekst budowania obrazów panel/mcp = korzeń repo (services/*/Dockerfile).
+# Wycinamy wszystko, co nie jest źródłem — mniejszy kontekst, brak przecieku
+# hostowych node_modules/dist do obrazów (build robi własny npm ci + build).
+.git
+.github
+.githooks
+.claude
+node_modules
+**/node_modules
+**/dist
+coverage
+docs
+deploy
+integrations
+schemas
+*.env
+.env*
+!.env.example
+*.log

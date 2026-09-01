@@ -1,0 +1,325 @@
+# Stack "kag" — PomagierKB: OpenSPG (mysql/neo4j/minio/server) + ekstrakcja (tika/stirling)
+# + panel + MCP.
+#
+# Zasady (docs/design/infra.md §3 + PLAN.md):
+# - ZERO portów publikowanych na hoście (nawet 127.0.0.1); ingress wyłącznie przez
+#   edge-caddy w edge-net, diagnostyka przez `docker compose exec`.
+# - Nazwy kontenerów OpenSPG MUSZĄ być release-openspg-* (hardkod minio, issue #396).
+# - Wartości RAM/heapów z .env — profil 24 GB (PLAN.md); skalowanie bez edycji compose.
+# - Sekrety wymuszane przez ${X:?...} — brak wartości = stack nie wstaje (fail-fast).
+
+name: kag
+
+# Kotwice hardeningowe wspólne dla wszystkich usług
+x-security-defaults: &security_defaults
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+
+x-logging: &logging
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+  mysql:
+    <<: [*security_defaults, *logging]
+    # minimalne capabilities: entrypoint zrzuca uprawnienia do usera mysql
+    cap_add:
+      - SETUID
+      - SETGID
+    image: ${OPENSPG_MYSQL_IMAGE:?OPENSPG_MYSQL_IMAGE is required}
+    container_name: release-openspg-mysql
+    restart: always
+    mem_limit: ${MYSQL_MEM_LIMIT:-2g}
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_general_ci
+    environment:
+      TZ: ${TZ:-Europe/Warsaw}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD is required}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-openspg}
+      # dla mysql-init/10-create-app-user.sh — serwer OpenSPG łączy się jako user
+      # aplikacyjny, NIE root
+      MYSQL_APP_USER: ${MYSQL_APP_USER:?MYSQL_APP_USER is required}
+      MYSQL_APP_PASSWORD: ${MYSQL_APP_PASSWORD:?MYSQL_APP_PASSWORD is required}
+    healthcheck:
+      # hasło przez env MYSQL_PWD, nie w argv (niewidoczne w `ps` wewnątrz kontenera)
+      test: ["CMD-SHELL", "MYSQL_PWD=\"$${MYSQL_ROOT_PASSWORD}\" mysqladmin ping -h 127.0.0.1 -uroot --silent"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    volumes:
+      - ${DATA_ROOT:?DATA_ROOT is required}/kag/mysql:/var/lib/mysql
+      # skrypty inicjalizacyjne — wykonywane RAZ, przy pustym wolumenie danych
+      - ./mysql-init:/docker-entrypoint-initdb.d:ro
+      - /etc/localtime:/etc/localtime:ro
+    networks:
+      - kag-internal
+
+  neo4j:
+    <<: [*security_defaults, *logging]
+    # minimalne capabilities: entrypoint obrazu chown-uje /data i zrzuca uprawnienia
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETUID
+      - SETGID
+    image: ${OPENSPG_NEO4J_IMAGE:?OPENSPG_NEO4J_IMAGE is required}
+    container_name: release-openspg-neo4j
+    restart: always
+    mem_limit: ${NEO4J_MEM_LIMIT:-4g}
+    environment:
+      TZ: ${TZ:-Europe/Warsaw}
+      # osobne zmienne dla healthchecku (cypher-shell)
+      OPENSPG_NEO4J_USER: ${OPENSPG_NEO4J_USER:?OPENSPG_NEO4J_USER is required}
+      OPENSPG_NEO4J_PASSWORD: ${OPENSPG_NEO4J_PASSWORD:?OPENSPG_NEO4J_PASSWORD is required}
+      NEO4J_AUTH: ${OPENSPG_NEO4J_USER:?OPENSPG_NEO4J_USER is required}/${OPENSPG_NEO4J_PASSWORD:?OPENSPG_NEO4J_PASSWORD is required}
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_apoc_import_file_enabled: "true"
+      NEO4J_apoc_export_file_enabled: "true"
+      NEO4J_dbms_security_procedures_unrestricted: "apoc.*"
+      NEO4J_dbms_security_procedures_allowlist: "apoc.*"
+      # profil 24 GB: heap 2G / pagecache 1G (PLAN.md)
+      NEO4J_server_memory_heap_initial__size: ${NEO4J_HEAP:-2G}
+      NEO4J_server_memory_heap_max__size: ${NEO4J_HEAP:-2G}
+      NEO4J_server_memory_pagecache_size: ${NEO4J_PAGECACHE:-1G}
+    healthcheck:
+      # poświadczenia przez env cypher-shella, nie w argv
+      test: ["CMD-SHELL", "NEO4J_USERNAME=\"$${OPENSPG_NEO4J_USER}\" NEO4J_PASSWORD=\"$${OPENSPG_NEO4J_PASSWORD}\" cypher-shell 'RETURN 1;' >/dev/null"]
+      interval: 30s
+      timeout: 15s
+      retries: 10
+      start_period: 60s
+    volumes:
+      - ${DATA_ROOT:?DATA_ROOT is required}/kag/neo4j/data:/data
+      - ${DATA_ROOT:?DATA_ROOT is required}/kag/neo4j/logs:/logs
+      - ${DATA_ROOT:?DATA_ROOT is required}/kag/neo4j/plugins:/plugins
+      - ${DATA_ROOT:?DATA_ROOT is required}/kag/neo4j/import:/import
+      - /etc/localtime:/etc/localtime:ro
+    networks:
+      - kag-internal
+
+  minio:
+    <<: [*security_defaults, *logging]
+    image: ${OPENSPG_MINIO_IMAGE:?OPENSPG_MINIO_IMAGE is required}
+    container_name: release-openspg-minio
+    restart: always
+    mem_limit: ${MINIO_MEM_LIMIT:-768m}
+    command:
+      - server
+      - --console-address
+      - :9001
+      - /data
+    environment:
+      TZ: ${TZ:-Europe/Warsaw}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER is required}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required}
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    volumes:
+      - ${DATA_ROOT:?DATA_ROOT is required}/kag/minio:/data
+      - /etc/localtime:/etc/localtime:ro
+    networks:
+      - kag-internal
+
+  server:
+    <<: [*security_defaults, *logging]
+    image: ${OPENSPG_SERVER_IMAGE:?OPENSPG_SERVER_IMAGE is required}
+    container_name: release-openspg-server
+    restart: always
+    mem_limit: ${OPENSPG_SERVER_MEM_LIMIT:-4608m}
+    # Patch klienta OpenAI PRZED startem Javy; błąd patcha = kontener nie wstaje (fail-fast)
+    entrypoint: ["/bin/sh", "-lc"]
+    command:
+      - /home/admin/miniconda3/bin/python /opt/openspg/patch_openspg_openai_client.py && exec java -jar arks-sofaboot-0.0.1-SNAPSHOT-executable.jar
+    environment:
+      TZ: ${TZ:-Europe/Warsaw}
+      # profil 24 GB: Xms 1g / Xmx 3g (PLAN.md)
+      JAVA_TOOL_OPTIONS: -Dfile.encoding=UTF-8 -Xms${OPENSPG_SERVER_XMS:-1024m} -Xmx${OPENSPG_SERVER_XMX:-3072m}
+      SERVER_REPOSITORY_IMPL_JDBC_HOST: release-openspg-mysql
+      SERVER_REPOSITORY_IMPL_JDBC_USERNAME: ${MYSQL_APP_USER:?MYSQL_APP_USER is required}
+      SERVER_REPOSITORY_IMPL_JDBC_PASSWORD: ${MYSQL_APP_PASSWORD:?MYSQL_APP_PASSWORD is required}
+      # równoległość buildera (profil 24 GB: 4)
+      BUILDER_MODEL_EXECUTE_NUM: ${BUILDER_MODEL_EXECUTE_NUM:-4}
+      # UWAGA: OpenSPG wymaga sekretów inline w URL-ach (ograniczenie upstreamu) —
+      # widoczne w `docker inspect`; ograniczać członkostwo w grupie docker.
+      # Hasła w URL-ach = warianty *_URLENCODED z .env.
+      CLOUDEXT_GRAPHSTORE_URL: neo4j://release-openspg-neo4j:7687?user=${OPENSPG_NEO4J_USER:?OPENSPG_NEO4J_USER is required}&password=${OPENSPG_NEO4J_PASSWORD_URLENCODED:?OPENSPG_NEO4J_PASSWORD_URLENCODED is required}&database=neo4j
+      CLOUDEXT_SEARCHENGINE_URL: neo4j://release-openspg-neo4j:7687?user=${OPENSPG_NEO4J_USER:?OPENSPG_NEO4J_USER is required}&password=${OPENSPG_NEO4J_PASSWORD_URLENCODED:?OPENSPG_NEO4J_PASSWORD_URLENCODED is required}&database=neo4j
+      CLOUDEXT_OBJECTSTORAGE_URL: minio://release-openspg-minio:9000?accessKey=${MINIO_ROOT_USER:?MINIO_ROOT_USER is required}&secretKey=${MINIO_ROOT_PASSWORD_URLENCODED:?MINIO_ROOT_PASSWORD_URLENCODED is required}
+      # Tłumienie logów — PEMJA i AppController na INFO logowały configi modeli Z KLUCZAMI API
+      LOGGING_LEVEL_COM_ANTGROUP_OPENSPG_COMMON_UTIL_PEMJA: "OFF"
+      SPRING_APPLICATION_JSON: '{"logging.level.com.antgroup.openspgapp.api.http.server.app.AppController":"OFF"}'
+      LOGGING_LEVEL_COM_ANTGROUP_OPENSPG_SERVER_ARKS_SOFABOOT: WARN
+      LOGGING_LEVEL_COM_ANTGROUP_OPENSPGAPP_ARKS_SOFABOOT: WARN
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS -I --max-time 5 http://127.0.0.1:8887/ >/dev/null"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    volumes:
+      - ./openspg/patch_openspg_openai_client.py:/opt/openspg/patch_openspg_openai_client.py:ro
+      - /etc/localtime:/etc/localtime:ro
+    depends_on:
+      mysql:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - kag-internal
+      # JEDYNA usługa z egresem — wywołania API LLM (wektoryzacja, ekstrakcja)
+      - kag-egress
+
+  tika:
+    <<: [*security_defaults, *logging]
+    image: ${TIKA_IMAGE:?TIKA_IMAGE is required}
+    container_name: kag-tika
+    restart: unless-stopped
+    mem_limit: ${TIKA_MEM_LIMIT:-1536m}
+    environment:
+      TZ: ${TZ:-Europe/Warsaw}
+    healthcheck:
+      # obraz nie ma curl/wget — test TCP przez basha
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/9998"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - kag-internal
+
+  stirling:
+    <<: [*security_defaults, *logging]
+    image: ${STIRLING_IMAGE:?STIRLING_IMAGE is required}
+    container_name: kag-stirling
+    restart: unless-stopped
+    mem_limit: ${STIRLING_MEM_LIMIT:-2g}
+    environment:
+      TZ: ${TZ:-Europe/Warsaw}
+      # usługa żyje tylko w kag-internal (bez ingressu z internetu i bez egresu) —
+      # kontrolę dostępu zapewnia sieć, nie login aplikacji
+      SECURITY_ENABLELOGIN: "false"
+      SYSTEM_DEFAULTLOCALE: pl-PL
+      JAVA_OPTS: ${STIRLING_JAVA_OPTS:--Xmx1g}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8080/api/v1/info/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    volumes:
+      # pol/eng/osd.traineddata pobiera deterministycznie bootstrap.sh (tessdata_fast) —
+      # OCR po polsku bez zależności od wariantu "fat" obrazu i egresu kontenera
+      - ${DATA_ROOT:?DATA_ROOT is required}/kag/stirling/tessdata:/usr/share/tessdata
+    networks:
+      - kag-internal
+
+  panel:
+    <<: [*security_defaults, *logging]
+    image: kag-panel:local
+    build:
+      # kontekst = korzeń monorepo (npm workspaces)
+      context: ../..
+      dockerfile: services/panel/Dockerfile
+    container_name: kag-panel
+    restart: unless-stopped
+    mem_limit: ${PANEL_MEM_LIMIT:-512m}
+    user: "10001:10001"
+    read_only: true
+    tmpfs:
+      - /tmp
+    environment:
+      TZ: ${TZ:-Europe/Warsaw}
+      NODE_ENV: production
+      PORT: "8080"
+      # SQLite WAL + inbox + exporty CSV + audyt JSONL
+      DATA_DIR: /data
+      PANEL_PUBLIC_URL: ${PANEL_PUBLIC_URL:?PANEL_PUBLIC_URL is required}
+      PANEL_OIDC_ISSUER: ${PANEL_OIDC_ISSUER:?PANEL_OIDC_ISSUER is required}
+      PANEL_OIDC_CLIENT_ID: ${PANEL_OIDC_CLIENT_ID:?PANEL_OIDC_CLIENT_ID is required}
+      PANEL_OIDC_CLIENT_SECRET: ${PANEL_OIDC_CLIENT_SECRET:?PANEL_OIDC_CLIENT_SECRET is required}
+      PANEL_SESSION_SECRET: ${PANEL_SESSION_SECRET:?PANEL_SESSION_SECRET is required}
+      TOKEN_ENC_KEY: ${TOKEN_ENC_KEY:?TOKEN_ENC_KEY is required}
+      PANEL_INTERNAL_TOKEN: ${PANEL_INTERNAL_TOKEN:?PANEL_INTERNAL_TOKEN is required}
+      MCP_PUBLIC_URL: ${MCP_PUBLIC_URL:?MCP_PUBLIC_URL is required}
+      OPENSPG_BASE_URL: http://release-openspg-server:8887
+      TIKA_URL: http://kag-tika:9998
+      STIRLING_URL: http://kag-stirling:8080
+    healthcheck:
+      test: ["CMD", "wget", "-qO", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    volumes:
+      # wspólny wolumen panel+mcp: SQLite WAL (jeden pisarz = panel; mcp czyta), uid 10001
+      - ${DATA_ROOT:?DATA_ROOT is required}/kag/panel:/data
+    depends_on:
+      server:
+        condition: service_healthy
+    networks:
+      - kag-internal
+      # ingress z Caddy + egress do LLM i do Authentika (aliasy caddy w edge-net)
+      - edge-net
+
+  mcp:
+    <<: [*security_defaults, *logging]
+    image: kag-mcp:local
+    build:
+      context: ../..
+      dockerfile: services/mcp/Dockerfile
+    container_name: kag-mcp
+    restart: unless-stopped
+    mem_limit: ${MCP_MEM_LIMIT:-384m}
+    user: "10001:10001"
+    read_only: true
+    tmpfs:
+      - /tmp
+    environment:
+      TZ: ${TZ:-Europe/Warsaw}
+      NODE_ENV: production
+      PORT: "3001"
+      # ta sama baza SQLite co panel (migracje robi TYLKO panel; mcp sprawdza wersję schematu)
+      DATA_DIR: /data
+      PANEL_INTERNAL_URL: http://kag-panel:8080
+      PANEL_INTERNAL_TOKEN: ${PANEL_INTERNAL_TOKEN:?PANEL_INTERNAL_TOKEN is required}
+      MCP_PUBLIC_URL: ${MCP_PUBLIC_URL:?MCP_PUBLIC_URL is required}
+      OPENSPG_BASE_URL: http://release-openspg-server:8887
+    healthcheck:
+      test: ["CMD", "wget", "-qO", "/dev/null", "http://127.0.0.1:3001/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    volumes:
+      - ${DATA_ROOT:?DATA_ROOT is required}/kag/panel:/data
+    depends_on:
+      panel:
+        condition: service_healthy
+    networks:
+      - kag-internal
+      - edge-net
+
+networks:
+  # internal: true — brak NAT/internetu; OpenSPG niedostępny z zewnątrz
+  kag-internal:
+    internal: true
+  # egress TYLKO dla release-openspg-server (API LLM)
+  kag-egress:
+    driver: bridge
+  # wspólna sieć z edge-caddy (utworzona raz: docker network create edge-net)
+  edge-net:
+    external: true

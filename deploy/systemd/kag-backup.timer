@@ -1,0 +1,12 @@
+# kag-backup.timer — codzienny backup o 03:20 (+ losowe do 10 min).
+[Unit]
+Description=PomagierKB — timer nocnego backupu (03:20)
+
+[Timer]
+OnCalendar=*-*-* 03:20:00
+RandomizedDelaySec=10m
+Persistent=true
+Unit=kag-backup.service
+
+[Install]
+WantedBy=timers.target

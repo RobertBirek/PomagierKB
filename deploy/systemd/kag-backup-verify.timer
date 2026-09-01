@@ -1,0 +1,12 @@
+# kag-backup-verify.timer — weryfikacja backupu w każdą niedzielę o 04:30.
+[Unit]
+Description=PomagierKB — timer weryfikacji backupu (niedziela 04:30)
+
+[Timer]
+OnCalendar=Sun *-*-* 04:30:00
+RandomizedDelaySec=10m
+Persistent=true
+Unit=kag-backup-verify.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,69 @@
+# Caddyfile — ingress PomagierKB (auth.* i kag.*). Format: caddy fmt --overwrite Caddyfile
+{
+	email {$ACME_EMAIL}
+	# Na czas testów DNS/konfiguracji odkomentować staging CA (limity Let's Encrypt!):
+	# acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
+}
+
+# Wspólne nagłówki bezpieczeństwa dla obu vhostów
+(security_headers) {
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+}
+
+# SSO — Authentik
+auth.ilovelighting.sanok.pl {
+	import security_headers
+	reverse_proxy edge-authentik-server:9000
+}
+
+# Panel + MCP — PomagierKB
+kag.ilovelighting.sanok.pl {
+	import security_headers
+	encode zstd gzip
+	log {
+		output file /data/access-kag.log {
+			roll_size 20mb
+			roll_keep 5
+		}
+		format json
+	}
+
+	# 1) MCP — Streamable HTTP; auth per-user tokenem WEWNĄTRZ serwera MCP.
+	#    ŚWIADOMIE BEZ forward_auth (klienci MCP nie przejdą redirectu OIDC).
+	handle /mcp* {
+		reverse_proxy kag-mcp:3001 {
+			flush_interval -1
+		}
+	}
+
+	# 2) Endpointy embedded outpostu Authentika (wymagane, by forward_auth działał na tym vhoście)
+	handle /outpost.goauthentik.io/* {
+		reverse_proxy edge-authentik-server:9000 {
+			header_up Host {host}
+		}
+	}
+
+	# 3) (OPCJA, domyślnie wyłączone) produktowe UI OpenSPG za forward-auth (tylko kag-admin).
+	#    Wymaga dopięcia caddy do sieci kag-internal — świadoma decyzja administratora.
+	# handle /openspg/* {
+	# 	forward_auth edge-authentik-server:9000 {
+	# 		uri /outpost.goauthentik.io/auth/caddy
+	# 		copy_headers X-Authentik-Username X-Authentik-Groups X-Authentik-Email
+	# 	}
+	# 	uri strip_prefix /openspg
+	# 	reverse_proxy release-openspg-server:8887
+	# }
+
+	# 4) Panel (SPA + /api) — OIDC obsługuje panel-api samodzielnie; bez forward_auth.
+	handle {
+		request_body {
+			max_size 64MB # upload plików do ingestu
+		}
+		reverse_proxy kag-panel:8080 # SSE (log akcji) Caddy flushuje automatycznie
+	}
+}

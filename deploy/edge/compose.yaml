@@ -1,0 +1,188 @@
+# Stack EDGE (PomagierKB): Caddy (TLS/ingress) + Authentik (SSO) + Postgres + Redis.
+# Jedyne porty na hoście: 80/tcp, 443/tcp, 443/udp (Caddy, HTTP/3).
+# Sieć edge-net tworzona raz, poza compose: docker network create edge-net
+
+name: edge
+
+x-security-defaults: &security_defaults
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+
+x-logging: &logging
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+# Wspólne środowisko authentik-server i authentik-worker (jeden obraz, dwa procesy)
+x-authentik-env: &authentik_env
+  TZ: ${TZ:-Europe/Warsaw}
+  AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:?AUTHENTIK_SECRET_KEY is required}
+  AUTHENTIK_POSTGRESQL__HOST: edge-postgres
+  AUTHENTIK_POSTGRESQL__USER: ${AUTHENTIK_PG_USER:?AUTHENTIK_PG_USER is required}
+  AUTHENTIK_POSTGRESQL__NAME: ${AUTHENTIK_PG_DB:?AUTHENTIK_PG_DB is required}
+  AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_PG_PASSWORD:?AUTHENTIK_PG_PASSWORD is required}
+  AUTHENTIK_REDIS__HOST: edge-redis
+  AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
+  AUTHENTIK_DISABLE_UPDATE_CHECK: "true"
+  AUTHENTIK_DISABLE_STARTUP_ANALYTICS: "true"
+  # SMTP (opcjonalnie, gdy będzie konto — odkomentować też zmienne w .env):
+  # AUTHENTIK_EMAIL__HOST: ${AUTHENTIK_EMAIL__HOST:-}
+  # AUTHENTIK_EMAIL__PORT: ${AUTHENTIK_EMAIL__PORT:-587}
+  # AUTHENTIK_EMAIL__USERNAME: ${AUTHENTIK_EMAIL__USERNAME:-}
+  # AUTHENTIK_EMAIL__PASSWORD: ${AUTHENTIK_EMAIL__PASSWORD:-}
+  # AUTHENTIK_EMAIL__USE_TLS: ${AUTHENTIK_EMAIL__USE_TLS:-true}
+  # AUTHENTIK_EMAIL__FROM: ${AUTHENTIK_EMAIL__FROM:-}
+
+services:
+  caddy:
+    <<: [*security_defaults, *logging]
+    image: ${CADDY_IMAGE:?CADDY_IMAGE is required}
+    container_name: edge-caddy
+    restart: always
+    mem_limit: 256m
+    cap_add:
+      - NET_BIND_SERVICE   # bind 80/443 przy cap_drop ALL
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"      # HTTP/3
+    environment:
+      TZ: ${TZ:-Europe/Warsaw}
+      ACME_EMAIL: ${ACME_EMAIL:?ACME_EMAIL is required}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ${DATA_ROOT:?DATA_ROOT is required}/edge/caddy/data:/data    # certy LE — KRYTYCZNE do backupu
+      - ${DATA_ROOT}/edge/caddy/config:/config
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:2019/metrics >/dev/null"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      edge-net:
+        # Hairpin OIDC: kontenery w edge-net (panel-api) widzą publiczne vhosty
+        # przez caddy, bez NAT reflection i z prawdziwym certem LE.
+        aliases:
+          - auth.ilovelighting.sanok.pl
+          - kag.ilovelighting.sanok.pl
+
+  authentik-server:
+    <<: [*security_defaults, *logging]
+    image: ${AUTHENTIK_IMAGE:?AUTHENTIK_IMAGE is required}
+    container_name: edge-authentik-server
+    restart: always
+    command: server
+    mem_limit: 1g
+    environment: *authentik_env
+    # BEZ docker.sock — używamy wyłącznie embedded outpostu (nic nie zarządza kontenerami).
+    volumes:
+      - ${DATA_ROOT}/edge/authentik/media:/media
+      - ${DATA_ROOT}/edge/authentik/custom-templates:/templates
+      - ${DATA_ROOT}/edge/authentik/certs:/certs
+    healthcheck:
+      test: ["CMD", "ak", "healthcheck"]
+      interval: 30s
+      timeout: 30s
+      retries: 10
+      start_period: 60s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - edge-net
+      - edge-internal
+
+  authentik-worker:
+    <<: [*security_defaults, *logging]
+    image: ${AUTHENTIK_IMAGE:?AUTHENTIK_IMAGE is required}
+    container_name: edge-authentik-worker
+    restart: always
+    command: worker
+    mem_limit: 1g
+    environment: *authentik_env
+    # BEZ docker.sock — embedded outpost żyje w procesie authentik-server.
+    volumes:
+      - ${DATA_ROOT}/edge/authentik/media:/media
+      - ${DATA_ROOT}/edge/authentik/custom-templates:/templates
+      - ${DATA_ROOT}/edge/authentik/certs:/certs
+    healthcheck:
+      test: ["CMD", "ak", "healthcheck"]
+      interval: 30s
+      timeout: 30s
+      retries: 10
+      start_period: 60s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - edge-internal
+      - edge-net   # egress SMTP (powiadomienia e-mail w przyszłości)
+
+  postgres:
+    <<: [*security_defaults, *logging]
+    image: ${POSTGRES_IMAGE:?POSTGRES_IMAGE is required}
+    container_name: edge-postgres
+    restart: always
+    mem_limit: 512m
+    cap_add:
+      # minimalny zestaw: entrypoint startuje jako root, chown-uje wolumen danych
+      # przy pierwszej inicjalizacji i zrzuca uprawnienia do usera postgres
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETGID
+      - SETUID
+    environment:
+      TZ: ${TZ:-Europe/Warsaw}
+      POSTGRES_USER: ${AUTHENTIK_PG_USER:?AUTHENTIK_PG_USER is required}
+      POSTGRES_DB: ${AUTHENTIK_PG_DB:?AUTHENTIK_PG_DB is required}
+      POSTGRES_PASSWORD: ${AUTHENTIK_PG_PASSWORD:?AUTHENTIK_PG_PASSWORD is required}
+    volumes:
+      - ${DATA_ROOT}/edge/authentik/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    networks:
+      - edge-internal
+
+  redis:
+    <<: [*security_defaults, *logging]
+    image: ${REDIS_IMAGE:?REDIS_IMAGE is required}
+    container_name: edge-redis
+    restart: always
+    mem_limit: 256m
+    cap_add:
+      # entrypoint zrzuca uprawnienia do usera redis (su-exec)
+      - SETGID
+      - SETUID
+    command: --save 60 1 --loglevel warning
+    environment:
+      TZ: ${TZ:-Europe/Warsaw}
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - edge-internal
+
+networks:
+  # wspólna sieć proxy dla obecnych i przyszłych appek (caddy ↔ kag-panel/kag-mcp)
+  edge-net:
+    external: true
+  # izolacja Postgresa/Redisa od świata (bez NAT, bez internetu)
+  edge-internal:
+    internal: true
