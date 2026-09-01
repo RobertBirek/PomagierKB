@@ -1,0 +1,15 @@
+{
+  "name": "PomagierKB",
+  "short_name": "PomagierKB",
+  "description": "Baza wiedzy — zapytaj z telefonu lub komputera",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f6f7f9",
+  "theme_color": "#2563eb",
+  "lang": "pl",
+  "icons": [
+    { "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}

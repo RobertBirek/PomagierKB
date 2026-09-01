@@ -1,0 +1,34 @@
+/* Tokeny motywu — JEDYNE źródło kolorów. Light w :root, dark w [data-theme="dark"].
+   Start motywu: initTheme() w main.tsx (localStorage → prefers-color-scheme). */
+:root {
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --surface-2: #eef0f4;
+  --border: #d9dde3;
+  --text: #1a202c;
+  --text-muted: #64748b;
+  --accent: #2563eb;
+  --accent-contrast: #ffffff;
+  --ok: #16a34a;
+  --warn: #d97706;
+  --fail: #dc2626;
+  --shadow: 0 4px 16px rgba(15, 23, 42, 0.12);
+  --radius: 8px;
+  color-scheme: light;
+}
+
+[data-theme='dark'] {
+  --bg: #0f141b;
+  --surface: #171e28;
+  --surface-2: #1f2836;
+  --border: #2c3746;
+  --text: #e5eaf1;
+  --text-muted: #94a3b8;
+  --accent: #60a5fa;
+  --accent-contrast: #0f141b;
+  --ok: #4ade80;
+  --warn: #fbbf24;
+  --fail: #f87171;
+  --shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+  color-scheme: dark;
+}

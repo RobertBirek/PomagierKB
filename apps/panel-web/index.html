@@ -2,12 +2,15 @@
 <html lang="pl">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#2563eb" />
     <title>PomagierKB</title>
+    <link rel="icon" type="image/svg+xml" href="./icon.svg" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="./icon.svg" />
   </head>
   <body>
-    <!-- Placeholder — właściwy panel (React 18 + TanStack) powstaje w Fazie 6 (docs/design/PLAN.md). -->
-    <p>PomagierKB — panel w budowie (Faza 6).</p>
-    <script type="module" src="/src/index.ts"></script>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
