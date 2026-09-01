@@ -1,0 +1,22 @@
+# PomagierKB — konfiguracja gitleaks (rozszerza reguły domyślne)
+[extend]
+useDefault = true
+
+[[rules]]
+id = "pomagier-mcp-api-key"
+description = "Klucz API MCP PomagierKB (sk-<base64url>)"
+regex = '''sk-[A-Za-z0-9_-]{32}'''
+keywords = ["sk-"]
+
+[[rules]]
+id = "cloudext-url-with-secret"
+description = "CLOUDEXT_* URL z sekretem inline (RE2: bez lookahead; pierwszy znak != $ wyklucza interpolacje ${VAR})"
+regex = '''(neo4j|minio)://[^\s'"]*(password|secretKey)=[^$&\s'"][^&\s'"]{5,}'''
+keywords = ["secretKey=", "password="]
+
+[allowlist]
+description = "Przykładowe wartości w plikach example i fixtures"
+paths = [
+  '''.*\.example$''',
+  '''test/fixtures/.*''',
+]

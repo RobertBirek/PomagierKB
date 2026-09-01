@@ -1,0 +1,25 @@
+# środowisko / sekrety
+.env
+*.env
+!*.env.example
+!.env.example
+secrets/
+*.pem
+*.key
+!**/test/fixtures/**/*.key
+
+# node
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# dane runtime (żyją w /srv/kag-data, nie w repo)
+/data/
+*.db
+*.db-wal
+*.db-shm
+
+# różne
+.DS_Store
+*.log

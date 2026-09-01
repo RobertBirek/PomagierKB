@@ -1,0 +1,3 @@
+#!/bin/sh
+# Skan sekretów przed każdym commitem (lekcja F-01 z audytu optimaKB).
+exec gitleaks git --pre-commit --staged --redact --config .gitleaks.toml
