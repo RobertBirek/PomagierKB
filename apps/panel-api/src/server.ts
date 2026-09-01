@@ -4,6 +4,7 @@ import { loadConfig } from './config.js';
 import { sweepExpired } from './services/sessions.js';
 import { buildApp } from './app.js';
 import { registerStatics } from './statics.js';
+import { startIntakeWorker } from './pipeline/intake-worker.js';
 import { sharedMigrationsDir } from './lib/migrations.js';
 
 /**
@@ -37,6 +38,9 @@ async function main(): Promise<void> {
 
   await registerStatics(app);
 
+  // Worker intake in-process (pętla co 2 s nad tabelą intakes — pipeline ingest).
+  const intakeWorker = startIntakeWorker({ db, config, logger: app.log });
+
   // Sweep wygasłych sesji co 15 min (unref — nie blokuje zamknięcia procesu).
   const sessionSweepTimer = setInterval(() => {
     try {
@@ -54,6 +58,7 @@ async function main(): Promise<void> {
     if (shuttingDown) return;
     shuttingDown = true;
     app.log.info({ signal }, 'zamykanie panel-api');
+    intakeWorker.stop();
     clearInterval(sessionSweepTimer);
     void app
       .close()

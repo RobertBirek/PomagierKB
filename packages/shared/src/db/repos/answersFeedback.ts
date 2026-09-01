@@ -120,3 +120,30 @@ export function recordFeedback(
   });
   return tx.immediate();
 }
+
+export interface AnswerWithFeedback extends AnswerRow {
+  feedback: FeedbackRow[];
+}
+
+/**
+ * Ostatnie odpowiedzi danego użytkownika (panelowe /ask/history) wraz z jego
+ * feedbackiem — jedna kwerenda na answers + jedna zbiorcza na feedback.
+ */
+export function listAnswersByUser(db: Db, userId: string, limit = 50): AnswerWithFeedback[] {
+  const capped = Math.min(Math.max(limit, 1), 200);
+  const rows = db
+    .prepare('SELECT * FROM answers WHERE user_id = ? ORDER BY created_at DESC, id DESC LIMIT ?')
+    .all(userId, capped) as AnswerRow[];
+  if (rows.length === 0) return [];
+  const placeholders = rows.map(() => '?').join(',');
+  const feedback = db
+    .prepare(`SELECT * FROM feedback WHERE answer_id IN (${placeholders}) ORDER BY created_at ASC, id ASC`)
+    .all(...rows.map((r) => r.id)) as FeedbackRow[];
+  const byAnswer = new Map<string, FeedbackRow[]>();
+  for (const f of feedback) {
+    const list = byAnswer.get(f.answer_id);
+    if (list === undefined) byAnswer.set(f.answer_id, [f]);
+    else list.push(f);
+  }
+  return rows.map((r) => ({ ...r, feedback: byAnswer.get(r.id) ?? [] }));
+}

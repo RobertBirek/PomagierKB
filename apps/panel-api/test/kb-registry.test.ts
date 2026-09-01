@@ -175,13 +175,15 @@ describe('trasy /api/v1/kbs', () => {
     currentUser = admin;
   });
 
-  it('POST /kbs/:namespace/build → 501 not_implemented (job build-kb w Fazie 4)', async () => {
+  it('POST /kbs/:namespace/build → 422 preflight_failed dla bazy bez provisioningu (Faza 4: realny build za preflightem)', async () => {
     const res = await app.inject({ method: 'POST', url: '/api/v1/kbs/TestDocs/build' });
-    expect(res.statusCode).toBe(501);
+    expect(res.statusCode).toBe(422);
     const body = res.json();
     expect(body.ok).toBe(false);
-    expect(body.error.code).toBe('not_implemented');
-    expect(body.error.message).toContain('Fazie 4');
+    expect(body.error.code).toBe('preflight_failed');
+    const checks = body.error.details.checks as { id: string; ok: boolean }[];
+    expect(checks.find((c) => c.id === 'kb_active')?.ok).toBe(false); // baza w stanie draft
+    expect(checks.find((c) => c.id === 'promoted_drafts')?.ok).toBe(false);
   });
 
   it('GET /kbs/:namespace/jobs → 409 dla bazy bez projektu OpenSPG', async () => {

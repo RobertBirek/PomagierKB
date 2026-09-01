@@ -8,6 +8,11 @@ import {
   INTAKE_STAGES,
   INTAKE_ERROR_CODES,
   PREFLIGHT_CODES,
+  DRAFT_STATUSES,
+  GAP_STATUSES,
+  ANSWER_PHASES,
+  QUALITY_CHECK_CODES,
+  QUALITY_VERDICTS,
 } from '../src/services/messages.js';
 import { PREFLIGHT_CHECK_IDS } from '../src/services/preflight.js';
 
@@ -26,6 +31,12 @@ describe('słownik komunikatów PL — kompletność', () => {
     ['kody błędów intake', INTAKE_ERROR_CODES],
     ['kody preflight (słownik)', PREFLIGHT_CODES],
     ['kody preflight (silnik)', PREFLIGHT_CHECK_IDS],
+    // Rodziny Fazy 4 (pipeline wiedzy) — drafty, luki, /ask, quality gate.
+    ['statusy draftów', DRAFT_STATUSES],
+    ['statusy luk wiedzy', GAP_STATUSES],
+    ['etapy odpowiedzi /ask', ANSWER_PHASES],
+    ['checki quality gate', QUALITY_CHECK_CODES],
+    ['werdykty quality gate', QUALITY_VERDICTS],
   ];
 
   it.each(families)('%s: każdy kod ma wpis z niepustą etykietą', (_name, codes) => {

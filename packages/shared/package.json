@@ -10,7 +10,8 @@
     "./openspg": "./dist/openspg/index.js",
     "./llm": "./dist/llm/index.js",
     "./errors": "./dist/errors.js",
-    "./schemas": "./dist/schemas/index.js"
+    "./schemas": "./dist/schemas/index.js",
+    "./answer": "./dist/answer/index.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json && mkdir -p dist/db/migrations && cp src/db/migrations/*.sql dist/db/migrations/",

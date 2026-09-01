@@ -1,11 +1,12 @@
 import { mkdirSync, rmSync, statfsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
-import { getKb, getSetting, type Db } from '@pomagierkb/shared/db';
+import { getKb, getSetting, listDrafts, type Db } from '@pomagierkb/shared/db';
 import { OpenSpgClient, listProjects } from '@pomagierkb/shared/openspg';
 import { AppError } from '@pomagierkb/shared/errors';
 import type { AppConfig } from '../config.js';
 import { humanize } from './messages.js';
+import { modelNameOf, readEmbeddingsSettings } from './embeddings.js';
 
 /**
  * SILNIK CHECKÓW PREFLIGHT (dry-run przed startem akcji):
@@ -14,14 +15,21 @@ import { humanize } from './messages.js';
  * Kompozycja checków per typ akcji w rejestrze PREFLIGHTS; trasy używają
  * runPreflightFor(type, ctx) + assertPreflight(result) → 422 preflight_failed
  * z details.checks (kształt z backend-mcp §2.2/§5).
+ *
+ * SCALONE (Faza 4): to jest JEDYNA kompozycja preflightu buildu —
+ * services/kb.ts:preflightBuild deleguje tutaj; check embeddingu czyta sekret
+ * przez unseal (services/embeddings.ts) i egzekwuje TWARDY guard niezmienności
+ * zamrożonego vector_model_id.
  */
 
+/** Identyfikatory checków kompozycji build_kb (1:1 z PREFLIGHT_CODES słownika PL). */
 export const PREFLIGHT_CHECK_IDS = [
   'disk_space',
   'dir_writable',
-  'openspg_alive',
+  'openspg_reachable',
   'kb_active',
-  'embedding_matches',
+  'embedding_model',
+  'promoted_drafts',
   'no_running_action',
 ] as const;
 
@@ -192,18 +200,89 @@ export function embeddingMatchesCheck(db: Db, namespace: string, configured: str
   };
 }
 
-/** Brak innej akcji running tego samego (type, resource). */
-export function noRunningActionCheck(db: Db, type: string, resource: string): Check {
+/**
+ * Brak innej akcji running tego samego (type, resource). excludeActionId pozwala
+ * jobowi build_kb odpalić preflight z WŁASNEGO wiersza akcji bez samoblokady.
+ */
+export function noRunningActionCheck(db: Db, type: string, resource: string, excludeActionId?: string): Check {
   return {
     id: 'no_running_action',
     severity: 'error',
     run: () => {
       const row = db
-        .prepare("SELECT id FROM actions WHERE type = ? AND resource = ? AND status = 'running'")
-        .get(type, resource) as { id: string } | undefined;
+        .prepare(
+          "SELECT id FROM actions WHERE type = ? AND resource = ? AND status = 'running' AND (? IS NULL OR id <> ?)",
+        )
+        .get(type, resource, excludeActionId ?? null, excludeActionId ?? null) as { id: string } | undefined;
       return row === undefined
         ? { ok: true, message: `brak trwającej akcji ${type} na ${resource}` }
         : { ok: false, message: `akcja ${type} na ${resource} już trwa (${row.id})` };
+    },
+  };
+}
+
+/** OpenSPG odpowiada — wariant kompozycji build_kb (id historyczne 'openspg_reachable'). */
+export function openspgReachableCheck(client: OpenSpgClient): Check {
+  return {
+    id: 'openspg_reachable',
+    severity: 'error',
+    run: async () => {
+      const projects = await listProjects(client);
+      return { ok: true, message: `OpenSPG odpowiada (projekty: ${projects.length})` };
+    },
+  };
+}
+
+/**
+ * TWARDY GUARD NIEZMIENNOŚCI EMBEDDINGU: zamrożony vector_model_id z rejestru
+ * musi zgadzać się z modelem w settings 'llm.embeddings' (odczyt przez unseal —
+ * w odróżnieniu od embeddingMatchesCheck, który sekretu nie odszyfrowuje).
+ * Brak konfiguracji lub rozjazd przy zamrożonym modelu → error; baza bez
+ * zamrożonego modelu (provisioning niekompletny) → warn.
+ */
+export function embeddingModelGuardCheck(db: Db, config: AppConfig, namespace: string): Check {
+  return {
+    id: 'embedding_model',
+    severity: 'error',
+    run: () => {
+      const kb = getKb(db, namespace);
+      if (kb === null) return { ok: false, message: `baza '${namespace}' nie istnieje w rejestrze` };
+      if (kb.vector_model_id === '') {
+        return {
+          ok: false,
+          severity: 'warn' as const,
+          message: 'baza bez zamrożonego modelu embeddingu (provisioning niekompletny?)',
+        };
+      }
+      const frozen = modelNameOf(kb.vector_model_id);
+      const embeddings = readEmbeddingsSettings(db, config);
+      if (embeddings === null) {
+        return {
+          ok: false,
+          message: `brak konfiguracji llm.embeddings w Ustawieniach (projekt zamrożony na modelu '${frozen}')`,
+        };
+      }
+      if (embeddings.model !== frozen) {
+        return {
+          ok: false,
+          message: `model embeddingu w Ustawieniach ('${embeddings.model}') różni się od zamrożonego w projekcie ('${frozen}') — modelu NIE wolno zmieniać po utworzeniu projektu`,
+        };
+      }
+      return { ok: true, message: `model embeddingu zgodny ('${frozen}')` };
+    },
+  };
+}
+
+/** Eksport da ≥1 dokument (są promowane drafty). */
+export function promotedDraftsCheck(db: Db, namespace: string): Check {
+  return {
+    id: 'promoted_drafts',
+    severity: 'error',
+    run: () => {
+      const promoted = listDrafts(db, { namespace, status: 'promoted', limit: 1 }).total;
+      return promoted > 0
+        ? { ok: true, message: `wypromowanych draftów: ${promoted}` }
+        : { ok: false, message: 'brak wypromowanych draftów — eksport nie da żadnego dokumentu' };
     },
   };
 }
@@ -217,6 +296,8 @@ export interface PreflightContext {
   namespace?: string;
   /** Wstrzykiwalny klient OpenSPG (testy); domyślnie budowany z config. */
   openspg?: OpenSpgClient;
+  /** Id akcji wołającej preflight z własnego joba (wyłączony z no_running_action). */
+  excludeActionId?: string;
 }
 
 /** Klient OpenSPG z krótkim timeoutem — preflight ma odpowiadać szybko. */
@@ -251,15 +332,18 @@ export const PREFLIGHTS: Record<string, (ctx: PreflightContext) => Check[]> = {
     dirWritableCheck(join(ctx.config.dataDir, 'actions')),
     openspgAliveCheck(openspgClient(ctx)),
   ],
+  // JEDYNA kompozycja preflightu buildu (scalona z services/kb.ts:preflightBuild
+  // w Fazie 4): twardy guard embeddingu przez unseal + promoted_drafts.
   build_kb: (ctx) => {
     const namespace = requireNamespace(ctx, 'build_kb');
     return [
       diskSpaceCheck(ctx.config.dataDir),
       dirWritableCheck(join(ctx.config.dataDir, 'exports', namespace)),
-      openspgAliveCheck(openspgClient(ctx)),
+      openspgReachableCheck(openspgClient(ctx)),
       kbActiveCheck(ctx.db, namespace),
-      embeddingMatchesCheck(ctx.db, namespace, configuredEmbeddingModel(ctx.db)),
-      noRunningActionCheck(ctx.db, 'build_kb', `kb:${namespace}`),
+      embeddingModelGuardCheck(ctx.db, ctx.config, namespace),
+      promotedDraftsCheck(ctx.db, namespace),
+      noRunningActionCheck(ctx.db, 'build_kb', `kb:${namespace}`, ctx.excludeActionId),
     ];
   },
 };

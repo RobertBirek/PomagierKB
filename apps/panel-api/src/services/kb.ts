@@ -4,17 +4,21 @@ import {
   getKbOrThrow,
   latestExportRun,
   listDrafts,
-  listActions,
   listKbs,
   nowIso,
   transitionKb,
   kbRoutingKeywords,
 } from '@pomagierkb/shared/db';
-import { getSetting } from '@pomagierkb/shared/db';
-import { unseal } from '@pomagierkb/shared/crypto';
 import { AppError } from '@pomagierkb/shared/errors';
-import { OpenSpgClient, listProjects } from '@pomagierkb/shared/openspg';
+import { OpenSpgClient } from '@pomagierkb/shared/openspg';
 import type { AppConfig } from '../config.js';
+import { modelNameOf } from './embeddings.js';
+import { runPreflightFor, type PreflightResult } from './preflight.js';
+
+// Helpery embeddingów wydzielone do services/embeddings.ts (współdzielone
+// z kompozycją preflightu bez cyklu importów) — re-eksport dla dotychczasowych
+// importerów (jobs/create-kb.ts, testy).
+export { readEmbeddingsSettings, modelNameOf, type EmbeddingsSettings } from './embeddings.js';
 
 /**
  * Serwis rejestru KB (nad repo kbRegistry z shared): create/list/get/patch/archive,
@@ -296,46 +300,6 @@ export function recordSchemaVersion(
   return tx.immediate();
 }
 
-// ── Ustawienia embeddingu (settings 'llm.embeddings', sealed AES-GCM) ───────
-
-export interface EmbeddingsSettings {
-  model: string;
-  baseUrl: string;
-  apiKey: string;
-}
-
-/**
- * Odczyt konfiguracji embeddings z settings (sekret sealowany kluczem TOKEN_ENC_KEY).
- * Brak/niepełna/nieodszyfrowywalna konfiguracja → null (wołający decyduje o komunikacie).
- */
-export function readEmbeddingsSettings(db: Db, config: AppConfig): EmbeddingsSettings | null {
-  let value: unknown;
-  try {
-    const setting = getSetting(db, 'llm.embeddings', {
-      unseal: (sealed) => unseal(sealed, config.tokenEncKey.toString('base64')),
-    });
-    if (!setting) return null;
-    value = setting.value;
-  } catch {
-    return null;
-  }
-  if (!value || typeof value !== 'object') return null;
-  const o = value as Record<string, unknown>;
-  const model = o['model'];
-  const baseUrl = o['baseUrl'];
-  const apiKey = o['apiKey'];
-  if (typeof model !== 'string' || model === '') return null;
-  if (typeof baseUrl !== 'string' || baseUrl === '') return null;
-  if (typeof apiKey !== 'string' || apiKey === '') return null;
-  return { model, baseUrl, apiKey };
-}
-
-/** Nazwa modelu z modelId '<instanceId>@<model>' (brak '@' → cała wartość). */
-export function modelNameOf(vectorModelId: string): string {
-  const at = vectorModelId.indexOf('@');
-  return at === -1 ? vectorModelId : vectorModelId.slice(at + 1);
-}
-
 // ── Klient OpenSPG ──────────────────────────────────────────────────────────
 
 /** Fabryka klienta OpenSPG z konfiguracji aplikacji (fetchImpl wstrzykiwalny w testach). */
@@ -348,123 +312,28 @@ export function makeOpenSpgClient(config: AppConfig, fetchImpl?: typeof fetch): 
   });
 }
 
-// ── Preflight buildu ────────────────────────────────────────────────────────
+// ── Preflight buildu (delegacja do JEDNEJ kompozycji w services/preflight.ts) ──
 
-export interface PreflightCheck {
-  id: string;
-  ok: boolean;
-  severity: 'error' | 'warn';
-  message: string;
-}
-
-export interface PreflightResult {
-  ok: boolean;
-  checks: PreflightCheck[];
-}
+// Kształt checków 1:1 z silnikiem preflightu (id, ok, severity, message).
+export type { PreflightCheckResult as PreflightCheck } from './preflight.js';
+export type { PreflightResult } from './preflight.js';
 
 /**
- * Dry-run buildu KB (POST /kbs/:ns/preflight; build w Fazie 4 użyje tych samych
- * checków przed startem).
- *
- * UWAGA (integracja z services/preflight.ts): silnik akcji ma własną kompozycję
- * 'build_kb', ale jego check embeddingu czyta settings BEZ unseal (sekret
- * sealowany → null → warn), więc NIE egzekwuje twardego guardu niezmienności.
- * Ten preflight czyta sekret przez unseal i porównuje ZAMROŻONY vector_model_id
- * — do scalenia w Fazie 4 przy implementacji akcji build_kb.
- * Checki:
- * - kb_active: status active + project_id (error);
- * - embedding_model: GUARD NIEZMIENNOŚCI — zamrożony vector_model_id musi zgadzać
- *   się z modelem w settings 'llm.embeddings' (error przy rozjeździe/braku konfiguracji);
- * - openspg_reachable: /v1/projects/list odpowiada (error);
- * - promoted_drafts: eksport da ≥1 dokument (error);
- * - no_running_build: brak innej akcji build_kb dla tego KB (error).
+ * Dry-run buildu KB (POST /kbs/:ns/preflight; akcja build_kb używa tych samych
+ * checków przed startem). SCALONE w Fazie 4: kompozycja checków żyje wyłącznie
+ * w services/preflight.ts (PREFLIGHTS.build_kb) z twardym guardem embeddingu
+ * (unseal + zamrożony vector_model_id) — tu tylko delegacja + 404 dla
+ * nieistniejącej bazy.
  */
 export async function preflightBuild(
   deps: { db: Db; config: AppConfig; client: OpenSpgClient },
   namespace: string,
 ): Promise<PreflightResult> {
-  const { db, config, client } = deps;
-  const kb = getKbOrThrow(db, namespace);
-  const checks: PreflightCheck[] = [];
-
-  const active = kb.status === 'active' && kb.project_id !== null;
-  checks.push({
-    id: 'kb_active',
-    ok: active,
-    severity: 'error',
-    message: active
-      ? `baza active (projekt OpenSPG #${kb.project_id})`
-      : `baza nie jest gotowa do buildu (status: ${kb.status}, projectId: ${kb.project_id ?? 'brak'})`,
+  getKbOrThrow(deps.db, namespace); // 404 zanim polecą checki
+  return runPreflightFor('build_kb', {
+    db: deps.db,
+    config: deps.config,
+    namespace,
+    openspg: deps.client,
   });
-
-  // Guard niezmienności embeddingu: modelu NIE wolno zmieniać po utworzeniu projektu.
-  const embeddings = readEmbeddingsSettings(db, config);
-  if (kb.vector_model_id !== '') {
-    const frozen = modelNameOf(kb.vector_model_id);
-    if (embeddings === null) {
-      checks.push({
-        id: 'embedding_model',
-        ok: false,
-        severity: 'error',
-        message: `brak konfiguracji llm.embeddings w Ustawieniach (projekt zamrożony na modelu '${frozen}')`,
-      });
-    } else if (embeddings.model !== frozen) {
-      checks.push({
-        id: 'embedding_model',
-        ok: false,
-        severity: 'error',
-        message: `model embeddingu w Ustawieniach ('${embeddings.model}') różni się od zamrożonego w projekcie ('${frozen}') — modelu NIE wolno zmieniać po utworzeniu projektu`,
-      });
-    } else {
-      checks.push({
-        id: 'embedding_model',
-        ok: true,
-        severity: 'error',
-        message: `model embeddingu zgodny ('${frozen}')`,
-      });
-    }
-  } else {
-    checks.push({
-      id: 'embedding_model',
-      ok: false,
-      severity: 'warn',
-      message: 'baza bez zamrożonego modelu embeddingu (provisioning niekompletny?)',
-    });
-  }
-
-  try {
-    await listProjects(client);
-    checks.push({ id: 'openspg_reachable', ok: true, severity: 'error', message: 'OpenSPG odpowiada' });
-  } catch (err) {
-    checks.push({
-      id: 'openspg_reachable',
-      ok: false,
-      severity: 'error',
-      message: `OpenSPG nie odpowiada: ${(err as Error).message}`,
-    });
-  }
-
-  const promoted = listDrafts(db, { namespace, status: 'promoted', limit: 1 }).total;
-  checks.push({
-    id: 'promoted_drafts',
-    ok: promoted > 0,
-    severity: 'error',
-    message:
-      promoted > 0
-        ? `wypromowanych draftów: ${promoted}`
-        : 'brak wypromowanych draftów — eksport nie da żadnego dokumentu',
-  });
-
-  const running = listActions(db, { type: 'build_kb', resource: `kb:${namespace}`, status: 'running', limit: 1 });
-  checks.push({
-    id: 'no_running_build',
-    ok: running.total === 0,
-    severity: 'error',
-    message:
-      running.total === 0
-        ? 'brak trwającego builda'
-        : `build już trwa (actionId: ${running.items[0]?.id ?? '?'})`,
-  });
-
-  return { ok: !checks.some((c) => !c.ok && c.severity === 'error'), checks };
 }

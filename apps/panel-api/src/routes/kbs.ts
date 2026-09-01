@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { KbStatus } from '@pomagierkb/shared/db';
-import { getKbOrThrow } from '@pomagierkb/shared/db';
+import { getKbOrThrow, latestQualityReport } from '@pomagierkb/shared/db';
 import { AppError } from '@pomagierkb/shared/errors';
 import { listJobs } from '@pomagierkb/shared/openspg';
 import {
@@ -13,6 +13,8 @@ import {
   preflightBuild,
 } from '../services/kb.js';
 import { humanize } from '../services/messages.js';
+import { assertPreflight } from '../services/preflight.js';
+import { startAction } from '../services/actions-runner.js';
 import { launchKbAction } from '../jobs/kb-runner.js';
 import { runCreateKbJob } from '../jobs/create-kb.js';
 import { assertSchemaSyncSafe, planSchemaSync, runSchemaSyncJob } from '../jobs/schema-sync.js';
@@ -291,26 +293,119 @@ export default async function kbsRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
-  // ── POST /kbs/:namespace/build — kontrakt gotowy, job build-kb w Fazie 4 ──
-  app.post<{ Params: NamespaceParams }>(
+  // ── POST /kbs/:namespace/build — 202: akcja build_kb (spawn detached przez
+  //    services/actions-runner; preflight w trasie → 422 preflight_failed) ──
+  app.post<{ Params: NamespaceParams; Body: { force?: boolean } | null }>(
     '/kbs/:namespace/build',
     {
-      config: { rbac: 'operator', audit: false, csrf: true, rateLimitGroup: 'mutation' },
-      schema: { params: namespaceParamsSchema },
+      config: { rbac: 'operator', audit: 'kb.build', csrf: true, rateLimitGroup: 'mutation' },
+      // Body celowo BEZ schematu: POST bez treści jest legalny (schemat JSON
+      // odrzuciłby brak body jako 400) — jedyny parametr {force} czytamy defensywnie.
+      schema: { params: namespaceParamsSchema, response: { 202: successResponse } },
     },
     async (req, reply) => {
-      getKbOrThrow(req.server.db, req.params.namespace); // 404 dla nieistniejącej bazy
-      // TODO(Faza 4): preflightBuild → 422 przy fail, akcja build_kb (spawn detached,
-      // eksport CSV → upload → builder job → quality gate). Kod 'not_implemented'
-      // spoza katalogu shared/errors — koperta budowana ręcznie do czasu Fazy 4.
-      return reply.status(501).send({
-        ok: false,
-        error: {
-          code: 'not_implemented',
-          message: 'Build bazy wiedzy powstanie w Fazie 4 — kontrakt trasy i preflight są już gotowe.',
-          requestId: String(req.id),
+      const db = req.server.db;
+      const namespace = req.params.namespace;
+      getKbOrThrow(db, namespace); // 404 dla nieistniejącej bazy
+
+      const preflight = await preflightBuild(
+        { db, config: req.server.config, client: makeOpenSpgClient(req.server.config) },
+        namespace,
+      );
+      assertPreflight(preflight); // 422 preflight_failed z details.checks
+
+      const force =
+        typeof req.body === 'object' && req.body !== null && (req.body as Record<string, unknown>)['force'] === true;
+      // Guard idempotencji repo actions (ux_actions_running) → 409 action_already_running.
+      const action = startAction(
+        { db, dataDir: req.server.config.dataDir, warn: (msg) => req.log.warn(msg) },
+        {
+          type: 'build_kb',
+          resource: `kb:${namespace}`,
+          params: { namespace, force },
+          startedBy: req.user?.id ?? null,
         },
+      );
+      reply.auditContext = {
+        resourceType: 'kb',
+        resourceId: namespace,
+        metadata: { actionId: action.id, force },
+      };
+      return reply.status(202).send({
+        ok: true as const,
+        data: { actionId: action.id, type: action.type, resource: action.resource, logPath: action.log_path },
       });
+    },
+  );
+
+  // ── POST /kbs/:namespace/quality — 202: akcja quality_gate na żądanie ──
+  app.post<{ Params: NamespaceParams }>(
+    '/kbs/:namespace/quality',
+    {
+      config: { rbac: 'operator', audit: 'kb.quality_gate', csrf: true, rateLimitGroup: 'mutation' },
+      schema: { params: namespaceParamsSchema, response: { 202: successResponse } },
+    },
+    async (req, reply) => {
+      const db = req.server.db;
+      const namespace = req.params.namespace;
+      getKbOrThrow(db, namespace);
+      const action = startAction(
+        { db, dataDir: req.server.config.dataDir, warn: (msg) => req.log.warn(msg) },
+        {
+          type: 'quality_gate',
+          resource: `kb:${namespace}`,
+          params: { namespace },
+          startedBy: req.user?.id ?? null,
+        },
+      );
+      reply.auditContext = {
+        resourceType: 'kb',
+        resourceId: namespace,
+        metadata: { actionId: action.id },
+      };
+      return reply.status(202).send({
+        ok: true as const,
+        data: { actionId: action.id, type: action.type, resource: action.resource, logPath: action.log_path },
+      });
+    },
+  );
+
+  // ── GET /kbs/:namespace/quality — ostatni raport jakości (null gdy brak) ──
+  app.get<{ Params: NamespaceParams }>(
+    '/kbs/:namespace/quality',
+    {
+      config: { rbac: 'viewer', audit: false, csrf: false },
+      schema: { params: namespaceParamsSchema, response: { 200: successResponse } },
+    },
+    async (req) => {
+      const db = req.server.db;
+      getKbOrThrow(db, req.params.namespace);
+      const row = latestQualityReport(db, req.params.namespace);
+      let checks: unknown[] = [];
+      if (row !== null) {
+        try {
+          const parsed = JSON.parse(row.checks_json) as unknown;
+          if (Array.isArray(parsed)) checks = parsed;
+        } catch {
+          /* uszkodzony JSON nie może wywrócić odczytu raportu */
+        }
+      }
+      return {
+        ok: true as const,
+        data: {
+          report:
+            row === null
+              ? null
+              : {
+                  id: row.id,
+                  runId: row.run_id,
+                  verdict: row.verdict,
+                  verdictLabel: humanize(row.verdict).label,
+                  checks,
+                  createdAt: row.created_at,
+                },
+        },
+      };
     },
   );
 }

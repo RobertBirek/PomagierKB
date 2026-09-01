@@ -28,7 +28,9 @@ import { JobFailure, type JobContext, type JobFn } from './job-types.js';
 /** Rejestr typów jobów → dynamiczny import implementacji (jobs/<type>.ts). */
 const JOB_MODULES: Record<string, () => Promise<{ default: JobFn }>> = {
   noop: () => import('./noop.js'),
-  // kolejne joby (Faza 4+): build_kb, create_kb, analyze_draft, export_drafts...
+  build_kb: () => import('./build-kb.js'),
+  quality_gate: () => import('./quality-gate.js'),
+  // kolejne joby (Faza 4+): create_kb, analyze_draft, export_drafts...
 };
 
 /** Linia logu z timestampem — stdout jest podpięty do pliku logu akcji. */

@@ -23,9 +23,11 @@ export interface HumanMessage {
 /** Statusy wiersza actions (shared repos/actions.ts — ActionStatus). */
 export const ACTION_STATUSES = ['running', 'success', 'error', 'cancelled'] as const;
 
-/** Statusy builder joba OpenSPG (pełna lista terminalna + RUNNING/PENDING). */
+/** Statusy builder joba OpenSPG (aktywne INIT/WAITING/RUNNING + terminalne). */
 export const BUILDER_JOB_STATUSES = [
   'PENDING',
+  'INIT',
+  'WAITING',
   'RUNNING',
   'FINISH',
   'ERROR',
@@ -44,18 +46,48 @@ export const INTAKE_STAGES = [
   'failed',
 ] as const;
 
-/** Kody błędów intake (przyczyny status='failed'). */
-export const INTAKE_ERROR_CODES = ['extraction_below_quality_threshold'] as const;
+/** Kody błędów intake (przyczyny status='failed') — patrz pipeline/extract.ts. */
+export const INTAKE_ERROR_CODES = [
+  'extraction_below_quality_threshold',
+  'invalid_encoding',
+] as const;
+
+/** Statusy draftów w Inboxie (shared repos/drafts.ts — DraftStatus). */
+export const DRAFT_STATUSES = ['pending', 'promoted', 'rejected', 'withdrawn'] as const;
+
+/** Statusy luk wiedzy (shared repos/learningGaps.ts — GapStatus). */
+export const GAP_STATUSES = ['open', 'in_draft', 'resolved', 'ignored'] as const;
+
+/** Etapy odpowiedzi /ask (SSE event 'status' — shared answer AnswerPhase). */
+export const ANSWER_PHASES = ['retrieval', 'generating'] as const;
 
 /** Identyfikatory checków preflight — MUSZĄ pokrywać PREFLIGHT_CHECK_IDS z preflight.ts. */
 export const PREFLIGHT_CODES = [
   'disk_space',
   'dir_writable',
-  'openspg_alive',
+  'openspg_reachable',
   'kb_active',
-  'embedding_matches',
+  'embedding_model',
+  'promoted_drafts',
   'no_running_action',
 ] as const;
+
+/** Identyfikatory checków quality gate (pipeline/quality-gate.ts, Etap 9). */
+export const QUALITY_CHECK_CODES = [
+  'export_files_exist',
+  'row_count_match',
+  'ids_unique_nonempty',
+  'indexed_field_limits',
+  'referential_integrity',
+  'promoted_coverage',
+  'builds_finished',
+  'duplicate_source_urls',
+  'live_search_sanity',
+  'dirty_flag',
+] as const;
+
+/** Werdykty quality gate (repo quality_reports). */
+export const QUALITY_VERDICTS = ['OK', 'WARN', 'FAIL'] as const;
 
 /** Mapa kod → komunikat PL. Klucze wspólne (np. 'error') mają jeden wpis. */
 export const MESSAGES: Record<string, HumanMessage> = {
@@ -71,6 +103,8 @@ export const MESSAGES: Record<string, HumanMessage> = {
 
   // ── statusy builder joba OpenSPG ────────────────────────────────────────
   PENDING: { label: 'oczekuje w kolejce', description: 'Builder OpenSPG jeszcze nie zaczął przetwarzania.' },
+  INIT: { label: 'job utworzony', description: 'Job buildera został przyjęty i czeka na start.' },
+  WAITING: { label: 'czeka na wykonanie', description: 'Job buildera czeka w kolejce OpenSPG.' },
   RUNNING: { label: 'budowanie w toku', description: 'Builder OpenSPG przetwarza plik.' },
   FINISH: { label: 'zbudowano', description: 'Builder OpenSPG zakończył przetwarzanie pliku.' },
   ERROR: {
@@ -101,6 +135,50 @@ export const MESSAGES: Record<string, HumanMessage> = {
     label: 'za mało tekstu w dokumencie',
     description: 'Ekstrakcja dała zbyt mało czytelnego tekstu — to prawdopodobnie skan bez warstwy tekstowej.',
     action: 'To skan bez tekstu — spróbuj inną wersję pliku (z warstwą tekstową) albo wklej treść ręcznie.',
+  },
+  invalid_encoding: {
+    label: 'nieczytelne kodowanie pliku',
+    description: 'Plik tekstowy nie jest poprawnym UTF-8 — nie da się bezpiecznie odczytać treści.',
+    action: 'Zapisz plik w kodowaniu UTF-8 (bez BOM) i wyślij ponownie albo wklej treść ręcznie.',
+  },
+
+  // ── statusy draftów (Inbox) ─────────────────────────────────────────────
+  pending: {
+    label: 'czeka na recenzję',
+    description: 'Szkic czeka w Inboxie na decyzję człowieka.',
+    action: 'Przejrzyj szkic w Inboxie i zatwierdź go albo odrzuć.',
+  },
+  promoted: {
+    label: 'zatwierdzony',
+    description: 'Szkic zatwierdzony — trafi do bazy wiedzy przy najbliższym buildzie.',
+    action: 'Uruchom build bazy, aby treść trafiła do grafu.',
+  },
+  rejected: {
+    label: 'odrzucony',
+    description: 'Szkic odrzucony przez recenzenta — nie trafi do bazy wiedzy.',
+  },
+  withdrawn: {
+    label: 'wycofany',
+    description: 'Promocja szkicu została cofnięta przed buildem — treść nie trafi do bazy.',
+  },
+
+  // ── statusy luk wiedzy ──────────────────────────────────────────────────
+  open: {
+    label: 'otwarta',
+    description: 'Pytanie bez dobrej odpowiedzi — baza wymaga uzupełnienia.',
+    action: 'Użyj „Utwórz szkic”, aby uzupełnić wiedzę w tym temacie.',
+  },
+  in_draft: {
+    label: 'szkic w przygotowaniu',
+    description: 'Do luki powstał szkic — czeka na treść i recenzję w Inboxie.',
+  },
+  resolved: {
+    label: 'rozwiązana',
+    description: 'Wiedza została uzupełniona (powiązany szkic zatwierdzony).',
+  },
+  ignored: {
+    label: 'zignorowana',
+    description: 'Luka oznaczona przez operatora jako nieistotna.',
   },
 
   // ── kody preflight ──────────────────────────────────────────────────────
@@ -133,6 +211,96 @@ export const MESSAGES: Record<string, HumanMessage> = {
     label: 'brak trwającej akcji',
     description: 'Na tym zasobie nie może trwać inna akcja tego samego typu.',
     action: 'Poczekaj na zakończenie trwającej akcji albo ją anuluj.',
+  },
+  openspg_reachable: {
+    label: 'dostępność OpenSPG',
+    description: 'Sprawdzenie, czy serwer OpenSPG odpowiada przed startem builda.',
+    action: 'Sprawdź kontener OpenSPG (docker compose ps/logs) i ponów operację.',
+  },
+  embedding_model: {
+    label: 'zgodność modelu embeddingu',
+    description: 'Zamrożony model embeddingu projektu musi zgadzać się z konfiguracją w Ustawieniach — modelu nie wolno zmieniać po utworzeniu projektu.',
+    action: 'Przywróć w Ustawieniach (llm.embeddings) model zapisany w rejestrze tej bazy.',
+  },
+  promoted_drafts: {
+    label: 'zatwierdzone szkice do eksportu',
+    description: 'Build wymaga co najmniej jednego zatwierdzonego szkicu w tej bazie.',
+    action: 'Zatwierdź szkice w Inboxie i uruchom build ponownie.',
+  },
+
+  // ── checki quality gate (Etap 9) ────────────────────────────────────────
+  export_files_exist: {
+    label: 'pliki eksportu na dysku',
+    description: 'Każdy plik z manifestu eksportu istnieje i ma zgodną sumę sha256.',
+    action: 'Uruchom build ponownie — eksport odtworzy pliki.',
+  },
+  row_count_match: {
+    label: 'zgodność liczby wierszy',
+    description: 'Liczba wierszy w pliku CSV zgadza się z manifestem eksportu.',
+    action: 'Uruchom build ponownie — plik mógł zostać zmieniony po eksporcie.',
+  },
+  ids_unique_nonempty: {
+    label: 'unikalność identyfikatorów',
+    description: 'Kolumna id w plikach eksportu nie zawiera pustych wartości ani duplikatów.',
+    action: 'Sprawdź zdublowane tytuły/tagi szkiców i uruchom build ponownie.',
+  },
+  indexed_field_limits: {
+    label: 'limity pól indeksowanych',
+    description: 'Pola indeksowane mieszczą się w limitach (content chunka ≤1800, preview ≤800, summary ≤400), a hash i długość zgadzają się z treścią.',
+    action: 'Uruchom build ponownie; jeśli problem wraca, zgłoś błąd chunkera.',
+  },
+  referential_integrity: {
+    label: 'spójność referencji',
+    description: 'Każdy refId (chunk→dokument, dokument→temat) wskazuje istniejącą encję.',
+    action: 'Uruchom build ponownie — komplet plików musi pochodzić z jednego eksportu.',
+  },
+  promoted_coverage: {
+    label: 'pokrycie zatwierdzonych szkiców',
+    description: 'Każdy zatwierdzony szkic ma co najmniej jeden chunk w eksporcie.',
+    action: 'Sprawdź, czy treść szkicu nie jest pusta, i uruchom build ponownie.',
+  },
+  builds_finished: {
+    label: 'zakończone joby buildera',
+    description: 'Każdy niepusty plik eksportu ma zakończony sukcesem job buildera OpenSPG.',
+    action: 'Uruchom build ponownie i sprawdź log akcji przy błędach jobów.',
+  },
+  duplicate_source_urls: {
+    label: 'zdublowane adresy źródłowe',
+    description: 'Ten sam sourceUrl występuje w więcej niż jednym dokumencie (możliwy duplikat treści).',
+    action: 'Przejrzyj dokumenty o wspólnym adresie i wycofaj zbędne szkice.',
+  },
+  live_search_sanity: {
+    label: 'sonda wyszukiwania',
+    description: 'Wyszukiwanie w grafie zwraca wyniki dla frazy z zatwierdzonego tytułu (indeks może się jeszcze budować).',
+    action: 'Odczekaj kilka minut i uruchom kontrolę jakości ponownie.',
+  },
+  dirty_flag: {
+    label: 'zmiany po ostatnim buildzie',
+    description: 'Po ostatnim buildzie zatwierdzono lub wycofano szkice — graf nie odzwierciedla stanu inboxu.',
+    action: 'Uruchom build bazy, aby zsynchronizować graf.',
+  },
+
+  // ── werdykty quality gate ───────────────────────────────────────────────
+  OK: { label: 'bez zastrzeżeń', description: 'Wszystkie sprawdzenia jakości przeszły.' },
+  WARN: {
+    label: 'z ostrzeżeniami',
+    description: 'Sprawdzenia krytyczne przeszły, ale są ostrzeżenia.',
+    action: 'Rozwiń raport jakości i przejrzyj ostrzeżenia.',
+  },
+  FAIL: {
+    label: 'niezaliczona kontrola jakości',
+    description: 'Co najmniej jedno krytyczne sprawdzenie jakości nie przeszło.',
+    action: 'Rozwiń raport jakości, usuń przyczyny błędów i uruchom build ponownie.',
+  },
+
+  // ── etapy odpowiedzi /ask (SSE) ─────────────────────────────────────────
+  retrieval: {
+    label: 'szukam w bazie wiedzy',
+    description: 'Trwa wyszukiwanie pasujących fragmentów w bazach wiedzy.',
+  },
+  generating: {
+    label: 'generuję odpowiedź',
+    description: 'Model językowy układa odpowiedź na podstawie znalezionych źródeł.',
   },
 
   // ── kody błędów AppError (koperta {ok:false,error:{code}}) ──────────────
