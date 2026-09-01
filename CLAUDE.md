@@ -33,6 +33,7 @@ docker compose -f deploy/edge/compose.yaml config -q   # walidacja compose (wyma
 docker compose -f deploy/kag/compose.yaml config -q
 docker compose -f compose.dev.yaml up    # dev: panel+mcp+SQLite+stub OpenSPG (bez pełnego stacka)
 deploy/scripts/smoke.sh   # smoke test po deployu
+npm run eval              # hit@k/MRR retrievalu na goldens.jsonl (DATA_DIR wskazuje bazę)
 ```
 
 ## Architektura (skrót — pełny obraz w docs/design/PLAN.md)

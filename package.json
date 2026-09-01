@@ -16,7 +16,8 @@
     "test:watch": "vitest",
     "lint": "eslint .",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "migrate": "node apps/panel-api/dist/cli/migrate.js"
+    "migrate": "node apps/panel-api/dist/cli/migrate.js",
+    "eval": "node tools/eval/run-eval.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.14.0",

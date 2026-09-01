@@ -1,0 +1,3 @@
+{"question":"jaka oprawa do magazynu wysokiego składowania","expectedIds":["DOC_"],"namespaces":["LightingDocs"]}
+{"question":"stopień ochrony IP w łazience strefa 1","expectedIds":["DOC_"],"namespaces":["LightingDocs"]}
+{"question":"jak ugotować bigos","negative":true,"namespaces":["LightingDocs"]}

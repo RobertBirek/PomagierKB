@@ -45,3 +45,11 @@ Logi akcji pipeline: /srv/kag-data/kag/panel/actions/<rok>/<mies>/<actionId>.log
 - Po zmianie packages/shared: `npm run build -w packages/shared` (apps importują z dist!).
 - gitleaks blokuje commit na zmyślonym sekrecie testowym → dopisz `// gitleaks:allow` w linii.
 - Pułapki OpenSPG (start=1, refId, cookie login) → skill openspg-api.
+
+## Eval retrievalu (goldens)
+```bash
+DATA_DIR=/srv/kag-data/kag/panel npm run eval             # goldens.jsonl w katalogu bieżącym
+npm run eval -- tools/eval/goldens.example.jsonl          # wskazany plik
+EVAL_MIN_HIT5=0.8 npm run eval                            # bramka progowa (exit 1 poniżej)
+```
+Buduj goldens przyrostowo przy ingestach (w tym pytania NEGATYWNE spoza bazy).
