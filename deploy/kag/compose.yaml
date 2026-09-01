@@ -247,15 +247,20 @@ services:
       PORT: "8080"
       # SQLite WAL + inbox + exporty CSV + audyt JSONL
       DATA_DIR: /data
-      PANEL_PUBLIC_URL: ${PANEL_PUBLIC_URL:?PANEL_PUBLIC_URL is required}
-      PANEL_OIDC_ISSUER: ${PANEL_OIDC_ISSUER:?PANEL_OIDC_ISSUER is required}
-      PANEL_OIDC_CLIENT_ID: ${PANEL_OIDC_CLIENT_ID:?PANEL_OIDC_CLIENT_ID is required}
-      PANEL_OIDC_CLIENT_SECRET: ${PANEL_OIDC_CLIENT_SECRET:?PANEL_OIDC_CLIENT_SECRET is required}
-      PANEL_SESSION_SECRET: ${PANEL_SESSION_SECRET:?PANEL_SESSION_SECRET is required}
+      # nazwy env czytane przez apps/panel-api/src/config.ts; wartości z .env (PANEL_*)
+      PUBLIC_URL: ${PANEL_PUBLIC_URL:?PANEL_PUBLIC_URL is required}
+      OIDC_ISSUER: ${PANEL_OIDC_ISSUER:?PANEL_OIDC_ISSUER is required}
+      OIDC_CLIENT_ID: ${PANEL_OIDC_CLIENT_ID:?PANEL_OIDC_CLIENT_ID is required}
+      OIDC_CLIENT_SECRET: ${PANEL_OIDC_CLIENT_SECRET:?PANEL_OIDC_CLIENT_SECRET is required}
+      SESSION_SECRET: ${PANEL_SESSION_SECRET:?PANEL_SESSION_SECRET is required}
       TOKEN_ENC_KEY: ${TOKEN_ENC_KEY:?TOKEN_ENC_KEY is required}
-      PANEL_INTERNAL_TOKEN: ${PANEL_INTERNAL_TOKEN:?PANEL_INTERNAL_TOKEN is required}
-      MCP_PUBLIC_URL: ${MCP_PUBLIC_URL:?MCP_PUBLIC_URL is required}
+      # wspólny sekret panel<->mcp (X-Internal-Token dla POST /invalidate)
+      INTERNAL_TOKEN: ${PANEL_INTERNAL_TOKEN:?PANEL_INTERNAL_TOKEN is required}
+      MCP_INTERNAL_URL: http://kag-mcp:8091
+      MCP_HEALTH_URL: http://kag-mcp:3001/healthz
       OPENSPG_BASE_URL: http://release-openspg-server:8887
+      OPENSPG_ACCOUNT: ${OPENSPG_ACCOUNT:?OPENSPG_ACCOUNT is required}
+      OPENSPG_PASSWORD: ${OPENSPG_PASSWORD:?OPENSPG_PASSWORD is required}
       TIKA_URL: http://kag-tika:9998
       STIRLING_URL: http://kag-stirling:8080
     healthcheck:
@@ -294,10 +299,14 @@ services:
       PORT: "3001"
       # ta sama baza SQLite co panel (migracje robi TYLKO panel; mcp sprawdza wersję schematu)
       DATA_DIR: /data
-      PANEL_INTERNAL_URL: http://kag-panel:8080
-      PANEL_INTERNAL_TOKEN: ${PANEL_INTERNAL_TOKEN:?PANEL_INTERNAL_TOKEN is required}
-      MCP_PUBLIC_URL: ${MCP_PUBLIC_URL:?MCP_PUBLIC_URL is required}
+      # sekret X-Internal-Token dla POST /invalidate (panel-api -> mcp :8091)
+      INTERNAL_TOKEN: ${PANEL_INTERNAL_TOKEN:?PANEL_INTERNAL_TOKEN is required}
+      # unseal ustawien LLM z SQLite (kb_answer); ten sam klucz co panel
+      TOKEN_ENC_KEY: ${TOKEN_ENC_KEY:?TOKEN_ENC_KEY is required}
+      PUBLIC_URL: ${MCP_PUBLIC_URL:?MCP_PUBLIC_URL is required}
       OPENSPG_BASE_URL: http://release-openspg-server:8887
+      OPENSPG_ACCOUNT: ${OPENSPG_ACCOUNT:?OPENSPG_ACCOUNT is required}
+      OPENSPG_PASSWORD: ${OPENSPG_PASSWORD:?OPENSPG_PASSWORD is required}
     healthcheck:
       test: ["CMD", "wget", "-qO", "/dev/null", "http://127.0.0.1:3001/healthz"]
       interval: 30s
