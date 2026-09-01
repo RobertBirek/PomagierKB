@@ -179,6 +179,30 @@ services:
     networks:
       - edge-internal
 
+  # ── Uptime Kuma (OPCJONALNY monitoring; profil "monitoring") ──────────────
+  # Start: docker compose --profile monitoring up -d
+  # Dostęp: https://status.ilovelighting.sanok.pl za forward-auth (patrz Caddyfile
+  # i docs/authentik-setup.md §Kuma); wymaga rekordu DNS A dla status.*
+  uptime-kuma:
+    <<: [*security_defaults, *logging]
+    image: ${KUMA_IMAGE:-louislam/uptime-kuma:1}  # TODO: przypiąć digest przy wdrożeniu
+    container_name: edge-uptime-kuma
+    profiles: ["monitoring"]
+    restart: unless-stopped
+    mem_limit: 384m
+    environment:
+      TZ: ${TZ:-Europe/Warsaw}
+    volumes:
+      - ${DATA_ROOT:?DATA_ROOT is required}/edge/kuma:/app/data
+    healthcheck:
+      test: ["CMD", "node", "extra/healthcheck.js"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - edge-net
+
 networks:
   # wspólna sieć proxy dla obecnych i przyszłych appek (caddy ↔ kag-panel/kag-mcp)
   edge-net:

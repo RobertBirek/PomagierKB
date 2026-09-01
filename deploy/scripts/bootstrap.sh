@@ -45,6 +45,7 @@ install -d -m 755 -o 1000 -g 1000 \
   "${DATA_ROOT}/edge/authentik/media" \
   "${DATA_ROOT}/edge/authentik/certs" \
   "${DATA_ROOT}/edge/authentik/custom-templates"
+install -d -m 755 -o 0 -g 0 "${DATA_ROOT}/edge/kuma"   # Uptime Kuma (profil monitoring)
 
 # kag: MariaDB (999), Neo4j (7474; obraz ma cap CHOWN), MinIO (root),
 # Stirling tessdata (odczyt dla wszystkich), panel+mcp (uid 10001, dane 0700).

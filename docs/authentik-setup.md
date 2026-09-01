@@ -154,3 +154,18 @@ wymusi konfigurację TOTP.
 - [ ] Logowanie do panelu działa; konto bez grup `kag-*` dostaje 403.
 - [ ] Członek `kag-admin` przechodzi przez MFA.
 - [ ] Embedded outpost obsługuje aplikację `OpenSPG Admin` (nawet jeśli ścieżka wyłączona).
+
+## Monitoring: Uptime Kuma (opcjonalnie)
+
+1. Providers → Create → *Proxy Provider*, tryb **Forward auth (single application)**;
+   Name `kuma-fwd`; External host: `https://status.ilovelighting.sanok.pl`.
+2. Applications → Create: Name `Status Monitor`, slug `status-monitor`, provider `kuma-fwd`;
+   binding: TYLKO grupa `kag-admin`.
+3. Outposts → `authentik Embedded Outpost` → dodaj aplikację `Status Monitor` → Update.
+4. DNS: rekord A `status.ilovelighting.sanok.pl` → IP serwera (PRZED startem — limity Let's Encrypt).
+5. Start: `docker compose -f deploy/edge/compose.yaml --profile monitoring up -d`;
+   pierwsze wejście na https://status.ilovelighting.sanok.pl tworzy konto administratora Kumy.
+6. Monitory (sugerowane): HTTP https://kag.ilovelighting.sanok.pl/healthz, /mcp (405 = OK),
+   https://auth.ilovelighting.sanok.pl, ważność certów; powiadomienia: ntfy/e-mail.
+7. Kuma umiera razem z serwerem — dodatkowo darmowa sonda ZEWNĘTRZNA (healthchecks.io /
+   UptimeRobot) na https://kag.ilovelighting.sanok.pl/healthz.

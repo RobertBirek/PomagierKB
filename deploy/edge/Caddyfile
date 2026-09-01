@@ -67,3 +67,22 @@ kag.ilovelighting.sanok.pl {
 		reverse_proxy kag-panel:8080 # SSE (log akcji) Caddy flushuje automatycznie
 	}
 }
+
+# ── Uptime Kuma (opcjonalny monitoring; profil "monitoring" w compose) ────────
+# Wymaga: rekord DNS A dla status.ilovelighting.sanok.pl oraz aplikacji forward-auth
+# "Status Monitor" w Authentiku (docs/authentik-setup.md) — dostęp tylko kag-admin.
+status.ilovelighting.sanok.pl {
+	import security_headers
+	handle /outpost.goauthentik.io/* {
+		reverse_proxy edge-authentik-server:9000 {
+			header_up Host {host}
+		}
+	}
+	handle {
+		forward_auth edge-authentik-server:9000 {
+			uri /outpost.goauthentik.io/auth/caddy
+			copy_headers X-Authentik-Username X-Authentik-Groups
+		}
+		reverse_proxy edge-uptime-kuma:3001
+	}
+}

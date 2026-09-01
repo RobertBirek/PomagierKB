@@ -1,0 +1,28 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", ":semanticCommits", ":timezone(Europe/Warsaw)"],
+  "labels": ["dependencies"],
+  "prConcurrentLimit": 5,
+  "packageRules": [
+    {
+      "description": "Obrazy spg-registry (OpenSPG) ZAMROŻONE — upstream martwy; aktualizacja tylko świadoma, ręczna, po restore-drillu",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["/spg-registry\\.us-west-1\\.cr\\.aliyuncs\\.com\\/.*/"],
+      "enabled": false
+    },
+    {
+      "description": "Obrazy edge/narzędziowe: PR z podbiciem digestu; automerge tylko patch",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["caddy", "ghcr.io/goauthentik/server", "postgres", "redis", "apache/tika", "stirlingtools/stirling-pdf", "node", "louislam/uptime-kuma"],
+      "automerge": false
+    },
+    {
+      "description": "npm: minor+patch grupowane tygodniowo; major osobno",
+      "matchManagers": ["npm"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "npm minor/patch",
+      "schedule": ["before 6am on monday"]
+    }
+  ],
+  "docker": { "pinDigests": true }
+}
