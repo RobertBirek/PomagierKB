@@ -1,0 +1,30 @@
+{
+  "success": true,
+  "result": {
+    "pageNo": 1,
+    "pageSize": 200,
+    "total": 2,
+    "data": [
+      {
+        "id": 3,
+        "name": "Dokumentacja oświetlenia",
+        "namespace": "LightingDocs",
+        "description": "Baza wiedzy o oświetleniu",
+        "tag": "LOCAL",
+        "visibility": "PRIVATE",
+        "config": "{\"vectorizer\":{\"modelId\":\"b87d551d4ba14909907c6e29218fa011@text-embedding-3-small\"}}",
+        "gmtCreate": "2026-08-20 09:12:44"
+      },
+      {
+        "id": 4,
+        "name": "Procedury serwisowe",
+        "namespace": "ServiceOps",
+        "description": "",
+        "tag": "LOCAL",
+        "visibility": "PRIVATE",
+        "config": "{\"vectorizer\":{\"modelId\":\"b87d551d4ba14909907c6e29218fa011@text-embedding-3-small\"}}",
+        "gmtCreate": "2026-08-25 15:03:10"
+      }
+    ]
+  }
+}

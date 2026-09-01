@@ -1,0 +1,15 @@
+{
+  "success": true,
+  "result": {
+    "id": 4711,
+    "jobName": "LDOC Chunk CSV Import",
+    "projectId": 3,
+    "status": "FINISH",
+    "fileUrl": "http://release-openspg-minio:9000/builder/upload/20260901/chunk.csv",
+    "gmtCreate": "2026-09-01 10:00:00",
+    "gmtModified": "2026-09-01 10:06:31",
+    "createUser": "openspg",
+    "lifeCycle": "ONCE",
+    "action": "UPSERT"
+  }
+}

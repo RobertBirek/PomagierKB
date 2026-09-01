@@ -9,10 +9,18 @@
     "./crypto": "./dist/crypto/index.js",
     "./openspg": "./dist/openspg/index.js",
     "./llm": "./dist/llm/index.js",
-    "./errors": "./dist/errors.js"
+    "./errors": "./dist/errors.js",
+    "./schemas": "./dist/schemas/index.js"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && mkdir -p dist/db/migrations && cp src/db/migrations/*.sql dist/db/migrations/",
     "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "better-sqlite3": "^13.0.3",
+    "openai": "^7.8.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0"
   }
 }

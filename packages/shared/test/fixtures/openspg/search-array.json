@@ -1,0 +1,19 @@
+[
+  {
+    "node": {
+      "id": "LightingDocs:Chunk:9f2c11ab",
+      "properties": {
+        "name": "Montaż szynoprzewodów",
+        "contentPreview": "Maksymalne obciążenie szyny 3F wynosi 16 A na fazę..."
+      }
+    },
+    "score": 0.71
+  },
+  {
+    "node": {
+      "id": "LightingDocs:Chunk:41bb9900",
+      "properties": { "name": "Sterowanie DALI" }
+    },
+    "score": 0.64
+  }
+]

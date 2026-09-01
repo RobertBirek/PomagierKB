@@ -1,0 +1,13 @@
+{
+  "success": true,
+  "result": {
+    "projectId": 3,
+    "entityTypeDTOList": [
+      { "id": 115, "name": "LightingDocs.ConceptTaxonomy", "nameZh": "ConceptTaxonomy", "entityCategory": "CONCEPT" },
+      { "id": 116, "name": "LightingDocs.Topic", "nameZh": "Topic", "entityCategory": "ENTITY" },
+      { "id": 117, "name": "LightingDocs.ReferenceDocument", "nameZh": "ReferenceDocument", "entityCategory": "ENTITY" },
+      { "id": 118, "name": "LightingDocs.Chunk", "nameZh": "Chunk", "entityCategory": "ENTITY" }
+    ],
+    "relationTypeDTOList": []
+  }
+}

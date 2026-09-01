@@ -1,0 +1,66 @@
+# Środowisko deweloperskie PomagierKB — bez pełnego stacka OpenSPG (Java+MySQL+
+# Neo4j+MinIO). Zamiast niego lekki stub emulujący endpointy używane przez nasz
+# klient. Walidacja: docker compose -f compose.dev.yaml config -q (bez .env).
+name: pomagierkb-dev
+
+services:
+  openspg-stub:
+    build:
+      context: .
+      dockerfile: services/openspg-stub/Dockerfile
+    environment:
+      PORT: "8887"
+      STUB_JOB_MS: "${STUB_JOB_MS:-2000}"
+      STUB_STATE_FILE: /data/openspg-stub/state.json
+      STUB_UPLOAD_DIR: /data/openspg-stub/uploads
+    ports:
+      # To STUB (bez prawdziwego grafu i bez sekretów) — publikacja tylko na
+      # localhost, żeby panel-api/mcp-server odpalane na hoście (npm run dev)
+      # miały OPENSPG_BASE_URL=http://127.0.0.1:8887. Prawdziwego OpenSPG :8887
+      # NIGDY nie publikujemy na host (twarda zasada z CLAUDE.md).
+      - "127.0.0.1:8887:8887"
+    volumes:
+      - dev-data:/data
+    networks: [dev]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8887/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # panel-api:                                  # odkomentuj po Fazie 3/5
+  #   build:
+  #     context: .
+  #     dockerfile: services/panel-api/Dockerfile
+  #   environment:
+  #     DB_PATH: /data/kag.db
+  #     OPENSPG_BASE_URL: http://openspg-stub:8887
+  #   ports:
+  #     - "127.0.0.1:8080:8080"
+  #   volumes:
+  #     - dev-data:/data
+  #   networks: [dev]
+  #   depends_on:
+  #     openspg-stub:
+  #       condition: service_healthy
+
+  # mcp-server:                                 # odkomentuj po Fazie 3/5
+  #   build:
+  #     context: .
+  #     dockerfile: services/mcp/Dockerfile
+  #   environment:
+  #     DB_PATH: /data/kag.db
+  #     OPENSPG_BASE_URL: http://openspg-stub:8887
+  #   ports:
+  #     - "127.0.0.1:8090:8090"
+  #   volumes:
+  #     - dev-data:/data
+  #   networks: [dev]
+  #   depends_on:
+  #     - openspg-stub
+
+volumes:
+  dev-data:
+
+networks:
+  dev:

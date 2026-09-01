@@ -1,0 +1,26 @@
+{
+  "success": true,
+  "result": {
+    "total": 2,
+    "data": [
+      {
+        "id": 4711,
+        "jobName": "LDOC Chunk CSV Import",
+        "projectId": 3,
+        "status": "RUNNING",
+        "fileUrl": "http://release-openspg-minio:9000/builder/upload/20260901/chunk.csv",
+        "gmtCreate": "2026-09-01 10:00:00",
+        "createUser": "openspg"
+      },
+      {
+        "id": 4700,
+        "jobName": "LDOC ReferenceDocument CSV Import",
+        "projectId": 3,
+        "status": "FINISH",
+        "fileUrl": "http://release-openspg-minio:9000/builder/upload/20260831/reference_document.csv",
+        "gmtCreate": "2026-08-31 18:22:05",
+        "createUser": "openspg"
+      }
+    ]
+  }
+}

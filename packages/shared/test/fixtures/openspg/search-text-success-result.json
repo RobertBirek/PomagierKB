@@ -1,0 +1,22 @@
+{
+  "success": true,
+  "result": [
+    {
+      "docId": "LightingDocs:Chunk:9f2c11ab",
+      "score": 18.34,
+      "fields": {
+        "name": "Montaż szynoprzewodów",
+        "contentPreview": "Maksymalne obciążenie szyny 3F wynosi 16 A na fazę...",
+        "sourceUrl": "https://example.com/karta.pdf"
+      }
+    },
+    {
+      "docId": "LightingDocs:Chunk:77aa02cd",
+      "score": 12.01,
+      "fields": {
+        "name": "Zasilanie awaryjne",
+        "contentPreview": "Moduły awaryjne wymagają osobnej fazy ciągłej..."
+      }
+    }
+  ]
+}

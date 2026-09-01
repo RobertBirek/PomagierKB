@@ -1,0 +1,18 @@
+{
+  "success": true,
+  "result": [
+    {
+      "group": { "provider": "OpenAI", "name": "OpenAI", "visibility": "PUBLIC_READ" },
+      "model": [
+        {
+          "modelId": "77aa00c3f2d94b1e8a3d55c0aa11bb22@gpt-4o-mini",
+          "model": "gpt-4o-mini",
+          "base_url": "https://api.openai.com/v1",
+          "modelType": "chat",
+          "type": "maas",
+          "api_key": "******"
+        }
+      ]
+    }
+  ]
+}
