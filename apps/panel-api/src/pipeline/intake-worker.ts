@@ -161,9 +161,12 @@ export async function processIntake(
       language: analysis.language,
       extractProvider: extracted.provider,
       cleanProfile: cleaned.profile,
+      createdBy: row.created_by,
     },
     analysis: analysisRecord,
-    submittedByUser: row.created_by,
+    // FK na users(id): intake może przyjść z CLI/integracji z createdBy spoza tabeli
+    // users — wtedy NULL (tożsamość źródła zostaje w metadata.createdBy).
+    submittedByUser: userExists(db, row.created_by) ? row.created_by : null,
   });
   return updateIntake(db, row.id, { status: 'drafted', draft_id: draft.id });
 }
@@ -231,4 +234,9 @@ export function startIntakeWorker(opts: StartIntakeWorkerOpts): IntakeWorkerHand
       clearInterval(timer);
     },
   };
+}
+
+function userExists(db: Db, id: string | null): boolean {
+  if (id === null || id === '') return false;
+  return db.prepare('SELECT 1 FROM users WHERE id = ?').get(id) !== undefined;
 }
