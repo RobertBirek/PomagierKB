@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # smoke.sh — test dymny po wdrożeniu/aktualizacji (PLAN.md Faza 1.5).
 # Checki: healthz panelu i MCP (docker exec, sieć wewnętrzna), discovery OIDC Authentika,
-# redirect 302 panelu bez sesji, MCP initialize+tools/list (klucz z env SMOKE_MCP_KEY — brak = SKIP),
+# SPA publiczna + API chronione (401), MCP initialize+tools/list (klucz z env SMOKE_MCP_KEY — brak = SKIP),
 # sonda search OpenSPG na namespace stagingowym (env SMOKE_STAGING_NS — brak = SKIP).
 # Env dodatkowe: SMOKE_MCP_URL (nadpisuje URL MCP, np. z profilem /mcp/<profil>),
 #                SMOKE_INSECURE=1 (curl -k, TYLKO na czas staging CA).
@@ -17,7 +17,7 @@ env_get() { local v; v=$(grep -E "^$2=" "$1" 2>/dev/null | tail -n1 | cut -d= -f
 PANEL_PUBLIC_URL="$(env_get "${KAG_ENV}" PANEL_PUBLIC_URL "https://kag.ilovelighting.sanok.pl")"
 PANEL_OIDC_ISSUER="$(env_get "${KAG_ENV}" PANEL_OIDC_ISSUER "https://auth.ilovelighting.sanok.pl/application/o/kag-panel/")"
 MCP_PUBLIC_URL="$(env_get "${KAG_ENV}" MCP_PUBLIC_URL "${PANEL_PUBLIC_URL}/mcp")"
-MCP_URL="${SMOKE_MCP_URL:-${MCP_PUBLIC_URL}}"
+MCP_URL="${SMOKE_MCP_URL:-${MCP_PUBLIC_URL%/}/default}"   # domyślnie profil "default"
 DISCOVERY_URL="${PANEL_OIDC_ISSUER%/}/.well-known/openid-configuration"
 
 CURL=(curl -sS --max-time 20)
@@ -71,19 +71,18 @@ check_discovery() {
 }
 check_discovery
 
-# --- 4. Panel bez sesji ma przekierowywać do logowania (302/303/307), nie wpuszczać (200) ---
-check_panel_redirect() {
-  local code
-  if ! code=$("${CURL[@]}" -o /dev/null -w '%{http_code}' "${PANEL_PUBLIC_URL}/" 2>/dev/null); then
-    res FAIL "302 panelu bez sesji" "curl nie połączył się z ${PANEL_PUBLIC_URL}"
-    return
+# --- 4. Ochrona API: SPA jest publiczna (200), ale API bez sesji musi zwracać 401 ---
+check_api_protected() {
+  local spa api
+  spa=$("${CURL[@]}" -o /dev/null -w '%{http_code}' "${PANEL_PUBLIC_URL}/" 2>/dev/null) || spa=err
+  api=$("${CURL[@]}" -o /dev/null -w '%{http_code}' "${PANEL_PUBLIC_URL}/api/v1/me" 2>/dev/null) || api=err
+  if [ "${spa}" = "200" ] && [ "${api}" = "401" ]; then
+    res PASS "SPA publiczna + API chronione" "SPA ${spa}, /api/v1/me ${api}"
+  else
+    res FAIL "SPA publiczna + API chronione" "SPA ${spa} (oczek. 200), /api/v1/me ${api} (oczek. 401)"
   fi
-  case "${code}" in
-    302|303|307|301) res PASS "302 panelu bez sesji" "HTTP ${code}";;
-    *)               res FAIL "302 panelu bez sesji" "HTTP ${code} (oczekiwano redirectu)";;
-  esac
 }
-check_panel_redirect
+check_api_protected
 
 # --- 5. MCP initialize + tools/list (Streamable HTTP stateless, enableJsonResponse) ---
 check_mcp() {
