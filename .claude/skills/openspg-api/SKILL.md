@@ -80,3 +80,14 @@ build 2025-07-03). Upstream ZAMROŻONY od 06/2025 — nie zakładać poprawek, p
 - `node fetch` bywa rzucał `connect EPERM` tam gdzie curl działał (środowisko optimaKB) —
   przy dziwnych błędach sieci testować curl-em zanim podejrzewasz serwer.
 - `/v3/api-docs` zwraca tablicę bajtów (Buffer → utf8), nie obiekt.
+
+## Pierwsze uruchomienie: wymuszona zmiana hasła supera (ZWERYFIKOWANE 2026-09-02)
+Świeża instalacja: login openspg/openspg@kag USTAWIA cookie (result:false!), ale **AclFilter
+blokuje wszystkie ścieżki poza `POST /v1/accounts/updatePassword`** z błędem "The default
+password of the system needs to be changed" (LOGIN_SUPER_PASSWORD_NOT_CHANGE), dopóki hasło
+nie zostanie zmienione. Payload (zweryfikowany):
+`POST /v1/accounts/updatePassword` z cookie + body
+`{"password": sha256(NOWE+"OPENSPG"), "confirmPassword": sha256(NOWE+"OPENSPG")}` → {result:1}.
+Po zmianie: login nowym hasłem → result:true i API odblokowane. Warianty ze stringiem w body
+dają 400; bez confirmPassword → "confirmPassword is blank". Deployment robi to skryptem
+(deploy/scripts — patrz bootstrap-openspg-password w runbooku).
