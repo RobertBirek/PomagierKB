@@ -58,7 +58,9 @@ services:
     volumes:
       - ${DATA_ROOT:?DATA_ROOT is required}/kag/mysql:/var/lib/mysql
       # skrypty inicjalizacyjne — wykonywane RAZ, przy pustym wolumenie danych
-      - ./mysql-init:/docker-entrypoint-initdb.d:ro
+      # UWAGA: montaż POJEDYNCZEGO pliku — obraz ma własne initdb.sql/openspg-initdb.sql
+      # w tym katalogu (schemat kg_*); montaż całego katalogu by je PRZYKRYŁ.
+      - ./mysql-init/10-create-app-user.sh:/docker-entrypoint-initdb.d/zz-create-app-user.sh:ro
       - /etc/localtime:/etc/localtime:ro
     networks:
       - kag-internal

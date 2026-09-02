@@ -20,9 +20,10 @@ export async function registerStatics(app: FastifyInstance): Promise<void> {
     return;
   }
 
-  // wildcard:false — tylko dekorator reply.sendFile; routing robimy sami niżej,
-  // żeby 404/405 API (error-handler) pozostały nienaruszone.
-  await app.register(fastifyStatic, { root, wildcard: false, index: false });
+  // serve:false — WYŁĄCZNIE dekorator reply.sendFile, zero tras z pluginu.
+  // (wildcard:false NIE wystarcza: plugin globuje katalog i tworzy trasę per plik,
+  // a te trasy nie mają config.rbac → deny-by-default zwracał 401 na /assets/* — biała strona.)
+  await app.register(fastifyStatic, { root, serve: false, index: false });
 
   app.get('/*', { config: { rbac: false, audit: false, csrf: false } }, (req, reply) => {
     const path = req.url.split('?')[0] ?? '/';
