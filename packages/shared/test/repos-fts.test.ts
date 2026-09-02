@@ -60,3 +60,24 @@ describe('repos/chunksMirror (FTS5 trigram)', () => {
     expect(searchFts(db, 'czujniki ruchu', ['LightingDocs'], 8)[0]?.id).toBe('LightingDocs:Chunk:9');
   });
 });
+
+describe('polskie stopwordy i OR-fallback', () => {
+  it('pytanie ze stopwordami ("Jaki ... ma ...?") znajduje treść', () => {
+    const db = testDb();
+    replaceForDocument(db, 'X', 'DOC_1', [
+      { id: 'c1', title: 'HighBay', content: 'Oprawa HighBay LED 150W: strumień świetlny 21000 lm, stopień ochrony IP65.' },
+    ]);
+    const hits = searchFts(db, 'Jaki strumień świetlny i stopień ochrony ma oprawa HighBay 150W?', ['X'], 8);
+    expect(hits.length).toBeGreaterThan(0);
+    expect(hits[0]!.id).toBe('c1');
+  });
+
+  it('AND bez trafień degraduje do OR po najdłuższych rdzeniach', () => {
+    const db = testDb();
+    replaceForDocument(db, 'X', 'DOC_1', [
+      { id: 'c1', title: 'Zasilacz', content: 'Zasilacz Meanwell z gwarancją pięcioletnią.' },
+    ]);
+    const hits = searchFts(db, 'zasilacz transformator', ['X'], 8);
+    expect(hits.length).toBeGreaterThan(0);
+  });
+});

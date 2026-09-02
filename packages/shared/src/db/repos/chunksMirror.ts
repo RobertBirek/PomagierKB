@@ -63,16 +63,49 @@ export interface FtsResult {
  * dopasowuje podciągi, więc dłuższe tokeny przycinamy o końcówkę fleksyjną
  * (np. 'szynoprzewodów' znajdzie też 'szynoprzewodach').
  */
+/** Polskie stopwordy pytań — w AND-semantyce trigramów ubijają całe zapytanie. */
+const PL_STOPWORDS = new Set([
+  'jak', 'jaki', 'jaka', 'jakie', 'jakiego', 'jakiej', 'jakich', 'ile', 'czy', 'gdzie',
+  'kiedy', 'kto', 'komu', 'czego', 'czym', 'dlaczego', 'ktory', 'która', 'które', 'który',
+  'jest', 'sa', 'są', 'ma', 'mają', 'maja', 'byc', 'być', 'oraz', 'lub', 'albo', 'ale',
+  'dla', 'przy', 'nad', 'pod', 'przez', 'bez', 'ten', 'tym', 'tej', 'tego', 'sie', 'się',
+  'nie', 'tak', 'moze', 'może', 'mozna', 'można', 'trzeba', 'nalezy', 'należy',
+]);
+
+function stems(query: string): string[] {
+  const tokens = (query.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [])
+    .filter((t) => t.length >= 3 && !PL_STOPWORDS.has(t));
+  return tokens.map((t) => (t.length >= 6 ? t.slice(0, t.length - 2) : t));
+}
+
+const quote = (t: string): string => `"${t.replaceAll('"', '""')}"`;
+
 export function buildMatchExpression(query: string): string | null {
-  const tokens = (query.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []).filter((t) => t.length >= 3);
-  if (tokens.length === 0) return null;
-  const stems = tokens.map((t) => (t.length >= 6 ? t.slice(0, t.length - 2) : t));
-  return stems.map((t) => `"${t.replaceAll('"', '""')}"`).join(' AND ');
+  const s = stems(query);
+  if (s.length === 0) return null;
+  return s.map(quote).join(' AND ');
+}
+
+/** Luźniejszy wariant: OR po najdłuższych rdzeniach (fallback gdy AND = 0 trafień). */
+export function buildOrMatchExpression(query: string, maxTerms = 4): string | null {
+  const s = [...new Set(stems(query))].sort((a, b) => b.length - a.length).slice(0, maxTerms);
+  if (s.length === 0) return null;
+  return s.map(quote).join(' OR ');
 }
 
 export function searchFts(db: Db, query: string, namespaces: string[], limit = 8): FtsResult[] {
-  const match = buildMatchExpression(query);
-  if (!match || namespaces.length === 0) return [];
+  if (namespaces.length === 0) return [];
+  const strict = buildMatchExpression(query);
+  if (!strict) return [];
+  const first = runFtsQuery(db, strict, namespaces, limit);
+  if (first.length > 0) return first;
+  // AND bez trafień (np. rzadki termin obok popularnych) → luźniejszy OR po rdzeniach.
+  const loose = buildOrMatchExpression(query);
+  if (!loose || loose === strict) return [];
+  return runFtsQuery(db, loose, namespaces, limit);
+}
+
+function runFtsQuery(db: Db, match: string, namespaces: string[], limit: number): FtsResult[] {
   const placeholders = namespaces.map(() => '?').join(',');
   const rows = db
     .prepare(

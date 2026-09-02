@@ -301,10 +301,11 @@ export async function runQualityGate(deps: QualityGateDeps): Promise<QualityGate
     } else {
       try {
         const result = await searchText(deps.client, {
+          projectId: getKb(deps.db, namespace)?.project_id ?? 0,
           queryString: probe.title.slice(0, 80),
           labelConstraints: [`${namespace}.Chunk`, `${namespace}.ReferenceDocument`],
           page: 1,
-          size: 5,
+          topk: 5,
         });
         add('live_search_sanity', 'warn', result.items.length > 0,
           result.items.length > 0

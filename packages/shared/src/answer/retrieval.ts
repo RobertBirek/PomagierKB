@@ -221,7 +221,10 @@ export async function hybridSearch(
           }
           const scored: { hit: SearchHit; ns: string }[] = [];
           for (const ns of vectorNamespaces) {
+            const projectId = getKb(ctx.db, ns)?.project_id;
+            if (projectId === null || projectId === undefined) continue; // KB bez provisioningu
             const res = await searchVector(openspg, {
+              projectId,
               label: `${ns}.Chunk`,
               propertyKey: 'content',
               queryVector,
@@ -235,13 +238,21 @@ export async function hybridSearch(
       : Promise.resolve(null),
     textEnabled && openspg
       ? runChannel(ctx, 'openspg_text', async () => {
-          const res = await searchText(openspg, {
-            queryString: params.query,
-            labelConstraints: namespaces.flatMap((ns) => [`${ns}.Chunk`, `${ns}.ReferenceDocument`]),
-            page: 1,
-            size: limit,
-          });
-          const items = [...res.items].sort((a, b) => b.score - a.score).slice(0, limit);
+          // TextSearchRequest wymaga projectId — wołamy per namespace i scalamy.
+          const all: SearchHit[] = [];
+          for (const ns of namespaces) {
+            const projectId = getKb(ctx.db, ns)?.project_id;
+            if (projectId === null || projectId === undefined) continue;
+            const res = await searchText(openspg, {
+              projectId,
+              queryString: params.query,
+              labelConstraints: [`${ns}.Chunk`, `${ns}.ReferenceDocument`],
+              page: 1,
+              topk: limit,
+            });
+            all.push(...res.items);
+          }
+          const items = all.sort((a, b) => b.score - a.score).slice(0, limit);
           return items.map((hit) => toChannelHit(hit, deriveNamespace(hit.id, nsSet) ?? ''));
         })
       : Promise.resolve(null),

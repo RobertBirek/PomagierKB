@@ -82,10 +82,13 @@ export function normalizeSearchResponse(raw: unknown): NormalizedSearch {
 }
 
 export interface SearchTextParams {
+  /** WYMAGANE przez serwer (TextSearchRequest.projectId — zdekompilowane 2026-09-02). */
+  projectId: number;
   queryString: string;
   labelConstraints: string[]; // np. ['Ns.Chunk','Ns.ReferenceDocument']
   page?: number;
-  size?: number;
+  /** Limit wyników — pole nazywa się topk (NIE size). */
+  topk?: number;
 }
 
 /** POST /public/v1/search/text */
@@ -97,16 +100,19 @@ export async function searchText(
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
+      projectId: params.projectId,
       queryString: params.queryString,
       labelConstraints: params.labelConstraints,
       page: params.page ?? 1,
-      size: params.size ?? 10,
+      topk: params.topk ?? 10,
     }),
   });
   return normalizeSearchResponse(raw);
 }
 
 export interface SearchVectorParams {
+  /** WYMAGANE przez serwer (VectorSearchRequest.projectId). */
+  projectId: number;
   label: string;       // np. 'Ns.Chunk'
   propertyKey: string; // np. 'contentPreview'
   queryVector: number[];
@@ -123,6 +129,7 @@ export async function searchVector(
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
+      projectId: params.projectId,
       label: params.label,
       propertyKey: params.propertyKey,
       queryVector: params.queryVector,
@@ -147,17 +154,19 @@ export interface SearchProbeResult {
 export async function probeSearch(
   client: OpenSpgClient,
   namespace: string,
-  opts: { queryVector?: number[] } = {},
+  opts: { queryVector?: number[]; projectId?: number } = {},
 ): Promise<SearchProbeResult> {
+  const projectId = opts.projectId ?? 0;
   let textOk = false;
   let vectorOk = false;
   let detectedShape: SearchShape = 'unknown';
   try {
     const r = await searchText(client, {
+      projectId,
       queryString: 'test',
       labelConstraints: [`${namespace}.Chunk`],
       page: 1,
-      size: 1,
+      topk: 1,
     });
     textOk = r.shape !== 'unknown';
     if (textOk) detectedShape = r.shape;
@@ -166,6 +175,7 @@ export async function probeSearch(
   }
   try {
     const r = await searchVector(client, {
+      projectId,
       label: `${namespace}.Chunk`,
       propertyKey: 'contentPreview',
       queryVector: opts.queryVector ?? new Array<number>(8).fill(0),

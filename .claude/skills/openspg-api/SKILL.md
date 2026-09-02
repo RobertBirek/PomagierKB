@@ -91,3 +91,13 @@ nie zostanie zmienione. Payload (zweryfikowany):
 Po zmianie: login nowym hasłem → result:true i API odblokowane. Warianty ze stringiem w body
 dają 400; bez confirmPassword → "confirmPassword is blank". Deployment robi to skryptem
 (deploy/scripts — patrz bootstrap-openspg-password w runbooku).
+
+## search/text i search/vector — payloady ZWERYFIKOWANE W BOJU (2026-09-02)
+Zdekompilowane DTO + potwierdzone na żywym serwerze (wcześniej HTTP 400):
+- `POST /public/v1/search/text` body TextSearchRequest:
+  `{projectId (WYMAGANE, int), queryString, labelConstraints: ["Ns.Chunk",...], page, topk}`
+  — limit to **topk**, NIE "size".
+- `POST /public/v1/search/vector` body VectorSearchRequest:
+  `{projectId (WYMAGANE), label: "Ns.Chunk", propertyKey, queryVector, topk, efSearch}`.
+Konsekwencja: klient musi znać projectId per namespace (u nas: kb_registry.project_id),
+więc zapytania idą PER NAMESPACE i są scalane (RRF).

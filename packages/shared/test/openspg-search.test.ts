@@ -70,19 +70,21 @@ describe('normalizeSearchResponse', () => {
 });
 
 describe('searchText / searchVector', () => {
-  it('searchText wysyła {queryString, labelConstraints, page, size} i normalizuje', async () => {
+  it('searchText wysyła {projectId, queryString, labelConstraints, page, topk} i normalizuje', async () => {
     const { client, calls } = makeClient(() => jsonResponse(fixture('search-text-success-result.json')));
     const out = await searchText(client, {
+      projectId: 7,
       queryString: 'obciążenie szyny',
       labelConstraints: ['LightingDocs.Chunk', 'LightingDocs.ReferenceDocument'],
-      size: 8,
+      topk: 8,
     });
     expect(calls[1]!.path).toBe('/public/v1/search/text');
     expect(JSON.parse(String(calls[1]!.init?.body))).toEqual({
+      projectId: 7,
       queryString: 'obciążenie szyny',
       labelConstraints: ['LightingDocs.Chunk', 'LightingDocs.ReferenceDocument'],
       page: 1,
-      size: 8,
+      topk: 8,
     });
     expect(out.items).toHaveLength(2);
   });
@@ -90,6 +92,7 @@ describe('searchText / searchVector', () => {
   it('searchVector wysyła {label, propertyKey, queryVector, topk, efSearch=200}', async () => {
     const { client, calls } = makeClient(() => jsonResponse(fixture('search-data.json')));
     await searchVector(client, {
+      projectId: 7,
       label: 'LightingDocs.Chunk',
       propertyKey: 'contentPreview',
       queryVector: [0.1, 0.2],
@@ -97,6 +100,7 @@ describe('searchText / searchVector', () => {
     });
     expect(calls[1]!.path).toBe('/public/v1/search/vector');
     expect(JSON.parse(String(calls[1]!.init?.body))).toEqual({
+      projectId: 7,
       label: 'LightingDocs.Chunk',
       propertyKey: 'contentPreview',
       queryVector: [0.1, 0.2],
