@@ -12,7 +12,7 @@ coverage
 docs
 deploy
 integrations
-schemas
+# schemas — POTRZEBNE w obrazie panelu (szablony DSL dla provisioningu KB)
 *.env
 .env*
 !.env.example

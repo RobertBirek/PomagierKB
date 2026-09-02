@@ -54,6 +54,8 @@ COPY --from=build /app/packages/shared/dist packages/shared/dist
 COPY --from=build /app/apps/panel-api/dist apps/panel-api/dist
 # statyki SPA serwuje Fastify (@fastify/static, fallback SPA) — jeden origin z API
 COPY --from=build-web /app/apps/panel-web/dist apps/panel-web/dist
+# szablony schema DSL (provisioning KB czyta /app/schemas/*.tpl w runtime)
+COPY schemas schemas
 USER 10001:10001
 EXPOSE 8080
 CMD ["node", "apps/panel-api/dist/server.js"]
