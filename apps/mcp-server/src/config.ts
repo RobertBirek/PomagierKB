@@ -74,7 +74,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): McpConfig {
       : null;
   return {
     dataDir,
-    dbPath: join(dataDir, 'kag.db'),
+    dbPath: join(dataDir, 'db', 'kag.db'),  // ta sama ścieżka co panel-api (DATA_DIR/db/kag.db)
     usageDir: join(dataDir, 'mcp-usage'),
     port: intEnv(env, 'PORT', 3001),
     host: env.HOST !== undefined && env.HOST !== '' ? env.HOST : '0.0.0.0',

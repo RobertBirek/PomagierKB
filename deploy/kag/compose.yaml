@@ -31,6 +31,8 @@ services:
     cap_add:
       - SETUID
       - SETGID
+      - CHOWN          # entrypoint chown /var/lib/mysql przy pierwszym starcie
+      - DAC_OVERRIDE   # katalog danych 700/999 — root bez tej cap nie wejdzie (cap_drop ALL)
     image: ${OPENSPG_MYSQL_IMAGE:?OPENSPG_MYSQL_IMAGE is required}
     container_name: release-openspg-mysql
     restart: always
@@ -206,6 +208,12 @@ services:
     image: ${STIRLING_IMAGE:?STIRLING_IMAGE is required}
     container_name: kag-stirling
     restart: unless-stopped
+    cap_add:          # entrypoint Stirlinga: chown /pipeline + setpriv (zrzucanie uprawnień)
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETUID
+      - SETGID
     mem_limit: ${STIRLING_MEM_LIMIT:-2g}
     environment:
       TZ: ${TZ:-Europe/Warsaw}
