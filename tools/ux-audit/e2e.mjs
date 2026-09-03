@@ -64,11 +64,15 @@ await check('mcp: dialog klucza z walidacją przy polu', async () => {
   await page.locator('[role="alert"]').first().waitFor({ timeout: 5000 }); // błąd przy polu
   await page.keyboard.press('Escape');
 });
-await check('settings: zakładki audit/health + minScore read-only', async () => {
+await check('settings: zakładki audit/health + minScore EDYTOWALNY (program rozbudowy F2)', async () => {
   await page.goto(`${BASE}/settings?tab=health`, { waitUntil: 'networkidle' });
   await page.locator('text=/Bezpieczniki|breaker/i').first().waitFor({ timeout: 8000 });
   await page.goto(`${BASE}/settings?tab=thresholds`, { waitUntil: 'networkidle' });
-  await page.locator('text=/białą listą|biała lista|backendu/').first().waitFor();
+  // dwa suwaki (learning.threshold + answer.minScore) — oba interaktywne
+  const sliders = page.locator('input[type="range"]');
+  await sliders.nth(1).waitFor({ timeout: 8000 });
+  if ((await sliders.count()) < 2) throw new Error('brak drugiego suwaka (answer.minScore)');
+  if (await sliders.nth(1).isDisabled()) throw new Error('suwak minScore jest disabled');
 });
 await check('404: nieznany adres pokazuje NotFound', async () => {
   await page.goto(`${BASE}/nie-ma-takiej-strony`, { waitUntil: 'networkidle' });
