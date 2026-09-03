@@ -11,7 +11,7 @@
 import { useEffect, useMemo, useReducer, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useNavigate, useSearch } from '@tanstack/react-router';
-import { Check, FilePlus2, Inbox, MoreHorizontal, SearchX, X } from 'lucide-react';
+import { Check, FilePlus2, Inbox, MoreHorizontal, SearchX, X, GraduationCap } from 'lucide-react';
 import { apiFetch, apiFetchWithMeta, ApiError } from '@/lib/api';
 import { queryClient } from '@/lib/queryClient';
 import { can } from '@/lib/permissions';
@@ -91,6 +91,7 @@ interface SearchPatch {
   status?: string | undefined;
   kb?: string | undefined;
   q?: string | undefined;
+  tag?: string | undefined;
   page?: number | undefined;
 }
 
@@ -100,6 +101,7 @@ function cleanSearch(raw: SearchPatch): InboxSearch {
   if (raw.status !== undefined) out.status = raw.status;
   if (raw.kb !== undefined) out.kb = raw.kb;
   if (raw.q !== undefined) out.q = raw.q;
+  if (raw.tag !== undefined) out.tag = raw.tag;
   if (raw.page !== undefined && raw.page > 1) out.page = raw.page;
   return out;
 }
@@ -182,7 +184,7 @@ function DraftsTab({ search }: { search: InboxSearch }) {
     return map;
   }, [kbsQuery.data]);
 
-  const filters = { status, kb: search.kb, q: search.q, page };
+  const filters = { status, kb: search.kb, q: search.q, tag: search.tag, page };
   const draftsQuery = useQuery({
     queryKey: ['drafts', filters],
     queryFn: () => {
@@ -190,6 +192,7 @@ function DraftsTab({ search }: { search: InboxSearch }) {
       if (status !== 'all') params.set('status', status);
       if (search.kb !== undefined) params.set('namespace', search.kb);
       if (search.q !== undefined) params.set('q', search.q);
+      if (search.tag !== undefined) params.set('tag', search.tag);
       params.set('page', String(page));
       params.set('limit', String(PAGE_LIMIT));
       return apiFetchWithMeta<{ items: DraftListItem[] }>(`/api/v1/drafts?${params.toString()}`);
@@ -228,13 +231,14 @@ function DraftsTab({ search }: { search: InboxSearch }) {
   }, [drafts]);
 
   const chips = buildDraftFilterChips(
-    { status: search.status, kb: search.kb, q: search.q },
+    { status: search.status, kb: search.kb, q: search.q, tag: search.tag },
     draftStatusFilterLabel,
     (ns) => kbByNs.get(ns)?.name,
   );
   const clearChip = (key: DraftFilterKey): void => {
     if (key === 'status') updateSearch({ status: undefined });
     else if (key === 'kb') updateSearch({ kb: undefined });
+    else if (key === 'tag') updateSearch({ tag: undefined });
     else updateSearch({ q: undefined });
   };
 
@@ -279,7 +283,8 @@ function DraftsTab({ search }: { search: InboxSearch }) {
     [],
   );
 
-  const hasFilters = status !== 'pending' || search.kb !== undefined || search.q !== undefined;
+  const hasFilters =
+    status !== 'pending' || search.kb !== undefined || search.q !== undefined || search.tag !== undefined;
   const emptyState = hasFilters ? (
     <EmptyState
       icon={SearchX}
@@ -346,6 +351,14 @@ function DraftsTab({ search }: { search: InboxSearch }) {
             updateSearch({ q: q === '' ? undefined : q });
           }}
         />
+        <Button
+          variant={search.tag === 'lesson' ? 'primary' : 'outline'}
+          size="sm"
+          onClick={() => updateSearch({ tag: search.tag === 'lesson' ? undefined : 'lesson' })}
+        >
+          <GraduationCap size={14} aria-hidden="true" />
+          {t('inbox.filter.lessons')}
+        </Button>
         {total !== undefined && total > 0 && (
           <span className="ml-auto text-xs tabular-nums text-text-secondary">
             {t('table.range', { ...pageRange(page, PAGE_LIMIT, total), total })}

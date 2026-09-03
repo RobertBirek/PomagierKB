@@ -1,4 +1,5 @@
 import type { Db } from '@pomagierkb/shared/db';
+import { parseLessonFrontmatter } from '../pipeline/frontmatter.js';
 import {
   bulkDryRun,
   draftTags,
@@ -56,6 +57,9 @@ export function draftToListItem(row: DraftRow): Record<string, unknown> {
     decidedBy: row.decided_by,
     decidedAt: row.decided_at,
     promotedAt: row.promoted_at,
+    // Lekcje z sesji agentów (docs/lessons-convention.md): front-matter draftów mcp
+    // parsowany do chipa w Inboxie; null = zwykły draft.
+    lesson: row.source_type === 'mcp' ? parseLessonFrontmatter(row.content_md) : null,
   };
 }
 
@@ -75,6 +79,7 @@ export interface DraftListQuery {
   status?: DraftStatus;
   namespace?: string;
   q?: string;
+  tag?: string;
   page: number;
   limit: number;
 }
@@ -87,6 +92,7 @@ export function listDraftEntries(
     ...(query.status !== undefined && { status: query.status }),
     ...(query.namespace !== undefined && { namespace: query.namespace }),
     ...(query.q !== undefined && { q: query.q }),
+    ...(query.tag !== undefined && { tag: query.tag }),
     limit: query.limit,
     offset: (query.page - 1) * query.limit,
   });

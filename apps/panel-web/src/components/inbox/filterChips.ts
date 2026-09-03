@@ -9,12 +9,13 @@ import { t } from '../../i18n/t';
 /** Domyślny filtr statusu zakładki Szkice (chip nie pojawia się dla niego). */
 export const DRAFT_STATUS_DEFAULT = 'pending';
 
-export type DraftFilterKey = 'status' | 'kb' | 'q';
+export type DraftFilterKey = 'status' | 'kb' | 'q' | 'tag';
 
 export interface DraftFilterState {
   status?: string | undefined;
   kb?: string | undefined;
   q?: string | undefined;
+  tag?: string | undefined;
 }
 
 export interface FilterChip {
@@ -42,6 +43,12 @@ export function buildDraftFilterChips(
   }
   if (filters.q !== undefined && filters.q !== '') {
     chips.push({ key: 'q', label: t('inbox.chip.q', { q: filters.q }) });
+  }
+  if (filters.tag !== undefined && filters.tag !== '') {
+    chips.push({
+      key: 'tag',
+      label: filters.tag === 'lesson' ? t('inbox.chip.lessons') : t('inbox.chip.tag', { tag: filters.tag }),
+    });
   }
   return chips;
 }

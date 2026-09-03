@@ -105,6 +105,8 @@ export interface InboxSearch {
   status?: string;
   kb?: string;
   q?: string;
+  /** Filtr tagu draftów (np. 'lesson' — chip Lekcje). */
+  tag?: string;
   page?: number;
 }
 
@@ -121,9 +123,11 @@ const inboxRoute = createRoute({
     const status = optionalString(search['status']);
     const kb = optionalString(search['kb']);
     const q = optionalString(search['q']);
+    const tag = optionalString(search['tag']);
     if (status !== undefined) out.status = status;
     if (kb !== undefined) out.kb = kb;
     if (q !== undefined) out.q = q;
+    if (tag !== undefined) out.tag = tag;
     const page = Number(search['page']);
     if (Number.isInteger(page) && page > 1) out.page = page;
     return out;

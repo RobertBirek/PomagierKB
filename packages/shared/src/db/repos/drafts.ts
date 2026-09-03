@@ -186,6 +186,8 @@ export interface DraftListFilter {
   status?: DraftStatus;
   namespace?: string;
   q?: string;
+  /** Dokładny tag z tags_json (np. 'lesson' — konwencja lekcji z sesji agentów). */
+  tag?: string;
   limit?: number;
   offset?: number;
 }
@@ -208,6 +210,10 @@ export function listDrafts(db: Db, filter: DraftListFilter = {}): { items: Draft
   if (filter.namespace) {
     where.push('namespace = ?');
     params.push(filter.namespace);
+  }
+  if (filter.tag) {
+    where.push('EXISTS (SELECT 1 FROM json_each(drafts.tags_json) WHERE value = ?)');
+    params.push(filter.tag);
   }
   if (filter.q) {
     where.push('title LIKE ? ESCAPE \'\\\'');

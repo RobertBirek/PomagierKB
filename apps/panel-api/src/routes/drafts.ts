@@ -52,6 +52,7 @@ export default async function draftsRoutes(app: FastifyInstance): Promise<void> 
             status: { type: 'string', enum: [...DRAFT_STATUSES] },
             namespace: { type: 'string', pattern: NAMESPACE_PATTERN },
             q: { type: 'string', minLength: 1, maxLength: 200 },
+            tag: { type: 'string', minLength: 1, maxLength: 64 },
             page: { type: 'integer', minimum: 1, default: 1 },
             limit: { type: 'integer', minimum: 1, maximum: 200, default: 50 },
           },

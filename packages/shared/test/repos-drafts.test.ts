@@ -86,6 +86,22 @@ describe('repos/drafts', () => {
     }
   });
 
+  it('filtr tag: EXISTS po tags_json (chip Lekcje w Inboxie)', () => {
+    const db = testDb();
+    createDraft(db, {
+      title: '[lesson] Caddy bind-mount wymaga restartu',
+      content: '---\nkind: lesson\nproject: pomagierkb\n---\nTreść lekcji.',
+      sourceType: 'mcp',
+      tags: ['lesson', 'project:pomagierkb'],
+    });
+    createDraft(db, { title: 'Zwykły dokument', content: 'Treść zwykła.', sourceType: 'text' });
+    const lessons = listDrafts(db, { tag: 'lesson' });
+    expect(lessons.total).toBe(1);
+    expect(lessons.items[0]?.title).toContain('[lesson]');
+    expect(listDrafts(db, { tag: 'project:pomagierkb' }).total).toBe(1);
+    expect(listDrafts(db, { tag: 'nieistniejacy' }).total).toBe(0);
+  });
+
   it('limit dzienny: powyżej 100 draftów → rate_limited', () => {
     const db = testDb();
     for (let i = 0; i < DRAFT_LIMITS.perDay; i++) {
