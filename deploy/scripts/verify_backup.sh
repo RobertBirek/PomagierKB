@@ -14,7 +14,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 KAG_ENV="${REPO_ROOT}/deploy/kag/.env"
 
-env_get() { local v; v=$(grep -E "^$2=" "$1" 2>/dev/null | tail -n1 | cut -d= -f2-) || true; printf '%s' "${v:-${3:-}}"; }
+# env_get ucina komentarz inline (wartość "obraz@sha  # nota" -> "obraz@sha") i białe znaki.
+env_get() { local v; v=$(grep -E "^$2=" "$1" 2>/dev/null | tail -n1 | cut -d= -f2-) || true; v=${v%%[[:space:]]#*}; v="${v%"${v##*[![:space:]]}"}"; printf '%s' "${v:-${3:-}}"; }
 json_escape() { local s=$1; s=${s//\\/\\\\}; s=${s//\"/\\\"}; s=${s//$'\n'/\\n}; s=${s//$'\r'/\\r}; s=${s//$'\t'/\\t}; printf '%s' "$s"; }
 
 DATA_ROOT="${DATA_ROOT:-$(env_get "${KAG_ENV}" DATA_ROOT /srv/kag-data)}"
@@ -99,15 +100,18 @@ verify_mysql() {
   [[ -s "${SNAP}/mysql.sql.zst" ]] || { check "mysql_restore" false "brak dumpu"; return; }
   [[ -n "${MYSQL_IMAGE}" ]] || { check "mysql_restore" false "brak OPENSPG_MYSQL_IMAGE w ${KAG_ENV}"; return; }
   log "startuję efemeryczny kontener MariaDB (${MYSQL_IMAGE})..."
+  # MYSQL_DATABASE wymagane: initdb.sql wbudowany w obraz zakłada istnienie tej bazy.
   if ! docker run -d --rm --name "${ctr}" --network none \
-        -e MYSQL_ROOT_PASSWORD="${pw}" "${MYSQL_IMAGE}" >/dev/null 2>&1; then
+        -e MYSQL_ROOT_PASSWORD="${pw}" -e MYSQL_DATABASE="${MYSQL_DB}" "${MYSQL_IMAGE}" >/dev/null 2>&1; then
     check "mysql_restore" false "nie udało się uruchomić kontenera testowego"
     return
   fi
   trap 'docker rm -f "'"${ctr}"'" >/dev/null 2>&1 || true' RETURN
-  # hasło jednorazowe dla kontenera bez sieci — przekazanie przez -e jest tu bezpieczne
+  # hasło jednorazowe dla kontenera bez sieci — przekazanie przez -e jest tu bezpieczne.
+  # Sonda = realne zapytanie SQL, NIE mysqladmin ping: ping odpowiada "alive" już w fazie
+  # tymczasowego serwera entrypointu (przed ustawieniem hasła) i import startował za wcześnie.
   for i in $(seq 1 90); do
-    docker exec -e MYSQL_PWD="${pw}" "${ctr}" mysqladmin ping -uroot --silent >/dev/null 2>&1 && break
+    docker exec -e MYSQL_PWD="${pw}" "${ctr}" mysql -uroot -N -e 'SELECT 1' >/dev/null 2>&1 && break
     sleep 2
     [[ ${i} -eq 90 ]] && { check "mysql_restore" false "kontener testowy nie wstał w 180 s"; return; }
   done

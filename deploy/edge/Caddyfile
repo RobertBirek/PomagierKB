@@ -11,6 +11,11 @@
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		X-Content-Type-Options nosniff
 		Referrer-Policy strict-origin-when-cross-origin
+		# Anty-clickjacking ('self', nie 'none' — Authentik używa własnych osadzeń same-origin).
+		# Pełny CSP default-src dla SPA: Faza 8 programu rozbudowy (wymaga testów dyrektyw).
+		Content-Security-Policy "frame-ancestors 'self'"
+		X-Frame-Options SAMEORIGIN
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
 		-Server
 	}
 }

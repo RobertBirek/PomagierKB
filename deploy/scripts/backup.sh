@@ -7,7 +7,11 @@
 # Użycie: backup.sh [--cold-neo4j]   (zimny snapshot neo4j: stop -> tar -> start; comiesięczne okno)
 # Env: DATA_ROOT (domyślnie z deploy/kag/.env lub /srv/kag-data),
 #      BACKUP_OFFSITE_TARGET — puste = warning w manifeście; "rclone://remote:ścieżka" albo cel
-#      rsync (np. user@host:/sciezka), PANEL_DB_IN_CONTAINER (domyślnie /data/db/kag.sqlite).
+#      rsync (np. user@host:/sciezka), PANEL_DB_IN_CONTAINER (domyślnie /data/db/kag.db),
+#      BACKUP_PING_URL — opcjonalny ping sukcesu (healthchecks/Kuma push), wołany TYLKO przy ok.
+# Kontrakt: brak KTÓREGOKOLWIEK z artefaktów wymaganych (mysql, neo4j, minio, panel.sqlite,
+# authentik-pg) => ok:false w manifeście i exit 1 (fail-loudly — cichy sukces to incydent
+# z 2026-09-03, gdy literówka nazwy pliku zostawiła panel bez backupu przez dobę).
 set -euo pipefail
 umask 077
 
@@ -17,7 +21,8 @@ EDGE_ENV="${REPO_ROOT}/deploy/edge/.env"
 KAG_ENV="${REPO_ROOT}/deploy/kag/.env"
 
 # Bezpieczne czytanie pojedynczych kluczy z .env (bez source — wartości bywają ze znakami specjalnymi)
-env_get() { local v; v=$(grep -E "^$2=" "$1" 2>/dev/null | tail -n1 | cut -d= -f2-) || true; printf '%s' "${v:-${3:-}}"; }
+# env_get ucina komentarz inline (wartość "obraz@sha  # nota" -> "obraz@sha") i białe znaki.
+env_get() { local v; v=$(grep -E "^$2=" "$1" 2>/dev/null | tail -n1 | cut -d= -f2-) || true; v=${v%%[[:space:]]#*}; v="${v%"${v##*[![:space:]]}"}"; printf '%s' "${v:-${3:-}}"; }
 
 DATA_ROOT="${DATA_ROOT:-$(env_get "${KAG_ENV}" DATA_ROOT /srv/kag-data)}"
 BACKUP_ROOT="${BACKUP_ROOT:-${DATA_ROOT}/backups/nightly}"
@@ -25,13 +30,15 @@ RETENTION_DAYS=14
 MONTHLY_KEEP_DAYS=186   # ~6 miesięcy dla pierwszego snapshotu miesiąca
 STAMP="$(date +%Y-%m-%d_%H%M%S)"
 SNAP="${BACKUP_ROOT}/${STAMP}"
-PANEL_DB_IN_CONTAINER="${PANEL_DB_IN_CONTAINER:-/data/db/kag.sqlite}"
+PANEL_DB_IN_CONTAINER="${PANEL_DB_IN_CONTAINER:-/data/db/kag.db}"
 NEO4J_SERVICE="${NEO4J_SERVICE:-neo4j}"
 COLD_NEO4J=0
 [[ "${1:-}" == "--cold-neo4j" ]] && COLD_NEO4J=1
 
 WARNINGS=()
-CORE_COUNT=0   # liczba kluczowych artefaktów (mysql/neo4j/minio/sqlite/pg) — 0 => exit 1
+CORE_COUNT=0   # liczba kluczowych artefaktów (mysql/neo4j/minio/sqlite/pg)
+MISSING_REQUIRED=()   # nazwy brakujących artefaktów wymaganych — niepuste => ok:false + exit 1
+require_missing() { MISSING_REQUIRED+=("$1"); }
 log()  { echo "[backup] $*"; }
 warn() { echo "[backup][UWAGA] $*" >&2; WARNINGS+=("$*"); }
 die()  { echo "[backup][BŁĄD] $*" >&2; exit 1; }
@@ -57,9 +64,11 @@ if ctr_running release-openspg-mysql; then
   else
     rm -f "${SNAP}/mysql.sql.zst"
     warn "mysqldump nie powiódł się"
+    require_missing mysql
   fi
 else
   warn "kontener release-openspg-mysql nie działa — pomijam dump MySQL"
+  require_missing mysql
 fi
 
 # --- 2. Neo4j (graf wiedzy). Hot-tar może być niespójny (DozerDB) — stąd cotygodniowa weryfikacja
@@ -78,6 +87,7 @@ if [[ -d "${DATA_ROOT}/kag/neo4j/data" ]]; then
     CORE_COUNT=$((CORE_COUNT + 1))
   else
     warn "archiwizacja neo4j nie powiodła się"
+    require_missing neo4j
   fi
   if [[ ${COLD_NEO4J} -eq 1 ]]; then
     docker compose -f "${REPO_ROOT}/deploy/kag/compose.yaml" start "${NEO4J_SERVICE}"
@@ -85,6 +95,7 @@ if [[ -d "${DATA_ROOT}/kag/neo4j/data" ]]; then
   fi
 else
   warn "brak katalogu ${DATA_ROOT}/kag/neo4j/data — pomijam neo4j"
+  require_missing neo4j
 fi
 
 # --- 3. MinIO (uploady builderowe) ---
@@ -94,9 +105,11 @@ if [[ -d "${DATA_ROOT}/kag/minio" ]]; then
     CORE_COUNT=$((CORE_COUNT + 1))
   else
     warn "archiwizacja minio nie powiodła się"
+    require_missing minio
   fi
 else
   warn "brak katalogu ${DATA_ROOT}/kag/minio — pomijam minio"
+  require_missing minio
 fi
 
 # --- 4. Kopia online SQLite panelu (better-sqlite3 backup API; fallback: sqlite3 CLI na hoście) ---
@@ -131,6 +144,7 @@ db.backup(dst).then(() => db.close()).catch((e) => { console.error(String(e)); p
     rm -f "${SNAP}/panel.sqlite"
   fi
   warn "brak kopii SQLite panelu (ani kontener, ani sqlite3 CLI nie zadziałały)"
+  require_missing panel.sqlite
 }
 backup_sqlite
 
@@ -143,9 +157,11 @@ if ctr_running edge-postgres; then
   else
     rm -f "${SNAP}/authentik-pg.sql.zst"
     warn "pg_dump Authentika nie powiódł się"
+    require_missing authentik-pg
   fi
 else
   warn "kontener edge-postgres nie działa — pomijam pg_dump"
+  require_missing authentik-pg
 fi
 
 # --- 6. Certy Caddy (Let's Encrypt — krytyczne przy odtwarzaniu bez wypalania limitów ACME) ---
@@ -164,6 +180,18 @@ if [[ -f "${KAG_ENV}"  ]]; then cp "${KAG_ENV}"  "${SNAP}/env-kag.env"  && chmod
 if [[ -d "${DATA_ROOT}/kag/panel/audit" ]]; then
   tar --zstd -cf "${SNAP}/panel-audit.tar.zst" -C "${DATA_ROOT}/kag/panel" audit \
     || warn "archiwizacja audytu panelu nie powiodła się"
+fi
+
+# --- 8b. Pliki panelu (bloby intake'ów, eksporty CSV, logi akcji, usage MCP) — bez nich
+#         restore SQLite zostawia wiszące blob_path/eksporty. Best-effort (nie-wymagane).
+PANEL_TREES=()
+for tree in uploads exports inbox actions mcp-usage; do
+  [[ -d "${DATA_ROOT}/kag/panel/${tree}" ]] && PANEL_TREES+=("${tree}")
+done
+if [[ ${#PANEL_TREES[@]} -gt 0 ]]; then
+  log "archiwizuję pliki panelu: ${PANEL_TREES[*]}..."
+  tar --zstd -cf "${SNAP}/panel-files.tar.zst" -C "${DATA_ROOT}/kag/panel" "${PANEL_TREES[@]}" \
+    || warn "archiwizacja plików panelu nie powiodła się"
 fi
 
 # --- 9. Stan compose (config zawiera zrenderowane sekrety — snapshot jest 0700/root) ---
@@ -199,7 +227,7 @@ fi
 
 # --- 12. Manifest JSON ---
 OK=false
-[[ ${CORE_COUNT} -gt 0 ]] && OK=true
+[[ ${CORE_COUNT} -gt 0 && ${#MISSING_REQUIRED[@]} -eq 0 ]] && OK=true
 {
   printf '{\n'
   printf '  "ok": %s,\n' "${OK}"
@@ -210,6 +238,14 @@ OK=false
   printf '  "monthlyKeepDays": %s,\n' "${MONTHLY_KEEP_DAYS}"
   printf '  "neo4jMode": "%s",\n' "${NEO4J_MODE}"
   printf '  "coreArtifacts": %s,\n' "${CORE_COUNT}"
+  printf '  "missingRequired": ['
+  first=1
+  for m in "${MISSING_REQUIRED[@]+"${MISSING_REQUIRED[@]}"}"; do
+    [[ ${first} -eq 1 ]] || printf ', '
+    first=0
+    printf '"%s"' "$(json_escape "${m}")"
+  done
+  printf '],\n'
   printf '  "offsite": { "target": "%s", "status": "%s" },\n' "$(json_escape "${OFFSITE_TARGET}")" "${OFFSITE_STATUS}"
   printf '  "files": [\n'
   first=1
@@ -271,6 +307,10 @@ prune_snapshots
 
 cat "${SNAP}/_manifest.json"
 if [[ "${OK}" != "true" ]]; then
-  die "snapshot pusty — żaden kluczowy artefakt nie powstał"
+  die "snapshot NIEKOMPLETNY — brakuje artefaktów wymaganych: ${MISSING_REQUIRED[*]:-brak żadnego}"
+fi
+# ping sukcesu (healthchecks/Kuma push) — cisza po drugiej stronie = alarm
+if [[ -n "${BACKUP_PING_URL:-}" ]]; then
+  curl -fsS -m 10 "${BACKUP_PING_URL}" >/dev/null || warn "ping sukcesu nie doszedł"
 fi
 log "backup zakończony: ${SNAP}"

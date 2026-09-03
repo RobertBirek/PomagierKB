@@ -24,7 +24,8 @@ if command -v skopeo >/dev/null; then
 elif docker buildx version >/dev/null 2>&1; then
   TOOL="buildx"
 else
-  die "brak skopeo (apt install skopeo) i docker buildx — nie mam czym odpytać rejestrów"
+  echo "[update-check][UWAGA] brak skopeo (apt install skopeo) i docker buildx — pomijam odpytanie rejestrów" >&2
+  exit 0
 fi
 log "narzędzie: ${TOOL}"
 

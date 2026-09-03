@@ -1,0 +1,13 @@
+# kag-backup-cold.timer — zimny snapshot neo4j 1. dnia miesiąca o 02:30 (przed nightly 03:20;
+# flock w backup.sh i tak wyklucza równoległość).
+[Unit]
+Description=PomagierKB — timer miesiecznego zimnego backupu (1. dzien, 02:30)
+
+[Timer]
+OnCalendar=*-*-01 02:30:00
+RandomizedDelaySec=10m
+Persistent=true
+Unit=kag-backup-cold.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,37 @@
+# kag-backup-cold.service — comiesięczny ZIMNY snapshot neo4j (stop -> tar -> start).
+# Hot-tar DozerDB może być niespójny; zimny daje gwarantowany punkt odtworzenia grafu.
+# Instalacja: cp deploy/systemd/kag-backup-cold.{service,timer} /etc/systemd/system/
+#             systemctl daemon-reload && systemctl enable --now kag-backup-cold.timer
+[Unit]
+Description=PomagierKB — miesieczny zimny backup (cold neo4j)
+Documentation=file:/kag/docs/design/infra.md
+After=docker.service network-online.target
+Wants=docker.service network-online.target
+OnFailure=kag-alert@%n.service
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+WorkingDirectory=/kag
+Environment=DATA_ROOT=/srv/kag-data
+Environment=BACKUP_OFFSITE_TARGET=
+ExecStart=/kag/deploy/scripts/backup.sh --cold-neo4j
+# Przy okazji miesięcznego okna: odśwież archiwum obrazów DR (skip gdy digesty bez zmian).
+ExecStartPost=/kag/deploy/scripts/save_images.sh
+TimeoutStartSec=3h
+Nice=10
+IOSchedulingClass=idle
+UMask=0077
+
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+ReadWritePaths=/srv/kag-data

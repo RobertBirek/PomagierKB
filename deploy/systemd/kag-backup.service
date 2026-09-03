@@ -7,6 +7,7 @@ Description=PomagierKB — nocny backup stackow edge+kag
 Documentation=file:/kag/docs/design/infra.md
 After=docker.service network-online.target
 Wants=docker.service network-online.target
+OnFailure=kag-alert@%n.service
 
 [Service]
 Type=oneshot
@@ -17,6 +18,8 @@ Environment=DATA_ROOT=/srv/kag-data
 # Cel off-site: "rclone://remote:sciezka" albo cel rsync (user@host:/sciezka).
 # Puste = backup tylko lokalny + warning w manifescie.
 Environment=BACKUP_OFFSITE_TARGET=
+# /etc/kag/alerts.env moze definiowac BACKUP_PING_URL (ping sukcesu) i ALERT_WEBHOOK_URL.
+EnvironmentFile=-/etc/kag/alerts.env
 ExecStart=/kag/deploy/scripts/backup.sh
 TimeoutStartSec=2h
 Nice=10

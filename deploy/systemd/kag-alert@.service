@@ -1,0 +1,19 @@
+# kag-alert@.service — powiadomienie o awarii jednostki (OnFailure=kag-alert@%n.service).
+# Webhook (ntfy/Slack/healthchecks fail-ping) czytany z /etc/kag/alerts.env — NIGDY w repo.
+# Instalacja: cp deploy/systemd/kag-alert@.service /etc/systemd/system/ && systemctl daemon-reload
+#             printf 'ALERT_WEBHOOK_URL=https://ntfy.sh/<twoj-temat>\n' > /etc/kag/alerts.env
+#             chmod 600 /etc/kag/alerts.env
+# Brak pliku/URL = jednostka kończy się cicho (alert to best-effort, nie może psuć backupu).
+[Unit]
+Description=PomagierKB — alert o awarii jednostki %i
+
+[Service]
+Type=oneshot
+User=root
+EnvironmentFile=-/etc/kag/alerts.env
+ExecStart=/bin/sh -c '[ -n "${ALERT_WEBHOOK_URL:-}" ] && curl -fsS -m 10 -d "AWARIA jednostki %i na $(hostname) — $(date -Is). Sprawdz: journalctl -u %i" "${ALERT_WEBHOOK_URL}" || true'
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true

@@ -7,6 +7,7 @@ Description=PomagierKB — weryfikacja ostatniego snapshotu backupu
 Documentation=file:/kag/docs/design/infra.md
 After=docker.service network-online.target
 Wants=docker.service network-online.target
+OnFailure=kag-alert@%n.service
 
 [Service]
 Type=oneshot
