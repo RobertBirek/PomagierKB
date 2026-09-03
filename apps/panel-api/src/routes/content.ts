@@ -10,6 +10,7 @@ import {
   getIntakeOrThrow,
   insertIntake,
   intakeToDetail,
+  retryIntake,
   intakeToListItem,
   listIntakes,
   mimeForExtension,
@@ -19,6 +20,7 @@ import {
   type IntakeRow,
   type IntakeSourceKind,
 } from '../services/intakes.js';
+import { readIngestLimits } from '../services/pipeline-settings.js';
 
 /**
  * Trasy /api/v1/content — Etap 1 pipeline'u (Intake, pipeline-frontend §c):
@@ -160,6 +162,13 @@ export default async function contentRoutes(app: FastifyInstance): Promise<void>
         sourceUrl = body.sourceUrl; // tylko metadana provenance (v1 bez fetchu)
       }
 
+      // Konfigurowalny limit ('ingest.limits' — klucz wreszcie czytany); multipart
+      // 50 MB pozostaje twardym sufitem rejestracji parsera.
+      const limits = readIngestLimits(app.db);
+      if (buffer.length > limits.maxUploadBytes) {
+        throw new AppError('payload_too_large', `treść przekracza skonfigurowany limit ${limits.maxUploadBytes} B`);
+      }
+
       // Blob content-addressed + dedup po sha256 treści.
       const { blobPath } = saveBlob(app.config.dataDir, buffer);
       const existing = findIntakeByBlobPath(app.db, blobPath);
@@ -176,6 +185,7 @@ export default async function contentRoutes(app: FastifyInstance): Promise<void>
         sourceUrl,
         blobPath,
         createdBy: user.id,
+        sizeBytes: buffer.length, // fairness kolejki workera (małe najpierw)
       });
       if (idemKey !== null) rememberIdempotency(user.id, idemKey, row.id);
       reply.auditContext = {
@@ -207,6 +217,32 @@ export default async function contentRoutes(app: FastifyInstance): Promise<void>
       ok: true as const,
       data: { intake: intakeToDetail(getIntakeOrThrow(app.db, req.params.intakeId)) },
     }),
+  );
+
+  // ── POST /content/:intakeId/retry — ponowienie nieudanego intake'u ─────────
+  app.post<{ Params: { intakeId: string } }>(
+    '/content/:intakeId/retry',
+    {
+      config: { rbac: 'operator', audit: 'content.retry', csrf: true, rateLimitGroup: 'mutation' },
+      schema: {
+        params: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['intakeId'],
+          properties: { intakeId: { type: 'string', pattern: INTAKE_ID_PATTERN } },
+        },
+        response: { 200: successRef, '4xx': errorRef, '5xx': errorRef },
+      },
+    },
+    async (req, reply) => {
+      const row = retryIntake(app.db, req.params.intakeId);
+      reply.auditContext = {
+        resourceType: 'intake',
+        resourceId: row.id,
+        metadata: { attempts: row.attempts },
+      };
+      return { ok: true as const, data: { intakeId: row.id, status: row.status, attempts: row.attempts } };
+    },
   );
 
   // ── GET /content?limit — ostatnie intake'y ────────────────────────────────

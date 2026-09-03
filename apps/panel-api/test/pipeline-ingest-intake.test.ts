@@ -270,6 +270,66 @@ describe('walidacja i RBAC', () => {
   });
 });
 
+describe('POST /content/:id/retry (ponowienie nieudanego intake)', () => {
+  it('failed → received → worker kończy draftem; limit prób → 409', async () => {
+    // Zły UTF-8 w .txt → worker ustawia failed
+    const boundary = 'B-retry-1';
+    const bad = await app.inject({
+      method: 'POST',
+      url: '/api/v1/content',
+      headers: { ...as('operator'), 'content-type': `multipart/form-data; boundary=${boundary}` },
+      payload: multipartPayload('zle.txt', Buffer.from([0xff, 0xfe, 0x00, 0x81]), boundary),
+    });
+    expect(bad.statusCode).toBe(202);
+    const intakeId = (bad.json() as { data: { intakeId: string } }).data.intakeId;
+    await tick();
+    expect(getIntake(db, intakeId)?.status).toBe('failed');
+
+    // retry × 3 (limit INTAKE_MAX_ATTEMPTS) — za każdym razem znowu failed
+    for (let i = 1; i <= 3; i++) {
+      const r = await app.inject({
+        method: 'POST',
+        url: `/api/v1/content/${intakeId}/retry`,
+        headers: as('operator'),
+      });
+      expect(r.statusCode).toBe(200);
+      expect((r.json() as { data: { attempts: number } }).data.attempts).toBe(i);
+      await tick();
+      expect(getIntake(db, intakeId)?.status).toBe('failed');
+    }
+    // 4. próba → 409 (wyczerpane)
+    const exhausted = await app.inject({
+      method: 'POST',
+      url: `/api/v1/content/${intakeId}/retry`,
+      headers: as('operator'),
+    });
+    expect(exhausted.statusCode).toBe(409);
+  });
+
+  it('retry intake w stanie innym niż failed → 409; viewer → 403', async () => {
+    const ok = await app.inject({
+      method: 'POST',
+      url: '/api/v1/content',
+      headers: { ...as('operator'), 'content-type': 'application/json' },
+      payload: { text: `${TEXT} Wariant do testu retry.` },
+    });
+    const intakeId = (ok.json() as { data: { intakeId: string } }).data.intakeId;
+    await tick(); // drafted
+    const conflict = await app.inject({
+      method: 'POST',
+      url: `/api/v1/content/${intakeId}/retry`,
+      headers: as('operator'),
+    });
+    expect(conflict.statusCode).toBe(409);
+    const viewer = await app.inject({
+      method: 'POST',
+      url: `/api/v1/content/${intakeId}/retry`,
+      headers: as('viewer'),
+    });
+    expect(viewer.statusCode).toBe(403);
+  });
+});
+
 describe('startIntakeWorker (pętla interwałowa)', () => {
   it('przetwarza kolejkę w tle i daje się zatrzymać', async () => {
     const res = await app.inject({

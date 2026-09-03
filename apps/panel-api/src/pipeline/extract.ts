@@ -48,6 +48,8 @@ export class ExtractError extends Error {
   }
 }
 
+import { RETRYABLE_STATUS, RetryableError, withRetry } from './retry.js';
+
 const DEFAULT_TIMEOUT_MS = 30_000;
 export const QUALITY_MIN_LENGTH = 120;
 export const QUALITY_MIN_PRINTABLE_RATIO = 0.72;
@@ -153,48 +155,61 @@ function stirlingHeaders(deps: ExtractDeps): Record<string, string> {
     : {};
 }
 
-/** Stirling: PDF → markdown. Zwraca null przy błędzie HTTP/sieci (kaskada idzie dalej). */
+/**
+ * Stirling: PDF → markdown. Przejściowe awarie (sieć/timeout/429/5xx) ponawiane
+ * z backoffem — wcześniej pojedynczy 502 po cichu degradował kaskadę do OCR/Tiki.
+ * Ostateczna porażka → null (kaskada idzie dalej).
+ */
 async function stirlingConvert(deps: ExtractDeps, buffer: Buffer, filename: string): Promise<string | null> {
   try {
-    const res = await timedFetch(deps, `${deps.stirlingUrl}/api/v1/convert/pdf/markdown`, {
-      method: 'POST',
-      headers: stirlingHeaders(deps),
-      body: pdfFormData(buffer, filename),
+    return await withRetry(async () => {
+      const res = await timedFetch(deps, `${deps.stirlingUrl}/api/v1/convert/pdf/markdown`, {
+        method: 'POST',
+        headers: stirlingHeaders(deps),
+        body: pdfFormData(buffer, filename),
+      });
+      if (RETRYABLE_STATUS.has(res.status)) throw new RetryableError(`stirling convert HTTP ${res.status}`);
+      if (!res.ok) return null;
+      return await res.text();
     });
-    if (!res.ok) return null;
-    return await res.text();
   } catch {
     return null;
   }
 }
 
-/** Stirling: OCR pol → PDF z warstwą tekstu. Zwraca null przy błędzie. */
+/** Stirling: OCR pol → PDF z warstwą tekstu. Retry przejściowych; null przy porażce. */
 async function stirlingOcr(deps: ExtractDeps, buffer: Buffer, filename: string): Promise<Buffer | null> {
   return withOcrSlot(async () => {
     try {
-      const res = await timedFetch(deps, `${deps.stirlingUrl}/api/v1/misc/ocr-pdf`, {
-        method: 'POST',
-        headers: stirlingHeaders(deps),
-        body: pdfFormData(buffer, filename, { languages: 'pol' }),
+      return await withRetry(async () => {
+        const res = await timedFetch(deps, `${deps.stirlingUrl}/api/v1/misc/ocr-pdf`, {
+          method: 'POST',
+          headers: stirlingHeaders(deps),
+          body: pdfFormData(buffer, filename, { languages: 'pol' }),
+        });
+        if (RETRYABLE_STATUS.has(res.status)) throw new RetryableError(`stirling ocr HTTP ${res.status}`);
+        if (!res.ok) return null;
+        return Buffer.from(await res.arrayBuffer());
       });
-      if (!res.ok) return null;
-      return Buffer.from(await res.arrayBuffer());
     } catch {
       return null;
     }
   });
 }
 
-/** Tika: dowolny dokument → tekst (strip XHTML). Zwraca null przy błędzie. */
+/** Tika: dowolny dokument → tekst (strip XHTML). Retry przejściowych; null przy porażce. */
 async function tikaExtract(deps: ExtractDeps, buffer: Buffer, mime: string): Promise<string | null> {
   try {
-    const res = await timedFetch(deps, `${deps.tikaUrl}/tika`, {
-      method: 'PUT',
-      headers: { 'content-type': mime },
-      body: new Uint8Array(buffer),
+    return await withRetry(async () => {
+      const res = await timedFetch(deps, `${deps.tikaUrl}/tika`, {
+        method: 'PUT',
+        headers: { 'content-type': mime },
+        body: new Uint8Array(buffer),
+      });
+      if (RETRYABLE_STATUS.has(res.status)) throw new RetryableError(`tika HTTP ${res.status}`);
+      if (!res.ok) return null;
+      return stripXhtml(await res.text());
     });
-    if (!res.ok) return null;
-    return stripXhtml(await res.text());
   } catch {
     return null;
   }

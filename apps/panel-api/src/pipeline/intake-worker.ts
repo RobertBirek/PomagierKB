@@ -171,9 +171,37 @@ export async function processIntake(
   return updateIntake(db, row.id, { status: 'drafted', draft_id: draft.id });
 }
 
+/** Twardy limit czasu jednego intake'u — wieszający się dokument nie blokuje kolejki. */
+const INTAKE_DEADLINE_MS = 10 * 60_000;
+/** Równoległość przetwarzania (semafor OCR w extract.ts i tak ogranicza do 2). */
+const INTAKE_CONCURRENCY = 2;
+
+async function processWithDeadline(
+  db: Db,
+  config: AppConfig,
+  row: IntakeRow,
+  deps: IntakeWorkerDeps,
+  deadlineMs: number,
+): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new AppError('upstream_timeout', `intake przekroczył limit ${deadlineMs / 60000} min`)),
+      deadlineMs,
+    );
+    timer.unref?.();
+  });
+  try {
+    await Promise.race([processIntake(db, config, row, deps), timeout]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
 /**
- * Jeden przebieg workera: przetwarza WSZYSTKIE oczekujące intake'i po kolei
- * (najstarszy pierwszy). Błąd jednego intake'u → failed z kodem, pętla idzie
+ * Jeden przebieg workera: przetwarza WSZYSTKIE oczekujące intake'i pulą
+ * INTAKE_CONCURRENCY (kolejność z nextReceivedIntake: małe najpierw), z twardym
+ * deadline'em per intake. Błąd/timeout jednego → failed z kodem, pula idzie
  * dalej. Zwraca liczbę przetworzonych (drafted+failed).
  */
 export async function tickIntakeWorker(
@@ -183,17 +211,28 @@ export async function tickIntakeWorker(
   log?: FastifyBaseLogger,
 ): Promise<number> {
   let processed = 0;
-  for (;;) {
-    const row = nextReceivedIntake(db);
-    if (row === null) return processed;
+  const inflight = new Map<string, Promise<void>>();
+
+  const runOne = async (row: IntakeRow): Promise<void> => {
     try {
-      await processIntake(db, config, row, deps);
+      await processWithDeadline(db, config, row, deps, INTAKE_DEADLINE_MS);
       log?.info({ intakeId: row.id }, 'intake przetworzony do szkicu');
     } catch (err) {
       updateIntake(db, row.id, { status: 'failed', error: errorCode(err) });
       log?.warn({ intakeId: row.id, err }, 'intake zakończony błędem');
     }
     processed++;
+  };
+
+  for (;;) {
+    while (inflight.size < INTAKE_CONCURRENCY) {
+      const row = nextReceivedIntake(db, [...inflight.keys()]);
+      if (row === null) break;
+      const p = runOne(row).finally(() => inflight.delete(row.id));
+      inflight.set(row.id, p);
+    }
+    if (inflight.size === 0) return processed;
+    await Promise.race(inflight.values());
   }
 }
 

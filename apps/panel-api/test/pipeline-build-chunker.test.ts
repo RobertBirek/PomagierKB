@@ -136,3 +136,50 @@ describe('pomocniki chunkera', () => {
     expect(makePreview('x'.repeat(50), 10)).toBe('x'.repeat(10)); // megasłowo — twardo
   });
 });
+
+describe('chunker — świadomość code-fence (Faza 4 programu rozbudowy)', () => {
+  it('blok ``` z pustymi liniami w środku pozostaje jednym kawałkiem', () => {
+    const md = [
+      '# Instrukcja',
+      'Akapit wstępny.',
+      '',
+      '```bash',
+      'echo start',
+      '',
+      'echo po pustej linii',
+      '```',
+      '',
+      'Akapit końcowy.',
+    ].join('\n');
+    const chunks = chunkDocument(md, { maxLen: 1800 });
+    const joined = chunks.map((c) => c.content).join('\n\n');
+    // fence w całości w jednym chunku: otwarcie i domknięcie w tym samym kawałku
+    const withFence = chunks.filter((c) => c.content.includes('```'));
+    expect(withFence).toHaveLength(1);
+    expect((withFence[0]!.content.match(/```/g) ?? []).length).toBe(2);
+    expect(withFence[0]!.content).toContain('echo po pustej linii');
+    expect(joined).toContain('Akapit wstępny.');
+    expect(joined).toContain('Akapit końcowy.');
+  });
+
+  it('fence dłuższy niż maxLen dzielony na granicach linii z ponownym otwarciem', () => {
+    const lines = Array.from({ length: 40 }, (_, i) => `linia_kodu_${i} = wartość_${i};`);
+    const md = '```js\n' + lines.join('\n') + '\n```';
+    const chunks = chunkDocument(md, { maxLen: 400 });
+    expect(chunks.length).toBeGreaterThan(1);
+    for (const c of chunks) {
+      expect(c.content.length).toBeLessThanOrEqual(400);
+      expect(c.content.startsWith('```js\n')).toBe(true);
+      expect(c.content.endsWith('\n```')).toBe(true);
+    }
+    // żadna linia kodu nie zginęła
+    const all = chunks.map((c) => c.content).join('\n');
+    for (const l of lines) expect(all).toContain(l);
+  });
+
+  it('fence niedomknięty (urwany dokument) nie wywraca chunkera', () => {
+    const md = 'Tekst.\n\n```python\nprint("bez domknięcia")';
+    const chunks = chunkDocument(md, { maxLen: 1800 });
+    expect(chunks.map((c) => c.content).join('\n')).toContain('print("bez domknięcia")');
+  });
+});

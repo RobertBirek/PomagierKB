@@ -103,6 +103,86 @@ export function sha256hex(input: string): string {
   return createHash('sha256').update(input, 'utf8').digest('hex');
 }
 
+/** Czy kawałek to blok kodu ``` (fence markdown). */
+function isFence(text: string): boolean {
+  return /^```/.test(text.trimStart());
+}
+
+/**
+ * Podział tekstu na akapity z fence'ami jako atomami: wewnątrz ```...``` puste
+ * linie NIE rozdzielają (dotąd blok kodu bywał cięty w środku — chunk z urwanym
+ * fencem psuł rendering i sens fragmentu). Fence niedomknięty → do końca tekstu.
+ */
+export function splitParagraphsFenceAware(text: string): string[] {
+  const out: string[] = [];
+  let buf: string[] = [];
+  let inFence = false;
+  const flush = (): void => {
+    const joined = buf.join('\n');
+    if (joined.trim() !== '') out.push(joined);
+    buf = [];
+  };
+  for (const line of text.split('\n')) {
+    if (/^\s*```/.test(line)) {
+      if (!inFence) {
+        flush(); // tekst przed fencem to osobny akapit
+        inFence = true;
+        buf.push(line);
+      } else {
+        buf.push(line);
+        inFence = false;
+        flush(); // domknięty fence = atomowy kawałek
+      }
+      continue;
+    }
+    if (!inFence && /^\s*$/.test(line)) {
+      flush();
+      continue;
+    }
+    buf.push(line);
+  }
+  flush();
+  return out;
+}
+
+/**
+ * Fence dłuższy niż maxLen: cięcie WYŁĄCZNIE na granicach linii, każdy kawałek
+ * domknięty i ponownie otwarty tą samą linią fence'a (blok pozostaje poprawnym
+ * markdownem). Pojedyncza linia dłuższa niż budżet — twardo (patologia).
+ */
+export function splitLongFence(fence: string, maxLen: number): string[] {
+  const lines = fence.split('\n');
+  const opening = lines[0] ?? '```';
+  const closing = '```';
+  const body = lines.slice(1, lines[lines.length - 1]?.trim() === closing ? -1 : undefined);
+  const overhead = opening.length + closing.length + 2; // \n po otwarciu i przed zamknięciem
+  const budget = Math.max(maxLen - overhead, 1);
+  const out: string[] = [];
+  let cur: string[] = [];
+  let len = 0;
+  const flush = (): void => {
+    if (cur.length === 0) return;
+    out.push(`${opening}\n${cur.join('\n')}\n${closing}`);
+    cur = [];
+    len = 0;
+  };
+  for (const line of body) {
+    const add = line.length + (cur.length > 0 ? 1 : 0);
+    if (len + add > budget && cur.length > 0) flush();
+    if (line.length > budget) {
+      // patologiczna pojedyncza linia — tnij twardo, nadal w fence'ach
+      for (let i = 0; i < line.length; i += budget) {
+        out.push(`${opening}\n${line.slice(i, i + budget)}\n${closing}`);
+      }
+      continue;
+    }
+    cur.push(line);
+    len += add;
+  }
+  flush();
+  return out.length > 0 ? out : [fence.slice(0, maxLen)];
+}
+
 export function chunkDocument(markdown: string, options: ChunkerOptions = {}): DocumentChunk[] {
   const maxLen = Math.max(1, options.maxLen ?? DEFAULT_MAX_LEN);
   const previewLen = Math.max(1, options.previewLen ?? DEFAULT_PREVIEW_LEN);
@@ -124,12 +204,15 @@ export function chunkDocument(markdown: string, options: ChunkerOptions = {}): D
   };
 
   for (const section of splitSections(markdown)) {
-    // Akapity sekcji (split po pustej linii), za długie dzielone od razu na kawałki ≤maxLen.
+    // Akapity sekcji (split po pustej linii) ze ŚWIADOMOŚCIĄ code-fence'ów:
+    // blok ``` jest atomowy (nie tniemy w środku po pustych liniach); za długie
+    // akapity/fence'y dzielone od razu na kawałki ≤maxLen.
     const pieces: string[] = [];
-    for (const para of section.lines.join('\n').split(/\n\s*\n/)) {
+    for (const para of splitParagraphsFenceAware(section.lines.join('\n'))) {
       const p = para.trim();
       if (p === '') continue;
       if (p.length <= maxLen) pieces.push(p);
+      else if (isFence(p)) pieces.push(...splitLongFence(p, maxLen));
       else pieces.push(...splitLongParagraph(p, maxLen));
     }
 

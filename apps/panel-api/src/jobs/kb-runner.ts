@@ -18,10 +18,10 @@ import type { AppConfig } from '../config.js';
  * `@@progress {json}` + actions.progress_json. Provisioning to kilka krótkich
  * wywołań HTTP, więc bieg w tym samym procesie jest bezpieczny.
  *
- * TODO(actions-runner, Faza 4): długobieżny build_kb pójdzie przez
- * services/actions-runner.ts (spawn detached dist/jobs/run-job.js) — ten runner
- * zostaje dla krótkich akcji albo zostanie na niego przełożony; kontrakt
- * (wiersz actions + format logu + @@progress) jest identyczny.
+ * Długobieżny build_kb idzie przez services/actions-runner.ts (spawn detached
+ * dist/jobs/run-job.js — patrz POST /kbs/:ns/build); ten runner obsługuje
+ * krótkie akcje provisioningu. Kontrakt (wiersz actions + format logu +
+ * @@progress) jest w obu ścieżkach identyczny.
  */
 
 export interface KbJobContext {

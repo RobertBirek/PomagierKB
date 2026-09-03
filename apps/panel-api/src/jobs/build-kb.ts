@@ -1,4 +1,5 @@
 import type { ActionProgress, Db } from '@pomagierkb/shared/db';
+import { readChunkingSettings } from '../services/pipeline-settings.js';
 import {
   clearDirty,
   findFinishedBuildJob,
@@ -92,7 +93,8 @@ export async function runBuildKb(deps: BuildKbDeps): Promise<BuildKbResult> {
 
   // 2) Eksport CSV + mirror + manifesty.
   step(2, 'export', 'Eksport zatwierdzonych szkiców do CSV');
-  const exp = runExport({ db, dataDir: config.dataDir }, namespace);
+  // Parametry chunkera z ustawień ('chunking' — wcześniej martwy klucz, limity na sztywno).
+  const exp = runExport({ db, dataDir: config.dataDir }, namespace, readChunkingSettings(db));
   deps.log(`eksport #${exp.runId}: dokumentów ${exp.docCount}, chunków ${exp.chunkCount} → ${exp.dir}`);
 
   const kb = getKbOrThrow(db, namespace);
