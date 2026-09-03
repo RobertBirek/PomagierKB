@@ -309,7 +309,7 @@ Dysk: min. 250 GB NVMe (dane + 14 dni backupów lokalnych; neo4j+minio rosną z 
 - deploy/systemd/kag-backup-verify.timer — niedziela 04:30
 - docs/deployment.md — runbook wdrożenia krok po kroku (PL)
 - docs/authentik-setup.md — konfiguracja Authentika: grupy kag-*, provider OIDC, aplikacja, embedded outpost, forward-auth (PL)
-- docs/runbook.md — operacje: aktualizacje, restore z backupu, diagnostyka bez portów na hoście (PL)
+- docs/runbooks/ — operacje (PL): disaster-recovery, break-glass-authentik, typowe-awarie, backup-failure-triage, restore-single-kb, secret-rotation, openspg-frozen
 - services/panel/Dockerfile — multi-stage: vite build frontendu + runtime Fastify serwujący statyki (interfejs do podsystemu panelu)
 - services/mcp/Dockerfile — runtime node:22-alpine serwera MCP (interfejs do podsystemu MCP)
 

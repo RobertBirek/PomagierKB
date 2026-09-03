@@ -18,6 +18,15 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
+      - run: npm run build
+
+  image-build:
+    # Build-only (bez push) — łapie regresje Dockerfile'i zanim dotkną deployu.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -f services/panel/Dockerfile -t kag-panel:ci .
+      - run: docker build -f services/mcp/Dockerfile -t kag-mcp:ci .
 
   compose-validate:
     runs-on: ubuntu-latest
