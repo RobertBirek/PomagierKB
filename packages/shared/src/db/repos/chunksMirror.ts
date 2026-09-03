@@ -49,6 +49,72 @@ export function replaceForDocument(db: Db, namespace: string, docId: string, chu
   tx.immediate();
 }
 
+/** Pojedynczy chunk z mirrora (pełna treść — kb_get_source). */
+export function getChunk(db: Db, id: string): ChunkMirrorRow | null {
+  const row = db.prepare('SELECT * FROM chunks_mirror WHERE id = ?').get(id) as
+    | ChunkMirrorRow
+    | undefined;
+  return row ?? null;
+}
+
+/** Wszystkie chunki dokumentu w kolejności id (sufiks _NNN eksportera = kolejność sekcji). */
+export function getDocumentChunks(db: Db, docId: string): ChunkMirrorRow[] {
+  return db
+    .prepare('SELECT * FROM chunks_mirror WHERE doc_id = ? ORDER BY id')
+    .all(docId) as ChunkMirrorRow[];
+}
+
+export interface DocumentSummary {
+  docId: string;
+  title: string | null;
+  chunks: number;
+  sourceRef: string | null;
+  updatedAt: string;
+}
+
+/** Przegląd dokumentów w KB (kb_list_documents): agregacja po doc_id + filtr tytułu. */
+export function listDocuments(
+  db: Db,
+  namespace: string,
+  opts: { q?: string; limit?: number; offset?: number } = {},
+): { items: DocumentSummary[]; total: number } {
+  const limit = Math.min(Math.max(opts.limit ?? 20, 1), 50);
+  const offset = Math.max(opts.offset ?? 0, 0);
+  const like = opts.q !== undefined && opts.q !== '' ? `%${opts.q}%` : null;
+  const where = like === null ? 'namespace = ?' : 'namespace = ? AND title LIKE ?';
+  const args: unknown[] = like === null ? [namespace] : [namespace, like];
+  const total = (
+    db
+      .prepare(`SELECT COUNT(DISTINCT doc_id) AS n FROM chunks_mirror WHERE ${where}`)
+      .get(...args) as { n: number }
+  ).n;
+  const rows = db
+    .prepare(
+      `SELECT doc_id, MIN(title) AS title, COUNT(*) AS chunks, MIN(source_ref) AS source_ref,
+              MAX(updated_at) AS updated_at
+       FROM chunks_mirror WHERE ${where}
+       GROUP BY doc_id ORDER BY MIN(title) IS NULL, MIN(title), doc_id
+       LIMIT ? OFFSET ?`,
+    )
+    .all(...args, limit, offset) as {
+    doc_id: string;
+    title: string | null;
+    chunks: number;
+    source_ref: string | null;
+    updated_at: string;
+  }[];
+  return {
+    items: rows.map((r) => ({
+      docId: r.doc_id,
+      title: r.title,
+      chunks: r.chunks,
+      sourceRef: r.source_ref,
+      updatedAt: r.updated_at,
+    })),
+    total,
+  };
+}
+
 export interface FtsResult {
   id: string;
   docId: string;

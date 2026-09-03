@@ -2,6 +2,9 @@ import type { KbTool } from './types.js';
 import { kbSearchTool } from './kb-search.js';
 import { kbAnswerTool } from './kb-answer.js';
 import { kbListTool } from './kb-list.js';
+import { kbGetSourceTool } from './kb-get-source.js';
+import { kbListDocumentsTool } from './kb-list-documents.js';
+import { kbDraftStatusTool } from './kb-draft-status.js';
 import { kbSubmitDraftTool } from './kb-submit-draft.js';
 import { kbFeedbackTool } from './kb-feedback.js';
 
@@ -14,6 +17,9 @@ export const ALL_TOOLS: KbTool[] = [
   kbSearchTool,
   kbAnswerTool,
   kbListTool,
+  kbGetSourceTool,
+  kbListDocumentsTool,
+  kbDraftStatusTool,
   kbSubmitDraftTool,
   kbFeedbackTool,
 ];
@@ -21,4 +27,13 @@ export const ALL_TOOLS: KbTool[] = [
 /** Alias zgodności ze stubem shellu. */
 export const allTools: KbTool[] = ALL_TOOLS;
 
-export { kbSearchTool, kbAnswerTool, kbListTool, kbSubmitDraftTool, kbFeedbackTool };
+export {
+  kbSearchTool,
+  kbAnswerTool,
+  kbListTool,
+  kbGetSourceTool,
+  kbListDocumentsTool,
+  kbDraftStatusTool,
+  kbSubmitDraftTool,
+  kbFeedbackTool,
+};

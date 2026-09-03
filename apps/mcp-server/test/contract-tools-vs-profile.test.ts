@@ -16,6 +16,9 @@ const REQUIRED_INPUT: Record<string, string[]> = {
   kb_search: ['query'],
   kb_answer: ['question'],
   kb_list: [],
+  kb_get_source: ['id'],
+  kb_list_documents: ['namespace'],
+  kb_draft_status: [],
   kb_submit_draft: ['namespace', 'title', 'content'],
   kb_feedback: ['answerId', 'verdict'],
 };
@@ -24,6 +27,9 @@ const REQUIRED_OUTPUT: Record<string, string[]> = {
   kb_search: ['results', 'degraded'],
   kb_answer: ['answer', 'citations', 'confidence', 'gapRecorded'],
   kb_list: ['kbs'],
+  kb_get_source: ['id', 'namespace', 'content', 'truncated'],
+  kb_list_documents: ['documents', 'total'],
+  kb_draft_status: ['drafts'],
   kb_submit_draft: ['draftId', 'status', 'reviewRequired'],
   kb_feedback: ['ok', 'gapCreated'],
 };
@@ -66,7 +72,11 @@ describe('kontrakt: tools/list == tools_json profilu (dla każdego profilu z DB)
   it('seed migracji zawiera profil default (odczyt + feedback, bez write)', () => {
     const row = getProfile(h.db, 'default');
     expect(row).not.toBeNull();
-    expect(JSON.parse(row!.tools_json)).toEqual(['kb_search', 'kb_answer', 'kb_list', 'kb_feedback']);
+    // 0001 seeduje 4 narzędzia; 0002 dopisuje read-only v2 do profili z kb_search
+    expect(JSON.parse(row!.tools_json)).toEqual([
+      'kb_search', 'kb_answer', 'kb_list', 'kb_feedback',
+      'kb_get_source', 'kb_list_documents', 'kb_draft_status',
+    ]);
   });
 
   it('rejestr ALL_TOOLS pokrywa się 1:1 z whitelistą KNOWN_MCP_TOOLS', () => {

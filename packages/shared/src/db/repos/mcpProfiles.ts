@@ -9,6 +9,9 @@ export const KNOWN_MCP_TOOLS = [
   'kb_search',
   'kb_answer',
   'kb_list',
+  'kb_get_source',
+  'kb_list_documents',
+  'kb_draft_status',
   'kb_submit_draft',
   'kb_feedback',
 ] as const;

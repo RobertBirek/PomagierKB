@@ -9,7 +9,16 @@ import type { PlKey } from '../i18n/pl';
 import type { BadgeVariant } from './status';
 
 /** Znane narzędzia MCP — lustro KNOWN_MCP_TOOLS z packages/shared (backend waliduje enum). */
-export const MCP_TOOLS = ['kb_search', 'kb_answer', 'kb_list', 'kb_submit_draft', 'kb_feedback'] as const;
+export const MCP_TOOLS = [
+  'kb_search',
+  'kb_answer',
+  'kb_list',
+  'kb_get_source',
+  'kb_list_documents',
+  'kb_draft_status',
+  'kb_submit_draft',
+  'kb_feedback',
+] as const;
 export type McpToolName = (typeof MCP_TOOLS)[number];
 
 /** Wzorzec id profilu — lustro pattern z routes/mcp-admin.ts. */

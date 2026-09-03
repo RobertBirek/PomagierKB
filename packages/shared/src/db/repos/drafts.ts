@@ -190,6 +190,14 @@ export interface DraftListFilter {
   offset?: number;
 }
 
+/** Ostatnie drafty zgłoszone danym kluczem MCP (kb_draft_status — tylko własne). */
+export function listDraftsByKey(db: Db, keyId: string, limit = 20): DraftRow[] {
+  const capped = Math.min(Math.max(limit, 1), 50);
+  return db
+    .prepare('SELECT * FROM drafts WHERE submitted_by_key = ? ORDER BY created_at DESC, id DESC LIMIT ?')
+    .all(keyId, capped) as DraftRow[];
+}
+
 export function listDrafts(db: Db, filter: DraftListFilter = {}): { items: DraftRow[]; total: number } {
   const where: string[] = [];
   const params: unknown[] = [];
