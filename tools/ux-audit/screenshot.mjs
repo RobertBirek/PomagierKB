@@ -11,7 +11,7 @@ const outDir = process.argv.includes('--out')
   ? process.argv[process.argv.indexOf('--out') + 1]
   : 'docs/design/ux-audit/before';
 const pagesArg = process.argv.includes('--pages')
-  ? process.argv[process.argv.indexOf('--pages') + 1].split(',')
+  ? process.argv[process.argv.indexOf('--pages') + 1].split(',').map((p) => (p.startsWith('/') ? p : '/' + p))
   : null;
 
 const PAGES = pagesArg ?? ['/overview', '/ask', '/add', '/inbox', '/inbox?tab=gaps', '/kb', '/mcp', '/mcp?tab=profiles', '/mcp?tab=snippets', '/settings', '/settings?tab=system', '/settings?tab=audit', '/settings?tab=health'];
@@ -78,6 +78,8 @@ mkdirSync(outDir, { recursive: true });
 
 let count = 0;
 for (const theme of THEMES) {
+  // Wróć na origin panelu — po błędnej nawigacji dokument bywa opaque (localStorage rzuca).
+  await page.goto(BASE + '/', { waitUntil: 'domcontentloaded' }).catch(() => {});
   await page.evaluate((t) => {
     localStorage.setItem('pomagierkb.theme', t);
     document.documentElement.setAttribute('data-theme', t);

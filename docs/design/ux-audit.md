@@ -81,8 +81,10 @@ Zrzut `after/mcp--desktop--light.png` pokazuje surowy JSON-RPC `method not allow
 Caddy kierował `handle /mcp*` do kag-mcp:3001, więc strona SPA `/mcp` **nigdy nie była
 osiągalna na produkcji** (defekt sprzed przebudowy). Serwer MCP obsługuje wyłącznie
 `POST /mcp/:profileId` (goły `/mcp` to łapacz 405) → matcher zawężony do `handle /mcp/*`
-(deploy/edge/Caddyfile, walidacja `caddy validate` OK). Po przeładowaniu Caddy: powtórzyć
-zrzut `/mcp` i test E2E #7.
+(deploy/edge/Caddyfile). **Rozwiązane**: po restarcie edge-caddy (uwaga: `caddy reload`
+nie wystarczył — bind-mount pojedynczego pliku trzymał stary inode po edycji) `/mcp`
+serwuje SPA, `/mcp/<profil>` nadal trafia do kag-mcp (401 bez tokenu). E2E **10/10 PASS**,
+zrzuty `/mcp` w `after/` powtórzone.
 
 ### Backlog backendu (poza zakresem przebudowy)
 
