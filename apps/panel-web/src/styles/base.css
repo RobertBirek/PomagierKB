@@ -306,14 +306,8 @@ table.data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .audit-day { font-weight: 700; font-size: 13px; color: var(--text-muted); text-transform: none; padding-top: 4px; }
 
 /* ── /inbox + /kb (agent stron inbox/kb) ── */
-.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); }
-.tab {
-  padding: 8px 16px; border: none; background: none; cursor: pointer;
-  color: var(--text-muted); font-weight: 600; border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
-}
-.tab:hover { color: var(--text); }
-.tab-active { color: var(--accent); border-bottom-color: var(--accent); }
+/* (duplikat .tabs/.tab usunięty — Faza 1 przebudowy; obowiązuje definicja wyżej) */
+
 
 .page-title { margin: 0; font-size: 20px; }
 .section-title { margin: 0 0 8px; font-size: 15px; }

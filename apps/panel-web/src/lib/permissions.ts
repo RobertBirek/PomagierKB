@@ -40,6 +40,7 @@ export function can(role: Role | null | undefined, permission: Permission): bool
 
 /** Uprawnienie wymagane do zobaczenia strony w nawigacji. */
 export const PAGE_PERMISSION: Record<string, Permission> = {
+  '/overview': 'ask',
   '/ask': 'ask',
   '/add': 'propose',
   '/inbox': 'inbox',

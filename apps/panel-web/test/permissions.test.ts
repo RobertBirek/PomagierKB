@@ -41,7 +41,7 @@ describe('can()', () => {
 describe('PAGE_PERMISSION', () => {
   it('pokrywa wszystkie strony shellu', () => {
     expect(Object.keys(PAGE_PERMISSION).sort()).toEqual(
-      ['/add', '/ask', '/inbox', '/kb', '/mcp', '/settings'],
+      ['/add', '/ask', '/inbox', '/kb', '/mcp', '/overview', '/settings'],
     );
   });
 
@@ -50,6 +50,6 @@ describe('PAGE_PERMISSION', () => {
       .filter(([, perm]) => can('viewer', perm))
       .map(([path]) => path)
       .sort();
-    expect(visible).toEqual(['/add', '/ask']);
+    expect(visible).toEqual(['/add', '/ask', '/overview']);
   });
 });

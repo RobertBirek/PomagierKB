@@ -6,6 +6,7 @@ import { queryClient } from './lib/queryClient';
 import { initTheme } from './lib/theme';
 import { ToastProvider } from './components/Toast';
 import { router } from './router';
+import './styles/app.css';
 import './styles/theme.css';
 import './styles/base.css';
 

@@ -33,7 +33,14 @@ function redirectToLogin(): void {
   window.location.assign('/auth/login?returnTo=' + encodeURIComponent(returnTo));
 }
 
-async function parseEnvelope<T>(res: Response): Promise<T> {
+/** Meta paginacji z koperty list (backend: drafts/learning/actions zwracają {page,limit,total}). */
+export interface ListMeta {
+  page?: number;
+  limit?: number;
+  total?: number;
+}
+
+async function parseEnvelopeFull<T>(res: Response): Promise<{ data: T; meta?: ListMeta }> {
   if (res.status === 401) {
     redirectToLogin();
     throw new ApiError('unauthorized', 'Sesja wygasła', 401);
@@ -53,7 +60,17 @@ async function parseEnvelope<T>(res: Response): Promise<T> {
       err?.details,
     );
   }
-  return body.data as T;
+  const meta = body.meta;
+  return {
+    data: body.data as T,
+    ...(meta !== undefined && meta !== null && typeof meta === 'object'
+      ? { meta: meta as ListMeta }
+      : {}),
+  };
+}
+
+async function parseEnvelope<T>(res: Response): Promise<T> {
+  return (await parseEnvelopeFull<T>(res)).data;
 }
 
 export interface ApiFetchOptions {
@@ -64,11 +81,8 @@ export interface ApiFetchOptions {
   headers?: Record<string, string>;
 }
 
-/**
- * Fetch z kopertą. Ścieżki względne od originu ('' — ten sam host co panel),
- * np. apiFetch('/api/v1/me'). Rzuca ApiError; 401 dodatkowo przekierowuje na login.
- */
-export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): Promise<T> {
+/** Wspólny rdzeń żądania (init + fetch + mapowanie błędu sieci) dla obu wariantów. */
+async function doFetch(path: string, options: ApiFetchOptions = {}): Promise<Response> {
   const { method = 'GET', body, signal, headers = {} } = options;
   const init: RequestInit = { method, credentials: 'include', headers };
   if (signal !== undefined) init.signal = signal;
@@ -80,14 +94,32 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
       init.headers = { 'Content-Type': 'application/json', ...headers };
     }
   }
-  let res: Response;
   try {
-    res = await fetch(path, init);
+    return await fetch(path, init);
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') throw err;
     throw new ApiError('network_error', 'Brak połączenia z serwerem', 0);
   }
-  return parseEnvelope<T>(res);
+}
+
+/**
+ * Fetch z kopertą. Ścieżki względne od originu ('' — ten sam host co panel),
+ * np. apiFetch('/api/v1/me'). Rzuca ApiError; 401 dodatkowo przekierowuje na login.
+ */
+export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): Promise<T> {
+  return parseEnvelope<T>(await doFetch(path, options));
+}
+
+/**
+ * Jak apiFetch, ale zwraca też meta z koperty (liczniki paginacji list).
+ * Addytywne — apiFetch pozostaje bez zmian (kontrakt 143 testów nietknięty).
+ */
+export async function apiFetchWithMeta<T>(
+  path: string,
+  options: ApiFetchOptions = {},
+): Promise<{ data: T; meta?: ListMeta }> {
+  const res = await doFetch(path, options);
+  return parseEnvelopeFull<T>(res);
 }
 
 export interface ApiSseOptions {

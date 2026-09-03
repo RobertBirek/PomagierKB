@@ -44,3 +44,12 @@ export function toggleTheme(): Theme {
   }
   return next;
 }
+
+/** Tryb „system": usuwa zapisany wybór — initTheme/prefers-color-scheme przejmują. */
+export function clearStoredTheme(): void {
+  try {
+    window.localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    /* localStorage może być zablokowany — ignorujemy */
+  }
+}
