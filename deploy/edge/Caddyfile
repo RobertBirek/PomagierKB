@@ -35,7 +35,8 @@ kag.ilovelighting.sanok.pl {
 
 	# 1) MCP — Streamable HTTP; auth per-user tokenem WEWNĄTRZ serwera MCP.
 	#    ŚWIADOMIE BEZ forward_auth (klienci MCP nie przejdą redirectu OIDC).
-	handle /mcp* {
+	#    Tylko /mcp/<profil> (goły /mcp to strona panelu SPA — trafia do handle poniżej).
+	handle /mcp/* {
 		reverse_proxy kag-mcp:3001 {
 			flush_interval -1
 		}

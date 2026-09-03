@@ -53,8 +53,40 @@ Wskaźnik zdrowia pokazywał „Działa z ostrzeżeniami" — zweryfikowano: to 
 „otwarte luki wiedzy" (1 luka z testowego feedbacku 👎 w E2E), wszystkie komponenty 200,
 breakery puste. Nie jest to defekt.
 
-## Następne kroki
+## Wynik przebudowy (AFTER — 2026-09-03)
 
-Wg planu przebudowy: Faza 1 fundament (Tailwind v4 + tokeny + mostek + apiFetchWithMeta) →
-Faza 2 kit+shell → Faza 3 strony + /overview → Faza 4 E2E + zrzuty „AFTER" (ta sama macierz,
-`ux-audit/after/`) → Faza 5 deploy.
+Przebudowa ukończona i wdrożona na produkcję (obraz `kag-panel:local`, rollback:
+`kag-panel:pre-v2`). Zrzuty AFTER: `ux-audit/after/` (52 szt. — ta sama macierz co BEFORE
++ `/overview`, `/settings?tab=audit`, `/settings?tab=health`).
+
+Zamknięcie ustaleń krytycznych:
+
+| # | Ustalenie BEFORE | Status AFTER |
+|---|---|---|
+| 1 | Pozioma nawigacja bez hierarchii | ✅ Sidebar 240/56px (sekcje Praca/Zasoby/System, badge pending, skrót `[`), topbar z ⌘K, mobile bottom-nav |
+| 2 | Emoji zamiast ikon | ✅ lucide-react w całej aplikacji; 0 emoji-ikon |
+| 3 | Brak H1/hierarchii | ✅ PageHeader na każdej stronie + `head()` document.title |
+| 4 | Tabele bez sortu/liczników/mobile | ✅ DataTable v2: aria-sort, pager „x–y z N" z meta.total, mobileCard |
+| 5 | Destrukcja bez potwierdzeń | ✅ Macierz: 9× AlertDialog z nazwą obiektu i konsekwencjami, reject z wymaganym powodem, toast+Undo (nowy wątek, threshold) |
+| 6 | 4 kontrolki-atrapy | ✅ quality podłączone do GET /kbs/:ns/quality; minScore jawnie read-only z powodem; select KB usunięty; sort działa |
+| 7 | Surowy JSON jako UI | ✅ details-list + diff audytu + CodeBlock zwijany |
+| 8 | 13 tokenów bez skal, 48 inline style, konflikt .tabs | ✅ Tailwind v4 @theme (Linear-like), 0 `.btn`, base/theme.css skasowane |
+
+Weryfikacja: 739 testów zielonych, typecheck/lint/build czyste, bundle ~212 kB gz JS
++ 9,4 kB CSS (cel <220), E2E Playwright (`tools/ux-audit/e2e.mjs`) na produkcji.
+
+### Defekt odkryty przez E2E: `/mcp` przesłonięty przez reverse-proxy
+
+Zrzut `after/mcp--desktop--light.png` pokazuje surowy JSON-RPC `method not allowed` —
+Caddy kierował `handle /mcp*` do kag-mcp:3001, więc strona SPA `/mcp` **nigdy nie była
+osiągalna na produkcji** (defekt sprzed przebudowy). Serwer MCP obsługuje wyłącznie
+`POST /mcp/:profileId` (goły `/mcp` to łapacz 405) → matcher zawężony do `handle /mcp/*`
+(deploy/edge/Caddyfile, walidacja `caddy validate` OK). Po przeładowaniu Caddy: powtórzyć
+zrzut `/mcp` i test E2E #7.
+
+### Backlog backendu (poza zakresem przebudowy)
+
+- endpoint reopen luki (dziś ignore = nieodwracalne),
+- `answer.minScore` w białej liście SETTINGS_KEYS (suwak dziś read-only),
+- sort/limit jako query-params list (dziś sort kliencki per-strona),
+- meta.total dla /content.

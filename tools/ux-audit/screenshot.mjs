@@ -14,7 +14,7 @@ const pagesArg = process.argv.includes('--pages')
   ? process.argv[process.argv.indexOf('--pages') + 1].split(',')
   : null;
 
-const PAGES = pagesArg ?? ['/ask', '/add', '/inbox', '/inbox?tab=gaps', '/kb', '/mcp', '/mcp?tab=profiles', '/mcp?tab=snippets', '/settings', '/settings?tab=system'];
+const PAGES = pagesArg ?? ['/overview', '/ask', '/add', '/inbox', '/inbox?tab=gaps', '/kb', '/mcp', '/mcp?tab=profiles', '/mcp?tab=snippets', '/settings', '/settings?tab=system', '/settings?tab=audit', '/settings?tab=health'];
 const VIEWPORTS = [
   { name: 'desktop', width: 1440, height: 900 },
   { name: 'mobile', width: 375, height: 812 },
