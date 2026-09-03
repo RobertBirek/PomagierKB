@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { StatusBadge } from './StatusBadge';
+import { StatusBadgeV2 as StatusBadge } from './kb/StatusBadgeV2';
 import { isTerminalActionStatus, useAction, type ActionState } from '../hooks/useAction';
 import { t } from '../i18n/t';
 

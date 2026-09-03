@@ -5,13 +5,13 @@
  * Brak sesji → apiFetch w useMe robi redirect na /auth/login.
  */
 import { HeadContent, Outlet, useRouterState } from '@tanstack/react-router';
-import { Lock } from 'lucide-react';
+import { Lock, Unplug } from 'lucide-react';
 import { TooltipProvider } from '@/ui/tooltip';
 import { useMe } from '@/hooks/useMe';
 import { can, PAGE_PERMISSION } from '@/lib/permissions';
 import { t } from '@/i18n/t';
-import { EmptyState } from './EmptyState';
-import { Skeleton } from './Skeleton';
+import { EmptyState } from '@/ui/empty-state';
+import { Skeleton } from '@/ui/skeleton';
 import { Sidebar, useSidebarCollapsed } from './shell/Sidebar';
 import { Topbar } from './shell/Topbar';
 import { MobileNav } from './shell/MobileNav';
@@ -48,8 +48,8 @@ export function RootLayout() {
       <>
         <HeadContent />
         <ShellFrame busy>
-          <Skeleton height="40px" />
-          <Skeleton height="180px" />
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-44 w-full" />
         </ShellFrame>
       </>
     );
@@ -61,7 +61,7 @@ export function RootLayout() {
         <HeadContent />
         <ShellFrame>
           <EmptyState
-            icon="🔌"
+            icon={Unplug}
             title={t('common.error')}
             description={t('error.network')}
             action={
@@ -101,7 +101,7 @@ export function RootLayout() {
           <Topbar displayName={me.data.user.displayName} role={role} onToggleSidebar={toggleSidebar} />
           <main id="main" tabIndex={-1} className="px-4 py-5 pb-24 md:px-6 md:pb-8">
             {forbidden ? (
-              <EmptyState icon={<Lock size={32} aria-hidden="true" />} title={t('error.forbidden')} />
+              <EmptyState icon={Lock} title={t('error.forbidden')} />
             ) : (
               <Outlet />
             )}

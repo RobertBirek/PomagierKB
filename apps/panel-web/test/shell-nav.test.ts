@@ -104,4 +104,16 @@ describe('pendingDraftsFromStatus()', () => {
     expect(pendingDraftsFromStatus([{ id: 'inbox' }])).toBeUndefined();
     expect(pendingDraftsFromStatus([{ id: 'inbox', detail: 'timeout sondy' }])).toBeUndefined();
   });
+
+  it('preferuje pole liczbowe pendingDrafts z sondy inbox (detail tylko fallback)', () => {
+    expect(pendingDraftsFromStatus([{ id: 'inbox', pendingDrafts: 5 }])).toBe(5);
+    expect(pendingDraftsFromStatus([{ id: 'inbox', pendingDrafts: 0, detail: 'oczekujące: 3' }])).toBe(0);
+    expect(pendingDraftsFromStatus([{ id: 'inbox', pendingDrafts: 5, detail: 'oczekujące: 3' }])).toBe(5);
+  });
+
+  it('niepoprawne pendingDrafts (NaN/ujemne/ułamek) → fallback na detail', () => {
+    expect(pendingDraftsFromStatus([{ id: 'inbox', pendingDrafts: Number.NaN, detail: 'oczekujące: 2' }])).toBe(2);
+    expect(pendingDraftsFromStatus([{ id: 'inbox', pendingDrafts: -1, detail: 'oczekujące: 2' }])).toBe(2);
+    expect(pendingDraftsFromStatus([{ id: 'inbox', pendingDrafts: 1.5 }])).toBeUndefined();
+  });
 });

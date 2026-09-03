@@ -1,60 +1,50 @@
 /**
- * /ask „Zapytaj bazę" — MOBILE-FIRST czat z bazą wiedzy (PLAN Faza 6 pkt 2).
- * POST /api/v1/ask przez SSE (eventy 'status' {phase} i 'result' AnswerResult
- * z packages/shared/src/answer — trasa powstaje równolegle w Fazie 4/5),
- * feedback POST /api/v1/ask/:answerId/feedback, historia GET /api/v1/ask/history.
- * Uczciwe nie-wiem: noAnswer → jawny stan + automatyczna luka + CTA do /add.
+ * /ask „Zapytaj bazę" v2 (Faza 3, kit ui/): czat z bazą wiedzy przez SSE
+ * (POST /api/v1/ask — eventy status/result/error; logika strumienia bez zmian).
+ * Nowości prezentacji: wątek trwały w sessionStorage (lib/askThread), composer
+ * sticky z przyciskiem „Zatrzymaj" (abort → stan „przerwano"), historia w aside
+ * ≥1280px / Sheet poniżej, „Nowy wątek" z toast+Cofnij, kopiowanie odpowiedzi,
+ * feedback na ikonach lucide z Popoverem komentarza.
  */
-import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type MouseEvent } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link } from '@tanstack/react-router';
-import { apiFetch, apiSse, ApiError } from '../lib/api';
-import { renderAnswerHtml } from '../lib/markdown';
+import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { History, MessageSquare, Plus, Send, Square } from 'lucide-react';
+import { apiSse, ApiError } from '../lib/api';
 import { confidenceBadge } from '../lib/confidence';
-import { buildAddLinkSearch } from '../lib/prefill';
-import { normalizeHistory, type AskHistoryItem } from '../lib/askHistory';
+import {
+  ASK_THREAD_STORAGE_KEY,
+  deserializeThread,
+  nextThreadKey,
+  serializeThread,
+  type ThreadCitation,
+  type ThreadEntry,
+} from '../lib/askThread';
+import type { AskHistoryItem } from '../lib/askHistory';
 import { can } from '../lib/permissions';
 import { useMe } from '../hooks/useMe';
-import { Drawer } from '../components/Drawer';
-import { EmptyState } from '../components/EmptyState';
+import { AnswerCard } from '../components/ask/AnswerCard';
+import { HistoryPanel } from '../components/ask/HistoryPanel';
 import { SafeExternalLink } from '../components/SafeExternalLink';
-import { Skeleton } from '../components/Skeleton';
-import { StatusBadge } from '../components/StatusBadge';
-import { useToast } from '../components/Toast';
-import { t, formatDateTime } from '../i18n/t';
+import { Alert } from '@/ui/alert';
+import { Badge } from '@/ui/badge';
+import { Button } from '@/ui/button';
+import { Card } from '@/ui/card';
+import { EmptyState } from '@/ui/empty-state';
+import { Kbd } from '@/ui/kbd';
+import { PageContainer } from '@/ui/page-container';
+import { PageHeader } from '@/ui/page-header';
+import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from '@/ui/sheet';
+import { Spinner } from '@/ui/spinner';
+import { Textarea } from '@/ui/textarea';
+import { useToast } from '@/ui/toast';
+import { t, formatDateTime, type PlKey } from '../i18n/t';
 
 // ── Kontrakt /api/v1/ask (AnswerResult + AnswerPhase z shared/answer) ────────
 
 type AskPhase = 'retrieval' | 'generating';
 
-interface AskCitation {
-  n: number;
-  id: string;
-  namespace: string;
-  title?: string;
-  snippet?: string;
-  sourceRef?: string;
-}
-
-interface AskResult {
-  answer: string;
-  citations: AskCitation[];
-  confidence: number;
-  model: string | null;
-  degraded: boolean;
-  gapRecorded: boolean;
-  noAnswer: boolean;
-  answerId: string;
-  warnings: string[];
-}
-
-interface ChatEntry {
-  key: number;
-  question: string;
-  phase: AskPhase | null;
-  result: AskResult | null;
-  error: string | null;
-}
+/** Wpis wątku + przejściowa faza SSE (nie jest utrwalana w sessionStorage). */
+type ChatEntry = ThreadEntry & { phase: AskPhase | null };
 
 function parseJsonSafe(data: string): unknown {
   try {
@@ -64,242 +54,44 @@ function parseJsonSafe(data: string): unknown {
   }
 }
 
-// ── Feedback 👍/👎 (POST /api/v1/ask/:answerId/feedback) ─────────────────────
-
-function FeedbackControls({ answerId }: { answerId: string }) {
-  const toast = useToast();
-  const [verdict, setVerdict] = useState<'up' | 'down' | null>(null);
-  const [commentOpen, setCommentOpen] = useState(false);
-  const [comment, setComment] = useState('');
-  const [sending, setSending] = useState(false);
-
-  async function send(v: 'up' | 'down', withComment: string | null): Promise<void> {
-    setSending(true);
-    try {
-      const body: { verdict: 'up' | 'down'; comment?: string } = { verdict: v };
-      if (withComment !== null && withComment.trim() !== '') body.comment = withComment.trim();
-      await apiFetch(`/api/v1/ask/${encodeURIComponent(answerId)}/feedback`, {
-        method: 'POST',
-        body,
-      });
-      setVerdict(v);
-      setCommentOpen(false);
-      toast.show(v === 'up' ? t('ask.feedback.thanksUp') : t('ask.feedback.thanksDown'), 'ok');
-    } catch (err) {
-      toast.show(t('error.generic', { message: err instanceof Error ? err.message : String(err) }), 'fail');
-    } finally {
-      setSending(false);
-    }
+function loadThread(): ChatEntry[] {
+  try {
+    return deserializeThread(sessionStorage.getItem(ASK_THREAD_STORAGE_KEY)).map((e) => ({
+      ...e,
+      phase: null,
+    }));
+  } catch {
+    return [];
   }
-
-  if (verdict !== null) {
-    return (
-      <div className="muted ask-feedback-done">
-        {verdict === 'up' ? t('ask.feedback.thanksUp') : t('ask.feedback.thanksDown')}
-      </div>
-    );
-  }
-
-  return (
-    <div className="stack ask-feedback">
-      <div className="row">
-        <button
-          type="button"
-          className="btn btn-sm"
-          disabled={sending}
-          aria-label={t('ask.feedback.up')}
-          title={t('ask.feedback.up')}
-          onClick={() => void send('up', null)}
-        >
-          👍
-        </button>
-        <button
-          type="button"
-          className="btn btn-sm"
-          disabled={sending}
-          aria-label={t('ask.feedback.down')}
-          title={t('ask.feedback.down')}
-          onClick={() => setCommentOpen((v) => !v)}
-        >
-          👎
-        </button>
-      </div>
-      {commentOpen && (
-        <div className="stack">
-          <label className="muted" htmlFor={`fb-${answerId}`}>
-            {t('ask.feedback.whatWrong')}
-          </label>
-          <textarea
-            id={`fb-${answerId}`}
-            className="input"
-            rows={2}
-            value={comment}
-            placeholder={t('ask.feedback.commentPlaceholder')}
-            onChange={(ev) => setComment(ev.target.value)}
-          />
-          <div className="row">
-            <button
-              type="button"
-              className="btn btn-primary btn-sm"
-              disabled={sending}
-              onClick={() => void send('down', comment)}
-            >
-              {t('ask.feedback.sendComment')}
-            </button>
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => setCommentOpen(false)}>
-              {t('common.cancel')}
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
 }
 
-// ── Pojedyncza odpowiedź (markdown + cytowania + pewność + feedback) ─────────
-
-interface AnswerViewProps {
-  entry: ChatEntry;
-  canFeedback: boolean;
-  canPropose: boolean;
-  onOpenCitation: (citation: AskCitation) => void;
-}
-
-function AnswerView({ entry, canFeedback, canPropose, onOpenCitation }: AnswerViewProps) {
-  const result = entry.result;
-  if (result === null) return null;
-
-  // Delegacja kliknięć w chipy [n] wyrenderowane przez renderAnswerHtml().
-  function onAnswerClick(ev: MouseEvent<HTMLDivElement>): void {
-    const target = ev.target as HTMLElement;
-    const chip = target.closest('[data-cite]');
-    if (chip === null) return;
-    const n = Number(chip.getAttribute('data-cite'));
-    const citation = result?.citations.find((c) => c.n === n);
-    if (citation !== undefined) onOpenCitation(citation);
+function saveThread(entries: readonly ChatEntry[]): void {
+  try {
+    sessionStorage.setItem(ASK_THREAD_STORAGE_KEY, serializeThread(entries));
+  } catch {
+    /* prywatny tryb / brak storage — wątek działa bez trwałości */
   }
-
-  if (result.noAnswer) {
-    const addSearch = buildAddLinkSearch(entry.question);
-    return (
-      <div className="card ask-no-answer stack">
-        <div className="row">
-          <span aria-hidden="true">🤷</span>
-          <strong>{t('ask.noAnswer.title')}</strong>
-        </div>
-        {result.answer !== '' && <p className="muted ask-no-answer-text">{result.answer}</p>}
-        {result.gapRecorded && <div className="muted">✓ {t('ask.noAnswer.gapRecorded')}</div>}
-        {canPropose && addSearch !== null && (
-          <div className="row">
-            <Link to="/add" search={addSearch} className="btn btn-primary btn-sm">
-              {t('ask.noAnswer.addContent')}
-            </Link>
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  const badge = confidenceBadge(result.confidence);
-  return (
-    <div className="card ask-answer stack">
-      <div
-        className="ask-answer-body"
-        onClick={onAnswerClick}
-        // renderAnswerHtml escapuje CAŁE wejście przed transformacją (XSS-safe,
-        // testy w test/markdown.test.ts) — generowany HTML jest zaufany.
-        dangerouslySetInnerHTML={{ __html: renderAnswerHtml(result.answer, result.citations.length) }}
-      />
-      <div className="row ask-answer-meta">
-        <StatusBadge variant={badge.variant} label={t(badge.labelKey)} status={null} />
-        {result.degraded && <span className="muted ask-degraded">{t('ask.degraded')}</span>}
-      </div>
-      {result.citations.length > 0 && (
-        <div className="stack ask-citations">
-          <div className="muted">{t('ask.citations.title')}</div>
-          <div className="ask-citation-chips">
-            {result.citations.map((c) => (
-              <button
-                key={c.n}
-                type="button"
-                className="cite-card"
-                aria-label={t('ask.citations.chipLabel', { n: c.n })}
-                onClick={() => onOpenCitation(c)}
-              >
-                <span className="cite-chip-n">[{c.n}]</span>
-                <span className="cite-card-title">{c.title ?? c.id}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-      {canFeedback && <FeedbackControls answerId={result.answerId} />}
-    </div>
-  );
 }
 
-// ── Historia pytań użytkownika (GET /api/v1/ask/history) ─────────────────────
-
-interface HistoryListProps {
-  onPreview: (item: AskHistoryItem) => void;
-}
-
-function HistoryList({ onPreview }: HistoryListProps) {
-  const query = useQuery({
-    queryKey: ['ask-history'],
-    queryFn: () => apiFetch<unknown>('/api/v1/ask/history'),
-    staleTime: 30_000,
-  });
-
-  if (query.isLoading) {
-    return (
-      <div className="stack">
-        <Skeleton height="18px" />
-        <Skeleton height="18px" width="70%" />
-      </div>
-    );
-  }
-  // Trasa historii powstaje równolegle (Faza 4) — błąd nie psuje czatu.
-  if (query.isError) return null;
-  const items = normalizeHistory(query.data);
-  if (items.length === 0) return <p className="muted">{t('ask.history.empty')}</p>;
-
-  return (
-    <ul className="ask-history-list">
-      {items.map((item) => (
-        <li key={item.id}>
-          <button type="button" className="ask-history-item" onClick={() => onPreview(item)}>
-            <span className="ask-history-question">{item.question}</span>
-            <span className="row ask-history-meta">
-              {item.noAnswer && (
-                <StatusBadge variant="warn" label={t('ask.history.noAnswerBadge')} status={null} />
-              )}
-              {item.verdict === 'up' && <span aria-hidden="true">👍</span>}
-              {item.verdict === 'down' && <span aria-hidden="true">👎</span>}
-              {item.createdAt !== '' && <span className="muted">{formatDateTime(item.createdAt)}</span>}
-            </span>
-          </button>
-        </li>
-      ))}
-    </ul>
-  );
-}
+const EXAMPLE_KEYS: readonly PlKey[] = ['ask.example.1', 'ask.example.2', 'ask.example.3'];
 
 // ── Strona ───────────────────────────────────────────────────────────────────
 
 export function AskPage() {
   const me = useMe();
+  const toast = useToast();
   const queryClient = useQueryClient();
   const role = me.data?.user.role;
   const [question, setQuestion] = useState('');
-  const [entries, setEntries] = useState<ChatEntry[]>([]);
+  const [entries, setEntries] = useState<ChatEntry[]>(loadThread);
   const [busy, setBusy] = useState(false);
-  const [openCitation, setOpenCitation] = useState<AskCitation | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [openCitation, setOpenCitation] = useState<ThreadCitation | null>(null);
   const [previewItem, setPreviewItem] = useState<AskHistoryItem | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
-  const nextKey = useRef(1);
+  const nextKey = useRef(nextThreadKey(entries));
 
   // Autofocus tylko na desktopie (mobile: nie wywołuj klawiatury od razu).
   useEffect(() => {
@@ -309,9 +101,19 @@ export function AskPage() {
   // Przerwij strumień przy odmontowaniu strony.
   useEffect(() => () => abortRef.current?.abort(), []);
 
+  // Trwałość wątku: zapis przy każdej zmianie (defensywnie w try/catch).
   useEffect(() => {
-    if (entries.length > 0) endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    saveThread(entries);
   }, [entries]);
+
+  // Autoscroll do końca przy nowym wpisie / zmianie fazy lub wyniku ostatniego
+  // wpisu (patch werdyktu feedbacku NIE przewija).
+  const last = entries.length > 0 ? entries[entries.length - 1] : undefined;
+  const scrollSig =
+    last === undefined ? '' : `${last.key}:${last.phase ?? ''}:${last.result !== null}:${last.error ?? ''}`;
+  useEffect(() => {
+    if (scrollSig !== '') endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }, [scrollSig]);
 
   const patchEntry = useCallback((key: number, patch: Partial<ChatEntry>) => {
     setEntries((prev) => prev.map((e) => (e.key === key ? { ...e, ...patch } : e)));
@@ -321,16 +123,23 @@ export function AskPage() {
     async (rawQuestion: string): Promise<void> => {
       const q = rawQuestion.trim();
       if (q === '' || busy) return;
+      const blank: Omit<ChatEntry, 'key' | 'question'> = {
+        phase: null,
+        result: null,
+        error: null,
+        stopped: false,
+        verdict: null,
+      };
       // Kontrakt POST /api/v1/ask: question minLength 5 — komunikat PL zamiast 400.
       if (q.length < 5) {
         setEntries((prev) => [
           ...prev,
-          { key: nextKey.current++, question: q, phase: null, result: null, error: t('ask.tooShort') },
+          { ...blank, key: nextKey.current++, question: q, error: t('ask.tooShort') },
         ]);
         return;
       }
       const key = nextKey.current++;
-      setEntries((prev) => [...prev, { key, question: q, phase: null, result: null, error: null }]);
+      setEntries((prev) => [...prev, { ...blank, key, question: q }]);
       setQuestion('');
       setBusy(true);
       const controller = new AbortController();
@@ -345,7 +154,7 @@ export function AskPage() {
               const phase = data?.phase;
               if (phase === 'retrieval' || phase === 'generating') patchEntry(key, { phase });
             } else if (ev.event === 'result') {
-              const result = parseJsonSafe(ev.data) as AskResult | null;
+              const result = parseJsonSafe(ev.data) as ThreadEntry['result'] | null;
               if (result !== null && typeof result.answer === 'string') {
                 gotResult = true;
                 patchEntry(key, {
@@ -367,7 +176,11 @@ export function AskPage() {
         if (!gotResult) patchEntry(key, { phase: null, error: t('common.error') });
         void queryClient.invalidateQueries({ queryKey: ['ask-history'] });
       } catch (err) {
-        if (err instanceof DOMException && err.name === 'AbortError') return;
+        if (err instanceof DOMException && err.name === 'AbortError') {
+          // „Zatrzymaj": osobny stan wpisu (i18n ask.stopped), NIE generyczny błąd.
+          patchEntry(key, { phase: null, stopped: true });
+          return;
+        }
         const message = err instanceof ApiError ? err.message : t('common.error');
         patchEntry(key, { phase: null, error: message });
       } finally {
@@ -390,138 +203,266 @@ export function AskPage() {
     }
   }
 
+  /** „Nowy wątek": czyści wątek; przy niepustym — toast z akcją Cofnij (snapshot). */
+  function newThread(): void {
+    if (entries.length === 0) return;
+    const snapshot = entries;
+    setEntries([]);
+    toast.push({
+      title: t('ask.newThread.cleared'),
+      kind: 'info',
+      action: { label: t('ask.newThread.undo'), onClick: () => setEntries(snapshot) },
+    });
+  }
+
+  function askExample(key: PlKey): void {
+    const q = t(key);
+    setQuestion(q);
+    void submit(q);
+  }
+
   const canFeedback = can(role, 'feedback');
   const canPropose = can(role, 'propose');
 
-  return (
-    <div className="ask-page stack">
-      <form className="card stack ask-form" onSubmit={onSubmit}>
-        <label className="visually-hidden" htmlFor="ask-input">
-          {t('ask.inputLabel')}
-        </label>
-        <textarea
+  const composer = (
+    <form
+      onSubmit={onSubmit}
+      className="sticky bottom-14 z-10 mt-auto border-t border-border bg-bg pb-1 pt-3 md:bottom-0"
+    >
+      <label className="sr-only" htmlFor="ask-input">
+        {t('ask.inputLabel')}
+      </label>
+      <div className="flex items-end gap-2">
+        <Textarea
           id="ask-input"
           ref={inputRef}
-          className="input ask-input"
-          rows={3}
+          rows={1}
           value={question}
           placeholder={t('ask.inputPlaceholder')}
           onChange={(ev) => setQuestion(ev.target.value)}
           onKeyDown={onKeyDown}
           disabled={busy}
+          className="field-sizing-content max-h-44 min-h-9 grow resize-none"
         />
-        <div className="row">
-          <span className="grow" />
-          <button type="submit" className="btn btn-primary" disabled={busy || question.trim() === ''}>
+        {busy ? (
+          <Button
+            variant="secondary"
+            iconLeft={<Square size={16} aria-hidden="true" />}
+            onClick={() => abortRef.current?.abort()}
+          >
+            {t('ask.stop')}
+          </Button>
+        ) : (
+          <Button
+            type="submit"
+            variant="primary"
+            iconLeft={<Send size={16} aria-hidden="true" />}
+            disabled={question.trim() === ''}
+          >
             {t('ask.send')}
-          </button>
-        </div>
-      </form>
+          </Button>
+        )}
+      </div>
+      <div className="mt-1.5 flex items-center gap-3 text-2xs text-text-tertiary">
+        <span className="flex items-center gap-1">
+          <Kbd>Enter</Kbd> {t('ask.hint.enter')}
+        </span>
+        <span className="flex items-center gap-1">
+          <Kbd>Shift</Kbd>+<Kbd>Enter</Kbd> {t('ask.hint.newline')}
+        </span>
+      </div>
+    </form>
+  );
 
-      {entries.length === 0 && (
-        <EmptyState icon="💬" title={t('ask.emptyTitle')} description={t('ask.emptyDescription')} />
-      )}
+  return (
+    <PageContainer width="prose" className="xl:max-w-[1080px]">
+      <PageHeader
+        title={t('ask.title')}
+        description={t('ask.description')}
+        actions={
+          <>
+            <Button
+              variant="secondary"
+              className="xl:hidden"
+              iconLeft={<History size={16} aria-hidden="true" />}
+              onClick={() => setHistoryOpen(true)}
+            >
+              {t('ask.historyButton')}
+            </Button>
+            <Button
+              variant="secondary"
+              iconLeft={<Plus size={16} aria-hidden="true" />}
+              disabled={entries.length === 0}
+              onClick={newThread}
+            >
+              {t('ask.newThread')}
+            </Button>
+          </>
+        }
+      />
 
-      <div className="stack ask-thread">
-        {entries.map((entry) => (
-          <div key={entry.key} className="stack ask-exchange">
-            <div className="ask-question">{entry.question}</div>
-            {entry.phase !== null && (
-              <div className="row ask-phase" role="status">
-                <span className="ask-phase-spinner" aria-hidden="true" />
-                {t(entry.phase === 'retrieval' ? 'ask.phase.retrieval' : 'ask.phase.generating')}
-              </div>
-            )}
-            {entry.error !== null && (
-              <div className="card ask-error">{t('ask.error', { message: entry.error })}</div>
-            )}
-            <AnswerView
-              entry={entry}
-              canFeedback={canFeedback}
-              canPropose={canPropose}
-              onOpenCitation={setOpenCitation}
+      <div className="xl:grid xl:grid-cols-[minmax(0,1fr)_320px] xl:items-start xl:gap-6">
+        {/* Kolumna wątku + sticky composer na dole obszaru */}
+        <div className="flex min-h-[60dvh] flex-col">
+          {entries.length === 0 ? (
+            <EmptyState
+              icon={MessageSquare}
+              title={t('ask.emptyTitle')}
+              description={t('ask.emptyDescription')}
+              action={
+                <div className="flex max-w-md flex-wrap justify-center gap-2">
+                  {EXAMPLE_KEYS.map((key) => (
+                    <Button key={key} size="sm" variant="secondary" onClick={() => askExample(key)}>
+                      {t(key)}
+                    </Button>
+                  ))}
+                </div>
+              }
             />
-          </div>
-        ))}
-        <div ref={endRef} />
+          ) : (
+            <div className="flex flex-col gap-5 pb-4">
+              {entries.map((entry) => (
+                <div key={entry.key} className="flex flex-col gap-2">
+                  <div className="max-w-[85%] self-end rounded-lg bg-accent-tint px-3 py-2 text-sm text-text">
+                    {entry.question}
+                  </div>
+                  {entry.phase !== null && (
+                    <div role="status" className="flex items-center gap-2 text-sm text-text-secondary">
+                      <Spinner size={14} />
+                      {t(entry.phase === 'retrieval' ? 'ask.phase.retrieval' : 'ask.phase.generating')}
+                    </div>
+                  )}
+                  {entry.stopped && (
+                    <Alert variant="info" icon={<Square size={16} aria-hidden="true" />}>
+                      {t('ask.stopped')}
+                    </Alert>
+                  )}
+                  {entry.error !== null && (
+                    <Alert variant="fail">{t('ask.error', { message: entry.error })}</Alert>
+                  )}
+                  <AnswerCard
+                    entry={entry}
+                    canFeedback={canFeedback}
+                    canPropose={canPropose}
+                    onOpenCitation={setOpenCitation}
+                    onVerdictSaved={(key, verdict) => patchEntry(key, { verdict })}
+                  />
+                </div>
+              ))}
+              <div ref={endRef} />
+            </div>
+          )}
+          {composer}
+        </div>
+
+        {/* Stały aside historii ≥1280px */}
+        <aside className="hidden xl:block">
+          <Card className="p-4">
+            <h2 className="mb-3 text-sm font-semibold text-text">{t('ask.history.title')}</h2>
+            <HistoryPanel
+              onPreview={(item) => {
+                setPreviewItem(item);
+              }}
+            />
+          </Card>
+        </aside>
       </div>
 
-      <section className="stack">
-        <h2 className="ask-section-title">{t('ask.history.title')}</h2>
-        <HistoryList onPreview={setPreviewItem} />
-      </section>
+      {/* Historia w Sheet (<1280px) */}
+      <Sheet open={historyOpen} onOpenChange={setHistoryOpen}>
+        <SheetContent side="right" size="sm">
+          <SheetHeader>
+            <SheetTitle>{t('ask.history.title')}</SheetTitle>
+          </SheetHeader>
+          <SheetBody>
+            <HistoryPanel
+              onPreview={(item) => {
+                setHistoryOpen(false);
+                setPreviewItem(item);
+              }}
+            />
+          </SheetBody>
+        </SheetContent>
+      </Sheet>
 
-      <Drawer
-        open={openCitation !== null}
-        onClose={() => setOpenCitation(null)}
-        title={openCitation !== null ? t('ask.citation.drawerTitle', { n: openCitation.n }) : ''}
-      >
-        {openCitation !== null && (
-          <div className="stack">
-            <strong>{openCitation.title ?? openCitation.id}</strong>
-            <div>
-              <span className="muted">{t('ask.citation.namespace')}: </span>
-              {openCitation.namespace}
-            </div>
-            <div className="stack">
-              <span className="muted">{t('ask.citation.snippet')}</span>
-              {openCitation.snippet !== undefined && openCitation.snippet !== '' ? (
-                <blockquote className="ask-snippet">{openCitation.snippet}</blockquote>
-              ) : (
-                <p className="muted">{t('ask.citation.noSnippet')}</p>
-              )}
-            </div>
-            {openCitation.sourceRef !== undefined && openCitation.sourceRef !== '' && (
-              <div className="stack">
-                <span className="muted">{t('ask.citation.sourceRef')}</span>
-                <SafeExternalLink href={openCitation.sourceRef}>
-                  {openCitation.sourceRef}
-                </SafeExternalLink>
-              </div>
-            )}
-          </div>
-        )}
-      </Drawer>
+      {/* Cytowanie [n] — Sheet szczegółów źródła */}
+      <Sheet open={openCitation !== null} onOpenChange={(open) => { if (!open) setOpenCitation(null); }}>
+        <SheetContent side="right" size="md">
+          {openCitation !== null && (
+            <>
+              <SheetHeader>
+                <SheetTitle>{t('ask.citation.drawerTitle', { n: openCitation.n })}</SheetTitle>
+              </SheetHeader>
+              <SheetBody className="flex flex-col gap-3 text-sm">
+                <strong className="text-text">{openCitation.title ?? openCitation.id}</strong>
+                <div>
+                  <span className="text-text-tertiary">{t('ask.citation.namespace')}: </span>
+                  {openCitation.namespace}
+                </div>
+                <div className="flex flex-col gap-1">
+                  <span className="text-text-tertiary">{t('ask.citation.snippet')}</span>
+                  {openCitation.snippet !== undefined && openCitation.snippet !== '' ? (
+                    <blockquote className="rounded-md border-l-2 border-border-strong bg-surface-2 px-3 py-2 text-text-secondary">
+                      {openCitation.snippet}
+                    </blockquote>
+                  ) : (
+                    <p className="text-text-secondary">{t('ask.citation.noSnippet')}</p>
+                  )}
+                </div>
+                {openCitation.sourceRef !== undefined && openCitation.sourceRef !== '' && (
+                  <div className="flex flex-col gap-1">
+                    <span className="text-text-tertiary">{t('ask.citation.sourceRef')}</span>
+                    <SafeExternalLink href={openCitation.sourceRef}>{openCitation.sourceRef}</SafeExternalLink>
+                  </div>
+                )}
+              </SheetBody>
+            </>
+          )}
+        </SheetContent>
+      </Sheet>
 
-      <Drawer
-        open={previewItem !== null}
-        onClose={() => setPreviewItem(null)}
-        title={t('ask.history.preview')}
-      >
-        {previewItem !== null && (
-          <div className="stack">
-            <p className="ask-history-preview-question">{previewItem.question}</p>
-            <div className="row">
-              {previewItem.noAnswer ? (
-                <StatusBadge variant="warn" label={t('ask.history.noAnswerBadge')} status={null} />
-              ) : (
-                <StatusBadge
-                  variant={confidenceBadge(previewItem.confidence).variant}
-                  label={t(confidenceBadge(previewItem.confidence).labelKey)}
-                  status={null}
-                />
-              )}
-            </div>
-            {previewItem.createdAt !== '' && (
-              <p className="muted">{t('ask.history.askedAt', { date: formatDateTime(previewItem.createdAt) })}</p>
-            )}
-            <div className="row">
-              <button
-                type="button"
-                className="btn btn-primary"
-                disabled={busy}
-                onClick={() => {
-                  const q = previewItem.question;
-                  setPreviewItem(null);
-                  void submit(q);
-                }}
-              >
-                {t('ask.history.askAgain')}
-              </button>
-            </div>
-          </div>
-        )}
-      </Drawer>
-    </div>
+      {/* Podgląd pozycji historii */}
+      <Sheet open={previewItem !== null} onOpenChange={(open) => { if (!open) setPreviewItem(null); }}>
+        <SheetContent side="right" size="md">
+          {previewItem !== null && (
+            <>
+              <SheetHeader>
+                <SheetTitle>{t('ask.history.preview')}</SheetTitle>
+              </SheetHeader>
+              <SheetBody className="flex flex-col gap-3">
+                <p className="text-sm font-medium text-text">{previewItem.question}</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  {previewItem.noAnswer ? (
+                    <Badge variant="warn">{t('ask.history.noAnswerBadge')}</Badge>
+                  ) : (
+                    <Badge variant={confidenceBadge(previewItem.confidence).variant}>
+                      {t(confidenceBadge(previewItem.confidence).labelKey)}
+                    </Badge>
+                  )}
+                </div>
+                {previewItem.createdAt !== '' && (
+                  <p className="text-sm text-text-secondary">
+                    {t('ask.history.askedAt', { date: formatDateTime(previewItem.createdAt) })}
+                  </p>
+                )}
+                <div>
+                  <Button
+                    variant="primary"
+                    disabled={busy}
+                    onClick={() => {
+                      const q = previewItem.question;
+                      setPreviewItem(null);
+                      void submit(q);
+                    }}
+                  >
+                    {t('ask.history.askAgain')}
+                  </Button>
+                </div>
+              </SheetBody>
+            </>
+          )}
+        </SheetContent>
+      </Sheet>
+    </PageContainer>
   );
 }

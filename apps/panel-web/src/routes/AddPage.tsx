@@ -1,215 +1,81 @@
 /**
- * /add „Dodaj treść" — taby Tekst | Plik (drag&drop), wybór KB (opcjonalny —
- * analiza może nadpisać), POST /api/v1/content (202 {intakeId}), polling
- * GET /api/v1/content/:id co 2 s → Stepper LUDZKICH etapów (pole stages/humanized
- * z backendu — apps/panel-api/src/routes/content.ts, zweryfikowane), lista
- * ostatnich intake'ów. Prefill ?question= z luki wiedzy (nagłówek „Uzupełniasz
- * lukę: …"). URL to WYŁĄCZNIE metadana źródła (v1 bez fetchu — decyzja z soczewek).
+ * /add „Dodaj treść" na kicie v2 — dwie kolumny (formularz | aside z postępem
+ * lub „Ostatnio dodane"), Tabs URL-sync ?tab=text|file:
+ * - TEKST: Field(Textarea) z licznikiem znaków (limit 100 000 = DRAFT_LIMITS.contentMax
+ *   backendu), Tytuł/URL-metadana; bez selecta KB (bazę dobiera analiza — Alert info);
+ * - PLIK: dropzone multi-plik z kolejką kliencką (fileQueue reducer) i wysyłką
+ *   sekwencyjną 1 POST/plik z paskiem postępu (uploadWithProgress XHR — apiFetch
+ *   nietykalny); select KB zostaje z hintem; walidacja przy polach, nie toastem.
+ * Prefill ?question= z luki wiedzy (baner). Kontrakt API: routes/content.ts.
  */
-import { useRef, useState, type DragEvent, type FormEvent } from 'react';
+import { useCallback, useReducer, useRef, useState, type DragEvent, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, useSearch } from '@tanstack/react-router';
-import { apiFetch, ApiError } from '../lib/api';
+import { useNavigate, useSearch } from '@tanstack/react-router';
+import { Paperclip, Puzzle, X } from 'lucide-react';
+import { apiFetch, ApiError } from '@/lib/api';
+import { UPLOAD_ACCEPT, UPLOAD_EXTENSIONS, validateUploadFile } from '@/lib/intake';
+import { can } from '@/lib/permissions';
+import { useMe } from '@/hooks/useMe';
+import { t, formatNumber } from '@/i18n/t';
+import type { AddSearch } from '@/router';
+import { cn } from '@/ui/cn';
+import { Alert } from '@/ui/alert';
+import { Badge } from '@/ui/badge';
+import { Button, IconButton } from '@/ui/button';
+import { Card, CardBody } from '@/ui/card';
+import { Field } from '@/ui/field';
+import { Input } from '@/ui/input';
+import { PageContainer } from '@/ui/page-container';
+import { PageHeader } from '@/ui/page-header';
+import { Select } from '@/ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/ui/tabs';
+import { Textarea } from '@/ui/textarea';
+import { IntakeProgress } from '@/components/add/IntakeProgress';
+import { RecentIntakes, type RetryRequest } from '@/components/add/RecentIntakes';
 import {
-  isIntakeTerminal,
-  stagesToSteps,
-  UPLOAD_ACCEPT,
-  UPLOAD_EXTENSIONS,
-  validateUploadFile,
-  type IntakeStageApi,
-} from '../lib/intake';
-import { can } from '../lib/permissions';
-import { useMe } from '../hooks/useMe';
-import { EmptyState } from '../components/EmptyState';
-import { Skeleton } from '../components/Skeleton';
-import { StatusBadge } from '../components/StatusBadge';
-import { Stepper } from '../components/Stepper';
-import { useToast } from '../components/Toast';
-import { t, formatDateTime } from '../i18n/t';
-
-// ── Kontrakty API (content.ts + kbs.ts — realne trasy panel-api) ─────────────
-
-interface KbItem {
-  namespace: string;
-  name: string;
-  status: string;
-  isDefault: boolean;
-}
-
-interface HumanMessage {
-  label: string;
-  description?: string;
-  action?: string;
-}
-
-interface IntakeDetail {
-  id: string;
-  sourceKind: string;
-  originalName: string | null;
-  sourceUrl: string | null;
-  status: string;
-  statusHuman: HumanMessage;
-  draftId: string | null;
-  error: string | null;
-  errorHuman: HumanMessage | null;
-  stages: IntakeStageApi[];
-  createdAt: string;
-  updatedAt: string;
-}
-
-interface IntakeListItem {
-  id: string;
-  sourceKind: string;
-  originalName: string | null;
-  status: string;
-  statusHuman: HumanMessage;
-  draftId: string | null;
-  error: string | null;
-  createdAt: string;
-}
-
-interface SubmitResponse {
-  intakeId: string;
-  status: string;
-  deduplicated?: boolean;
-}
+  fileQueueReducer,
+  hasQueued,
+  type FileQueueItem,
+} from '@/components/add/fileQueue';
+import { uploadWithProgress } from '@/components/add/uploadWithProgress';
+import { formatSize, type KbItem, type SubmitResponse } from '@/components/add/types';
 
 const EXT_LIST = UPLOAD_EXTENSIONS.join(', ');
 
-function formatSize(bytes: number): string {
-  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  if (bytes >= 1024) return `${Math.round(bytes / 1024)} KB`;
-  return `${bytes} B`;
-}
-
-// ── Stepper przetwarzania aktywnego intake'u (polling co 2 s) ────────────────
-
-interface IntakeProgressProps {
-  intakeId: string;
-  deduplicated: boolean;
-  canInbox: boolean;
-  onReset: () => void;
-}
-
-function IntakeProgress({ intakeId, deduplicated, canInbox, onReset }: IntakeProgressProps) {
-  const query = useQuery({
-    queryKey: ['content', intakeId],
-    queryFn: () => apiFetch<{ intake: IntakeDetail }>(`/api/v1/content/${encodeURIComponent(intakeId)}`),
-    refetchInterval: (q) => (isIntakeTerminal(q.state.data?.intake.status) ? false : 2000),
-  });
-
-  const intake = query.data?.intake;
-  return (
-    <section className="card stack" aria-live="polite">
-      <h2 className="add-section-title">{t('add.progress.title')}</h2>
-      {deduplicated && <p className="muted">{t('add.dedup')}</p>}
-      {intake === undefined ? (
-        <div className="stack">
-          <Skeleton height="18px" />
-          <Skeleton height="18px" width="60%" />
-        </div>
-      ) : (
-        <>
-          <Stepper steps={stagesToSteps(intake.stages, intake.status)} />
-          {intake.status === 'failed' && (
-            <div className="card add-failed stack">
-              <strong>{t('add.failed.title')}</strong>
-              <div>{intake.errorHuman?.label ?? intake.statusHuman.label}</div>
-              {intake.errorHuman?.description !== undefined && (
-                <p className="muted">{intake.errorHuman.description}</p>
-              )}
-              {/* Akcja naprawcza ze słownika komunikatów (soczewka product). */}
-              {intake.errorHuman?.action !== undefined && <p>💡 {intake.errorHuman.action}</p>}
-              <div className="row">
-                <button type="button" className="btn" onClick={onReset}>
-                  {t('common.retry')}
-                </button>
-              </div>
-            </div>
-          )}
-          {intake.status === 'drafted' && (
-            <div className="card add-done stack">
-              <strong>✓ {t('add.done.title')}</strong>
-              <p className="muted">{t('add.done.description')}</p>
-              <div className="row">
-                {canInbox && (
-                  <Link to="/inbox" search={{ status: 'pending' }} className="btn btn-primary btn-sm">
-                    {t('add.done.inboxLink')}
-                  </Link>
-                )}
-                <button type="button" className="btn btn-sm" onClick={onReset}>
-                  {t('add.done.again')}
-                </button>
-              </div>
-            </div>
-          )}
-        </>
-      )}
-    </section>
-  );
-}
-
-// ── Lista ostatnich intake'ów (GET /api/v1/content) ──────────────────────────
-
-function RecentIntakes() {
-  const query = useQuery({
-    queryKey: ['content-list'],
-    queryFn: () => apiFetch<{ items: IntakeListItem[] }>('/api/v1/content'),
-    staleTime: 10_000,
-  });
-
-  return (
-    <section className="stack">
-      <h2 className="add-section-title">{t('add.recent.title')}</h2>
-      {query.isLoading && (
-        <div className="stack">
-          <Skeleton height="18px" />
-          <Skeleton height="18px" width="70%" />
-        </div>
-      )}
-      {query.isError && <p className="muted">{t('common.error')}</p>}
-      {query.data !== undefined &&
-        (query.data.items.length === 0 ? (
-          <EmptyState
-            icon="📄"
-            title={t('add.recent.empty.title')}
-            description={t('add.recent.empty.description')}
-          />
-        ) : (
-          <ul className="add-recent-list">
-            {query.data.items.map((item) => (
-              <li key={item.id} className="add-recent-item">
-                <span className="add-recent-name grow">{item.originalName ?? t('add.recent.untitled')}</span>
-                <StatusBadge status={item.status} label={item.statusHuman.label} />
-                <span className="muted add-recent-date">{formatDateTime(item.createdAt)}</span>
-              </li>
-            ))}
-          </ul>
-        ))}
-    </section>
-  );
-}
-
-// ── Strona ───────────────────────────────────────────────────────────────────
+/** Limit długości treści tekstowej = DRAFT_LIMITS.contentMax backendu
+ *  (packages/shared/src/db/repos/drafts.ts; routes/content.ts zwraca
+ *  payload_too_large powyżej). */
+const TEXT_MAX = 100_000;
+/** Próg ostrzeżenia licznika znaków (90% limitu). */
+const TEXT_WARN = TEXT_MAX * 0.9;
 
 type AddTab = 'text' | 'file';
 
 export function AddPage() {
   const me = useMe();
-  const toast = useToast();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const search = useSearch({ from: '/add' });
   const gapQuestion = search.question;
+  const tab: AddTab = search.tab === 'file' ? 'file' : 'text';
 
-  const [tab, setTab] = useState<AddTab>('text');
+  // ── stan formularza tekstowego ──
   const [text, setText] = useState('');
   const [title, setTitle] = useState(gapQuestion ?? '');
   const [sourceUrl, setSourceUrl] = useState('');
+  const [textError, setTextError] = useState<string | null>(null);
+
+  // ── stan trybu plikowego (kolejka kliencka + obiekty File poza reducerem) ──
+  const [queue, dispatchQueue] = useReducer(fileQueueReducer, [] as readonly FileQueueItem[]);
+  const filesRef = useRef(new Map<string, File>());
   const [namespace, setNamespace] = useState('');
-  const [file, setFile] = useState<File | null>(null);
+  const [fileError, setFileError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
-  const [active, setActive] = useState<{ intakeId: string; deduplicated: boolean } | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const [retryInfo, setRetryInfo] = useState<'text' | 'file' | null>(null);
+  const [active, setActive] = useState<{ intakeId: string; deduplicated: boolean } | null>(null);
 
   const kbsQuery = useQuery({
     queryKey: ['kbs'],
@@ -219,213 +85,379 @@ export function AddPage() {
   const activeKbs = (kbsQuery.data?.items ?? []).filter((kb) => kb.status === 'active');
   const defaultKb = activeKbs.find((kb) => kb.isDefault);
 
-  const submitMutation = useMutation({
-    mutationFn: async (): Promise<SubmitResponse> => {
-      if (tab === 'file') {
-        if (file === null) throw new ApiError('validation_error', t('add.file.required'), 0);
+  /** Zmiana zakładki — URL-sync ?tab= (replace, bez wpisu w historii). */
+  const goTab = (value: string): void => {
+    const next: AddSearch = {};
+    if (gapQuestion !== undefined) next.question = gapQuestion;
+    if (value === 'file') next.tab = 'file';
+    void navigate({ to: '/add', search: next, replace: true });
+  };
+
+  // ── tryb TEKST: POST JSON {text,title?,sourceUrl?} (KB dobiera analiza) ──
+  const submitText = useMutation({
+    mutationFn: (input: { text: string; title: string; sourceUrl: string }) => {
+      const body: { text: string; title?: string; sourceUrl?: string } = { text: input.text };
+      if (input.title !== '') body.title = input.title;
+      if (input.sourceUrl !== '') body.sourceUrl = input.sourceUrl;
+      return apiFetch<SubmitResponse>('/api/v1/content', { method: 'POST', body });
+    },
+    onSuccess: (data) => {
+      setActive({ intakeId: data.intakeId, deduplicated: data.deduplicated === true });
+      setText('');
+      setTitle('');
+      setSourceUrl('');
+      setTextError(null);
+      setRetryInfo(null);
+      void queryClient.invalidateQueries({ queryKey: ['content-list'] });
+    },
+    onError: (err) => {
+      setTextError(err instanceof ApiError ? err.message : t('common.error'));
+    },
+  });
+
+  function handleTextSubmit(): void {
+    if (submitText.isPending) return;
+    const trimmed = text.trim();
+    if (trimmed === '') {
+      setTextError(t('add.text.required'));
+      return;
+    }
+    if (text.length > TEXT_MAX) {
+      setTextError(t('add.text.tooLong', { max: formatNumber(TEXT_MAX) }));
+      return;
+    }
+    setTextError(null);
+    submitText.mutate({ text: trimmed, title: title.trim(), sourceUrl: sourceUrl.trim() });
+  }
+
+  // ── tryb PLIK: kolejka + wysyłka sekwencyjna z postępem ──
+  function addFiles(candidates: Iterable<File>): void {
+    const rejected: { name: string; code: 'extension' | 'size' }[] = [];
+    const items: { id: string; name: string; size: number }[] = [];
+    for (const file of candidates) {
+      const verdict = validateUploadFile(file.name, file.size);
+      if (!verdict.ok) {
+        rejected.push({ name: file.name, code: verdict.code });
+        continue;
+      }
+      const id = crypto.randomUUID();
+      filesRef.current.set(id, file);
+      items.push({ id, name: file.name, size: file.size });
+    }
+    if (items.length > 0) dispatchQueue({ type: 'add', items });
+    // Jeden odrzucony plik → precyzyjny komunikat; więcej → lista nazw.
+    if (rejected.length === 0) setFileError(null);
+    else if (rejected.length === 1 && rejected[0] !== undefined) {
+      setFileError(
+        rejected[0].code === 'size'
+          ? t('add.file.tooLarge')
+          : t('add.file.badExtension', { list: EXT_LIST }),
+      );
+    } else {
+      setFileError(t('add.queue.invalid', { list: rejected.map((r) => r.name).join(', ') }));
+    }
+  }
+
+  function onDrop(ev: DragEvent<HTMLDivElement>): void {
+    ev.preventDefault();
+    setDragOver(false);
+    addFiles(ev.dataTransfer.files);
+  }
+
+  async function uploadAll(): Promise<void> {
+    if (uploading) return;
+    if (!hasQueued(queue)) {
+      setFileError(t('add.file.required'));
+      return;
+    }
+    setUploading(true);
+    setFileError(null);
+    setRetryInfo(null);
+    const toSend = queue.filter((item) => item.status === 'queued');
+    for (const item of toSend) {
+      const file = filesRef.current.get(item.id);
+      if (file === undefined) {
+        dispatchQueue({ type: 'fail', id: item.id, error: t('common.error') });
+        continue;
+      }
+      dispatchQueue({ type: 'start', id: item.id });
+      try {
         const form = new FormData();
         form.append('file', file);
         // KB jako pole multipart — dziś ignorowane przez backend (analyze
         // routuje sam), forward-compatible gdy content.ts zacznie je czytać.
         const chosen = namespace !== '' ? namespace : defaultKb?.namespace;
         if (chosen !== undefined) form.append('namespace', chosen);
-        return apiFetch<SubmitResponse>('/api/v1/content', { method: 'POST', body: form });
+        const res = await uploadWithProgress<SubmitResponse>('/api/v1/content', form, (fraction) =>
+          dispatchQueue({ type: 'progress', id: item.id, progress: fraction }),
+        );
+        dispatchQueue({
+          type: 'done',
+          id: item.id,
+          intakeId: res.intakeId,
+          deduplicated: res.deduplicated === true,
+        });
+        filesRef.current.delete(item.id);
+        setActive({ intakeId: res.intakeId, deduplicated: res.deduplicated === true });
+        void queryClient.invalidateQueries({ queryKey: ['content-list'] });
+      } catch (err) {
+        dispatchQueue({
+          type: 'fail',
+          id: item.id,
+          error: err instanceof ApiError ? err.message : t('common.error'),
+        });
       }
-      if (text.trim() === '') throw new ApiError('validation_error', t('add.text.required'), 0);
-      // Kontrakt content.ts (zweryfikowany): JSON przyjmuje TYLKO {text,title?,sourceUrl?}
-      // (additionalProperties → validation_error) — wybranej KB nie wysyłamy; routing robi analyze.
-      const body: { text: string; title?: string; sourceUrl?: string } = { text: text.trim() };
-      if (title.trim() !== '') body.title = title.trim();
-      if (sourceUrl.trim() !== '') body.sourceUrl = sourceUrl.trim();
-      return apiFetch<SubmitResponse>('/api/v1/content', { method: 'POST', body });
-    },
-    onSuccess: (data) => {
-      setActive({ intakeId: data.intakeId, deduplicated: data.deduplicated === true });
-      void queryClient.invalidateQueries({ queryKey: ['content-list'] });
-    },
-    onError: (err) => {
-      toast.show(err instanceof ApiError ? err.message : t('common.error'), 'fail');
-    },
-  });
-
-  function acceptFile(candidate: File): void {
-    const verdict = validateUploadFile(candidate.name, candidate.size);
-    if (!verdict.ok) {
-      toast.show(
-        verdict.code === 'size' ? t('add.file.tooLarge') : t('add.file.badExtension', { list: EXT_LIST }),
-        'warn',
-      );
-      return;
     }
-    setFile(candidate);
-  }
-
-  function onDrop(ev: DragEvent<HTMLDivElement>): void {
-    ev.preventDefault();
-    setDragOver(false);
-    const dropped = ev.dataTransfer.files[0];
-    if (dropped !== undefined) acceptFile(dropped);
+    setUploading(false);
   }
 
   function onSubmit(ev: FormEvent): void {
     ev.preventDefault();
-    if (submitMutation.isPending) return;
-    if (tab === 'text' && text.trim() === '') {
-      toast.show(t('add.text.required'), 'warn');
-      return;
-    }
-    if (tab === 'file' && file === null) {
-      toast.show(t('add.file.required'), 'warn');
-      return;
-    }
-    submitMutation.mutate();
+    if (tab === 'text') handleTextSubmit();
+    else void uploadAll();
   }
 
-  function resetForm(): void {
+  const collapseActive = useCallback(() => setActive(null), []);
+  const addAnother = useCallback(() => {
     setActive(null);
-    setText('');
-    setTitle('');
-    setSourceUrl('');
-    setFile(null);
-    submitMutation.reset();
+    setRetryInfo(null);
+  }, []);
+
+  /** „Ponów" z Ostatnio dodanych: prefill formularza (treści/pliku nie przechowujemy). */
+  function handleRetry(req: RetryRequest): void {
+    setActive(null);
+    if (req.sourceKind === 'text') {
+      setRetryInfo('text');
+      setTitle(req.originalName ?? '');
+      goTab('text');
+    } else {
+      setRetryInfo('file');
+      goTab('file');
+    }
   }
 
   const canInbox = can(me.data?.user.role, 'inbox');
+  const charPct = text.length;
+  const counterClass =
+    charPct > TEXT_MAX ? 'text-fail' : charPct >= TEXT_WARN ? 'text-warn' : 'text-text-tertiary';
 
   return (
-    <div className="add-page stack">
-      <header className="stack add-header">
-        <h1 className="add-title">{t('add.pageTitle')}</h1>
-        <p className="muted">{t('add.pageDescription')}</p>
-        {gapQuestion !== undefined && (
-          <div className="card add-gap-banner">🧩 {t('add.gapHeader', { question: gapQuestion })}</div>
-        )}
-      </header>
+    <PageContainer width="form">
+      <PageHeader title={t('add.pageTitle')} description={t('add.pageDescription')} />
 
-      <form className="card stack" onSubmit={onSubmit}>
-        <div className="add-tabs" role="tablist">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === 'text'}
-            className={tab === 'text' ? 'add-tab add-tab-active' : 'add-tab'}
-            onClick={() => setTab('text')}
-          >
-            {t('add.tab.text')}
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === 'file'}
-            className={tab === 'file' ? 'add-tab add-tab-active' : 'add-tab'}
-            onClick={() => setTab('file')}
-          >
-            {t('add.tab.file')}
-          </button>
-        </div>
-
-        {tab === 'text' ? (
-          <div className="stack">
-            <label className="stack add-field">
-              <span>{t('add.text.label')}</span>
-              <textarea
-                className="input"
-                rows={8}
-                value={text}
-                placeholder={t('add.text.placeholder')}
-                onChange={(ev) => setText(ev.target.value)}
-              />
-            </label>
-            <label className="stack add-field">
-              <span>{t('add.titleField.label')}</span>
-              <input className="input" value={title} onChange={(ev) => setTitle(ev.target.value)} />
-            </label>
-            <label className="stack add-field">
-              <span>{t('add.sourceUrl.label')}</span>
-              <input
-                className="input"
-                type="url"
-                value={sourceUrl}
-                placeholder="https://…"
-                onChange={(ev) => setSourceUrl(ev.target.value)}
-              />
-              <span className="muted add-hint">{t('add.sourceUrl.hint')}</span>
-            </label>
-          </div>
-        ) : (
-          <div
-            className={dragOver ? 'add-dropzone add-dropzone-over' : 'add-dropzone'}
-            onDragOver={(ev) => {
-              ev.preventDefault();
-              setDragOver(true);
-            }}
-            onDragLeave={() => setDragOver(false)}
-            onDrop={onDrop}
-          >
-            {file === null ? (
-              <div className="stack add-dropzone-inner">
-                <span aria-hidden="true" className="add-dropzone-icon">
-                  📎
-                </span>
-                <span>{t('add.file.dropHere')}</span>
-                <button type="button" className="btn" onClick={() => fileInputRef.current?.click()}>
-                  {t('add.file.pick')}
-                </button>
-                <span className="muted add-hint">{t('add.file.accepted', { list: EXT_LIST })}</span>
-              </div>
-            ) : (
-              <div className="stack add-dropzone-inner">
-                <span>{t('add.file.selected', { name: file.name, size: formatSize(file.size) })}</span>
-                <button type="button" className="btn btn-ghost btn-sm" onClick={() => setFile(null)}>
-                  {t('add.file.clear')}
-                </button>
-              </div>
-            )}
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept={UPLOAD_ACCEPT}
-              className="visually-hidden"
-              onChange={(ev) => {
-                const picked = ev.target.files?.[0];
-                if (picked !== undefined) acceptFile(picked);
-                ev.target.value = '';
-              }}
-            />
-          </div>
-        )}
-
-        <label className="stack add-field">
-          <span>{t('add.kb.label')}</span>
-          <select className="input" value={namespace} onChange={(ev) => setNamespace(ev.target.value)}>
-            <option value="">{t('add.kb.auto')}</option>
-            {activeKbs.map((kb) => (
-              <option key={kb.namespace} value={kb.namespace}>
-                {kb.name} ({kb.namespace}){kb.isDefault ? ' ★' : ''}
-              </option>
-            ))}
-          </select>
-          <span className="muted add-hint">{t('add.kb.hint')}</span>
-        </label>
-
-        <div className="row">
-          <span className="grow" />
-          <button type="submit" className="btn btn-primary" disabled={submitMutation.isPending}>
-            {submitMutation.isPending ? t('add.submitting') : t('add.submit')}
-          </button>
-        </div>
-      </form>
-
-      {active !== null && (
-        <IntakeProgress
-          intakeId={active.intakeId}
-          deduplicated={active.deduplicated}
-          canInbox={canInbox}
-          onReset={resetForm}
-        />
+      {gapQuestion !== undefined && (
+        <Alert
+          variant="info"
+          icon={<Puzzle size={16} className="text-accent" />}
+          className="mb-5 border-accent/25 bg-accent-tint"
+        >
+          {t('add.gapHeader', { question: gapQuestion })}
+        </Alert>
       )}
 
-      <RecentIntakes />
-    </div>
+      <div className="grid items-start gap-6 lg:grid-cols-[1fr_360px]">
+        <Card>
+          <CardBody>
+            <form className="flex flex-col gap-4" onSubmit={onSubmit}>
+              {retryInfo !== null && (
+                <Alert variant="info">
+                  {retryInfo === 'text' ? t('add.retry.textInfo') : t('add.retry.fileInfo')}
+                </Alert>
+              )}
+
+              <Tabs value={tab} onValueChange={goTab}>
+                <TabsList>
+                  <TabsTrigger value="text">{t('add.tab.text')}</TabsTrigger>
+                  <TabsTrigger value="file">{t('add.tab.file')}</TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="text" className="flex flex-col gap-4">
+                  <div className="flex flex-col gap-1">
+                    <Field
+                      label={t('add.text.label')}
+                      required
+                      {...(textError !== null ? { error: textError } : {})}
+                    >
+                      <Textarea
+                        rows={10}
+                        value={text}
+                        placeholder={t('add.text.placeholder')}
+                        onChange={(ev) => {
+                          setText(ev.target.value);
+                          if (textError !== null) setTextError(null);
+                        }}
+                      />
+                    </Field>
+                    {/* licznik znaków: n/max, warn przy 90% limitu backendu */}
+                    <div
+                      className={cn('self-end text-xs tabular-nums', counterClass)}
+                      {...(charPct >= TEXT_WARN && charPct <= TEXT_MAX
+                        ? { title: t('add.charCountWarn') }
+                        : {})}
+                    >
+                      {t('add.charCount', { n: formatNumber(text.length), max: formatNumber(TEXT_MAX) })}
+                    </div>
+                  </div>
+                  <Field label={t('add.titleField.label')}>
+                    <Input value={title} onChange={(ev) => setTitle(ev.target.value)} />
+                  </Field>
+                  <Field label={t('add.sourceUrl.label')} hint={t('add.sourceUrl.hint')}>
+                    <Input
+                      type="url"
+                      value={sourceUrl}
+                      placeholder="https://…"
+                      onChange={(ev) => setSourceUrl(ev.target.value)}
+                    />
+                  </Field>
+                  {/* bez selecta KB — bazę dobiera analiza treści (plan: atrapa usunięta) */}
+                  <Alert variant="info">{t('add.kbAuto.info')}</Alert>
+                </TabsContent>
+
+                <TabsContent value="file" className="flex flex-col gap-4">
+                  <div
+                    className={cn(
+                      'flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed p-6 text-center transition-colors',
+                      dragOver ? 'border-accent bg-accent-tint' : 'border-border',
+                    )}
+                    onDragOver={(ev) => {
+                      ev.preventDefault();
+                      setDragOver(true);
+                    }}
+                    onDragLeave={() => setDragOver(false)}
+                    onDrop={onDrop}
+                  >
+                    <Paperclip size={20} className="text-text-tertiary" aria-hidden="true" />
+                    <span className="text-sm text-text">{t('add.file.dropHere')}</span>
+                    <Button onClick={() => fileInputRef.current?.click()}>
+                      {t('add.file.pick')}
+                    </Button>
+                    <span className="text-xs text-text-secondary">
+                      {t('add.file.accepted', { list: EXT_LIST })}
+                    </span>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept={UPLOAD_ACCEPT}
+                      multiple
+                      className="hidden"
+                      onChange={(ev) => {
+                        if (ev.target.files !== null) addFiles(ev.target.files);
+                        ev.target.value = '';
+                      }}
+                    />
+                  </div>
+                  {fileError !== null && (
+                    <p role="alert" className="text-xs text-fail">
+                      {fileError}
+                    </p>
+                  )}
+
+                  {queue.length > 0 && (
+                    <div className="flex flex-col gap-1.5">
+                      <span className="text-xs font-medium text-text-secondary">
+                        {t('add.queue.title', { count: queue.length })}
+                      </span>
+                      <ul className="flex flex-col gap-1">
+                        {queue.map((item) => (
+                          <li
+                            key={item.id}
+                            className="flex flex-col gap-1 rounded-md border border-border bg-surface px-2.5 py-1.5"
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className="min-w-0 grow truncate text-sm text-text">
+                                {item.name}
+                              </span>
+                              <Badge variant="neutral" tone="outline">
+                                {formatSize(item.size)}
+                              </Badge>
+                              {item.status === 'queued' && (
+                                <Badge variant="neutral">{t('add.queue.status.queued')}</Badge>
+                              )}
+                              {item.status === 'uploading' && (
+                                <span className="flex items-center gap-2">
+                                  <span className="h-1.5 w-20 overflow-hidden rounded-full bg-surface-3">
+                                    {/* szerokość dynamiczna — dozwolony inline style */}
+                                    <span
+                                      className="block h-full rounded-full bg-accent transition-[width]"
+                                      style={{ width: `${Math.round(item.progress * 100)}%` }}
+                                    />
+                                  </span>
+                                  <span className="text-xs tabular-nums text-text-secondary">
+                                    {t('add.queue.status.uploading', {
+                                      pct: Math.round(item.progress * 100),
+                                    })}
+                                  </span>
+                                </span>
+                              )}
+                              {item.status === 'done' && (
+                                <Badge variant="ok">{t('add.queue.status.done')}</Badge>
+                              )}
+                              {item.status === 'failed' && (
+                                <Badge variant="fail">{t('add.queue.status.failed')}</Badge>
+                              )}
+                              <IconButton
+                                aria-label={t('add.queue.remove', { name: item.name })}
+                                size="icon-sm"
+                                disabled={item.status === 'uploading'}
+                                onClick={() => {
+                                  filesRef.current.delete(item.id);
+                                  dispatchQueue({ type: 'remove', id: item.id });
+                                }}
+                              >
+                                <X size={14} aria-hidden="true" />
+                              </IconButton>
+                            </div>
+                            {item.status === 'failed' && item.error !== undefined && (
+                              <p className="text-xs text-fail">{item.error}</p>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* w trybie plikowym wybór KB ZOSTAJE (hint o analizie) */}
+                  <Field label={t('add.kb.label')} hint={t('add.kb.hint')}>
+                    <Select value={namespace} onChange={(ev) => setNamespace(ev.target.value)}>
+                      <option value="">{t('add.kb.auto')}</option>
+                      {activeKbs.map((kb) => (
+                        <option key={kb.namespace} value={kb.namespace}>
+                          {kb.name} ({kb.namespace}){kb.isDefault ? ' ★' : ''}
+                        </option>
+                      ))}
+                    </Select>
+                  </Field>
+                </TabsContent>
+              </Tabs>
+
+              <div className="flex justify-end">
+                <Button
+                  type="submit"
+                  variant="primary"
+                  loading={submitText.isPending || uploading}
+                >
+                  {submitText.isPending || uploading ? t('add.submitting') : t('add.submit')}
+                </Button>
+              </div>
+            </form>
+          </CardBody>
+        </Card>
+
+        {/* aside: aktywny postęp LUB ostatnio dodane */}
+        <aside className="flex flex-col gap-4">
+          {active !== null ? (
+            <IntakeProgress
+              intakeId={active.intakeId}
+              deduplicated={active.deduplicated}
+              canInbox={canInbox}
+              onAddAnother={addAnother}
+              onCollapsed={collapseActive}
+            />
+          ) : (
+            <RecentIntakes onRetry={handleRetry} />
+          )}
+        </aside>
+      </div>
+    </PageContainer>
   );
 }

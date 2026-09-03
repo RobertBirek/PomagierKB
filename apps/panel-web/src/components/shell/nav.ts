@@ -125,15 +125,21 @@ export function documentTitle(path: string): string {
 
 /**
  * Liczba szkiców czekających na recenzję z GET /api/v1/status.
- * Status nie zwraca czystej liczby — sonda 'inbox' (services/status.ts panel-api)
- * koduje ją w detail: 'oczekujące: N'. Parsujemy defensywnie pierwszą liczbę;
- * brak sygnału / brak liczby → undefined (badge się nie renderuje).
+ * Sonda 'inbox' (services/status.ts panel-api) zwraca liczbę wprost w polu
+ * pendingDrafts — bierzemy ją w pierwszej kolejności. Fallback (starszy
+ * backend): parsowanie pierwszej liczby z detail 'oczekujące: N'.
+ * Brak sygnału / brak liczby → undefined (badge się nie renderuje).
  */
 export function pendingDraftsFromStatus(
-  components: readonly { id: string; detail?: string | undefined }[] | undefined,
+  components:
+    | readonly { id: string; detail?: string | undefined; pendingDrafts?: number | undefined }[]
+    | undefined,
 ): number | undefined {
   const inbox = components?.find((c) => c.id === 'inbox');
-  if (inbox === undefined || inbox.detail === undefined) return undefined;
+  if (inbox === undefined) return undefined;
+  const direct = inbox.pendingDrafts;
+  if (typeof direct === 'number' && Number.isSafeInteger(direct) && direct >= 0) return direct;
+  if (inbox.detail === undefined) return undefined;
   const match = /\d+/.exec(inbox.detail);
   if (match === null) return undefined;
   const n = Number(match[0]);

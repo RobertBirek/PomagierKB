@@ -1,13 +1,13 @@
 /** notFoundComponent rootRoute — nieistniejący adres → CTA na /ask. */
 import { Link } from '@tanstack/react-router';
 import { SearchX } from 'lucide-react';
-import { EmptyState } from '@/components/EmptyState';
+import { EmptyState } from '@/ui/empty-state';
 import { t } from '@/i18n/t';
 
 export function NotFound() {
   return (
     <EmptyState
-      icon={<SearchX size={32} aria-hidden="true" />}
+      icon={SearchX}
       title={t('notFound.title')}
       description={t('notFound.description')}
       action={

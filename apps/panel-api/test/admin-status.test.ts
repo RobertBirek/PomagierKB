@@ -98,6 +98,18 @@ describe('status cockpit', () => {
     expect(fetchMock.mock.calls.length).toBe(callsAfterFirst);
   });
 
+  it('sonda inbox niesie liczbę pendingDrafts wprost (badge w nav bez parsowania detail)', async () => {
+    const res = await ctx.app.inject({ method: 'GET', url: '/api/v1/status', headers: as('viewer') });
+    expect(res.statusCode).toBe(200);
+    const inbox = (res.json().data.components as { id: string; detail: string; pendingDrafts?: number }[]).find(
+      (c) => c.id === 'inbox',
+    );
+    expect(inbox).toBeDefined();
+    expect(typeof inbox?.pendingDrafts).toBe('number');
+    // spójność z detail 'oczekujące: N' (fallback starszych klientów)
+    expect(inbox?.detail).toBe(`oczekujące: ${inbox?.pendingDrafts}`);
+  });
+
   it('reset breakera: operator → 403; admin → 200, cache unieważniony, llm wraca do ok', async () => {
     const forbidden = await ctx.app.inject({
       method: 'POST',

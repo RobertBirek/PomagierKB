@@ -19,6 +19,11 @@ export interface StatusComponent {
   status: ComponentStatus;
   detail: string;
   latencyMs: number;
+  /**
+   * Tylko sonda 'inbox': liczba szkiców czekających na recenzję (badge
+   * w nawigacji panelu czyta ją wprost, bez parsowania detail).
+   */
+  pendingDrafts?: number;
 }
 
 export interface StatusCockpit {
@@ -80,11 +85,11 @@ async function probeHttp(
 async function timedProbe(
   id: string,
   label: string,
-  fn: () => Promise<{ status: ComponentStatus; detail: string }>,
+  fn: () => Promise<{ status: ComponentStatus; detail: string; pendingDrafts?: number }>,
 ): Promise<StatusComponent> {
   const startedAt = Date.now();
   try {
-    const timeout = new Promise<{ status: ComponentStatus; detail: string }>((resolve) => {
+    const timeout = new Promise<{ status: ComponentStatus; detail: string; pendingDrafts?: number }>((resolve) => {
       const t = setTimeout(
         () => resolve({ status: 'down', detail: `timeout sondy (${PROBE_TIMEOUT_MS + 500} ms)` }),
         PROBE_TIMEOUT_MS + 500,
@@ -199,7 +204,11 @@ export function createStatusService(deps: StatusServiceDeps): StatusService {
     const inboxProbe = timedProbe('inbox', 'Inbox (szkice do recenzji)', async () => {
       const pending = (db.prepare("SELECT COUNT(*) AS n FROM drafts WHERE status = 'pending'").get() as { n: number }).n;
       const detail = `oczekujące: ${pending}`;
-      return pending > 0 ? { status: 'warn', detail } : { status: 'ok', detail };
+      // pendingDrafts: liczba wprost dla UI (badge Inboxu) — detail zostaje
+      // dla ludzi i jako fallback starszych klientów.
+      return pending > 0
+        ? { status: 'warn', detail, pendingDrafts: pending }
+        : { status: 'ok', detail, pendingDrafts: pending };
     });
 
     const gapsProbe = timedProbe('gaps', 'Luki wiedzy', async () => {
