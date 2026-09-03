@@ -70,7 +70,7 @@ describe('status cockpit', () => {
 
     const ids = (data.components as { id: string }[]).map((c) => c.id);
     expect(ids.sort()).toEqual(
-      ['actions', 'breakers', 'db', 'gaps', 'inbox', 'llm', 'mcp', 'openspg', 'stirling', 'tika'].sort(),
+      ['actions', 'backup', 'breakers', 'cert', 'db', 'disk', 'gaps', 'inbox', 'llm', 'mcp', 'openspg', 'stirling', 'tika'].sort(),
     );
     for (const c of data.components as { label: string; status: string; latencyMs: number; detail: string }[]) {
       expect(c.label.length).toBeGreaterThan(0);

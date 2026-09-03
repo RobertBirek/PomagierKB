@@ -1,3 +1,6 @@
+import { statfsSync, readFileSync } from 'node:fs';
+import { connect as tlsConnect } from 'node:tls';
+import { join } from 'node:path';
 import type { Db } from '@pomagierkb/shared/db';
 import { OpenSpgClient, listProjects } from '@pomagierkb/shared/openspg';
 import { getBreakerStates, resetBreaker, type BreakerState } from '@pomagierkb/shared/llm';
@@ -217,6 +220,79 @@ export function createStatusService(deps: StatusServiceDeps): StatusService {
       return open > 0 ? { status: 'warn', detail } : { status: 'ok', detail };
     });
 
+    // ── Sondy operacyjne (program rozbudowy F11): dysk / świeżość backupu / cert ──
+    const diskProbe = timedProbe('disk', 'Dysk (wolne miejsce)', async () => {
+      let st: ReturnType<typeof statfsSync>;
+      try {
+        st = statfsSync(config.dataDir);
+      } catch (err) {
+        // Nie można zmierzyć (środowisko testowe/nietypowy mount) ≠ pełny dysk.
+        return { status: 'unknown', detail: `statfs: ${err instanceof Error ? err.message : String(err)}` };
+      }
+      const total = st.blocks * st.bsize;
+      const free = st.bavail * st.bsize;
+      const freePct = total > 0 ? (free / total) * 100 : 0;
+      const detail = `wolne ${(free / 1e9).toFixed(1)} GB (${freePct.toFixed(0)}%)`;
+      if (freePct < 5) return { status: 'down', detail: `${detail} — krytycznie mało` };
+      if (freePct < 15) return { status: 'warn', detail };
+      return { status: 'ok', detail };
+    });
+
+    const backupProbe = timedProbe('backup', 'Backup (świeżość)', async () => {
+      // backup.sh pisze wolny od sekretów /data/backup-status.json po KAŻDYM biegu.
+      let raw: string;
+      try {
+        raw = readFileSync(join(config.dataDir, 'backup-status.json'), 'utf8');
+      } catch {
+        return { status: 'unknown', detail: 'brak backup-status.json — backup jeszcze nie raportował' };
+      }
+      const parsed = JSON.parse(raw) as { createdAt?: string; ok?: boolean; missingRequired?: string[] };
+      const ageH = parsed.createdAt !== undefined
+        ? (Date.now() - Date.parse(parsed.createdAt)) / 3_600_000
+        : Infinity;
+      const detail = `ostatni: ${parsed.createdAt ?? '?'} (${Number.isFinite(ageH) ? ageH.toFixed(1) : '?'} h temu), ok=${String(parsed.ok)}`;
+      if (parsed.ok !== true) return { status: 'down', detail: `${detail}; brakuje: ${(parsed.missingRequired ?? []).join(', ')}` };
+      if (ageH > 50) return { status: 'down', detail: `${detail} — dawniej niż 50 h` };
+      if (ageH > 26) return { status: 'warn', detail: `${detail} — dawniej niż 26 h` };
+      return { status: 'ok', detail };
+    });
+
+    const certProbe = timedProbe('cert', 'Certyfikat TLS', async () => {
+      let publicHost = '';
+      try {
+        const url = new URL(config.publicUrl);
+        if (url.protocol === 'https:') publicHost = url.hostname;
+      } catch {
+        publicHost = '';
+      }
+      if (publicHost === '') return { status: 'unknown', detail: 'publicUrl bez https — sonda pominięta' };
+      let days: number;
+      try {
+        // Własny limit ostrzejszy niż timedProbe: wolny DNS/host → unknown, nie down.
+        const probe = new Promise<number>((resolve, reject) => {
+        const sock = tlsConnect({ host: publicHost, port: 443, servername: publicHost, timeout: PROBE_TIMEOUT_MS }, () => {
+          const cert = sock.getPeerCertificate();
+          sock.end();
+          resolve((Date.parse(cert.valid_to) - Date.now()) / 86_400_000);
+        });
+          sock.on('error', reject);
+          sock.on('timeout', () => { sock.destroy(); reject(new Error('timeout TLS')); });
+        });
+        const limit = new Promise<never>((_, reject) => {
+          const t = setTimeout(() => reject(new Error('limit czasu sondy TLS')), PROBE_TIMEOUT_MS - 500);
+          t.unref();
+        });
+        days = await Promise.race([probe, limit]);
+      } catch (err) {
+        // Niedostępny host ≠ zły certyfikat (dev/test bez DNS) — nie wywracaj cockpitu.
+        return { status: 'unknown', detail: `nie można sprawdzić: ${err instanceof Error ? err.message : String(err)}` };
+      }
+      const detail = `wygasa za ${days.toFixed(0)} dni`;
+      if (days < 7) return { status: 'down', detail };
+      if (days < 21) return { status: 'warn', detail };
+      return { status: 'ok', detail };
+    });
+
     const components = await Promise.all([
       dbProbe,
       openspgProbe,
@@ -228,11 +304,19 @@ export function createStatusService(deps: StatusServiceDeps): StatusService {
       inboxProbe,
       gapsProbe,
       breakersProbe,
+      diskProbe,
+      backupProbe,
+      certProbe,
     ]);
 
+    // Sondy pomocnicze (backup/cert): 'unknown' = nie można ocenić (świeża instalacja,
+    // dev bez DNS) — nie obniża overall; warn/down liczą się normalnie.
+    const AUX_UNKNOWN_AS_OK = new Set(['backup', 'cert', 'disk']);
     return {
       components,
-      overall: worstStatus(components.map((c) => c.status)),
+      overall: worstStatus(
+        components.map((c) => (AUX_UNKNOWN_AS_OK.has(c.id) && c.status === 'unknown' ? 'ok' : c.status)),
+      ),
       generatedAt: new Date().toISOString(),
       breakers,
     };

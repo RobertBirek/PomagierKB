@@ -306,6 +306,23 @@ prune_snapshots() {
 prune_snapshots
 
 cat "${SNAP}/_manifest.json"
+# Status dla kokpitu panelu (WOLNY OD SEKRETÓW; /data/backup-status.json w kontenerze):
+# sonda backup-freshness w services/status.ts czyta stamp/ok/coreArtifacts.
+STATUS_FILE="${DATA_ROOT}/kag/panel/backup-status.json"
+{
+  printf '{ "stamp": "%s", "createdAt": "%s", "ok": %s, "coreArtifacts": %s, "missingRequired": [' \
+    "${STAMP}" "$(date -Is)" "${OK}" "${CORE_COUNT}"
+  first=1
+  for m in "${MISSING_REQUIRED[@]+"${MISSING_REQUIRED[@]}"}"; do
+    [[ ${first} -eq 1 ]] || printf ', '
+    first=0
+    printf '"%s"' "$(json_escape "${m}")"
+  done
+  printf '] }\n'
+} > "${STATUS_FILE}.tmp" && mv "${STATUS_FILE}.tmp" "${STATUS_FILE}"
+chmod 644 "${STATUS_FILE}"
+chown 10001:10001 "${STATUS_FILE}" 2>/dev/null || true
+
 if [[ "${OK}" != "true" ]]; then
   die "snapshot NIEKOMPLETNY — brakuje artefaktów wymaganych: ${MISSING_REQUIRED[*]:-brak żadnego}"
 fi

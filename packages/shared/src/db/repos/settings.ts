@@ -19,6 +19,7 @@ export const SETTINGS_KEYS = [
   'answer.rerank',
   'answer.rewrite',
   'learning.autoDraft',
+  'retention',
 ] as const;
 
 export type SettingsKey = (typeof SETTINGS_KEYS)[number];
