@@ -163,6 +163,11 @@ export function listIntakes(db: Db, limit: number): IntakeRow[] {
     .all(limit) as IntakeRow[];
 }
 
+/** Łączna liczba intake'ów — meta.total listy /content (backlog ux-audit). */
+export function countIntakes(db: Db): number {
+  return (db.prepare('SELECT COUNT(*) AS n FROM intakes').get() as { n: number }).n;
+}
+
 /** Dedup po sha256 treści: najnowszy intake wskazujący ten sam blob. */
 export function findIntakeByBlobPath(db: Db, blobPath: string): IntakeRow | null {
   const row = db

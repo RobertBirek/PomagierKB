@@ -5,15 +5,14 @@
 	# acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
 }
 
-# Wspólne nagłówki bezpieczeństwa dla obu vhostów
+# Wspólne nagłówki bezpieczeństwa; CSP jako argument importu (per vhost —
+# panel SPA dostaje pełną politykę, Authentik/status tylko frame-ancestors).
 (security_headers) {
 	header {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		X-Content-Type-Options nosniff
 		Referrer-Policy strict-origin-when-cross-origin
-		# Anty-clickjacking ('self', nie 'none' — Authentik używa własnych osadzeń same-origin).
-		# Pełny CSP default-src dla SPA: Faza 8 programu rozbudowy (wymaga testów dyrektyw).
-		Content-Security-Policy "frame-ancestors 'self'"
+		Content-Security-Policy "{args[0]}"
 		X-Frame-Options SAMEORIGIN
 		Permissions-Policy "camera=(), microphone=(), geolocation=()"
 		-Server
@@ -22,13 +21,15 @@
 
 # SSO — Authentik
 auth.ilovelighting.sanok.pl {
-	import security_headers
+	import security_headers "frame-ancestors 'self'"
 	reverse_proxy edge-authentik-server:9000
 }
 
 # Panel + MCP — PomagierKB
 kag.ilovelighting.sanok.pl {
-	import security_headers
+	# Pełny CSP dla SPA panelu: skrypty wyłącznie własne (Vite bez inline), style
+	# 'unsafe-inline' konieczne dla atrybutów style React/Radix, data: dla obrazków.
+	import security_headers "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'"
 	encode zstd gzip
 	log {
 		output file /data/access-kag.log {
@@ -78,7 +79,7 @@ kag.ilovelighting.sanok.pl {
 # Wymaga: rekord DNS A dla status.ilovelighting.sanok.pl oraz aplikacji forward-auth
 # "Status Monitor" w Authentiku (docs/authentik-setup.md) — dostęp tylko kag-admin.
 status.ilovelighting.sanok.pl {
-	import security_headers
+	import security_headers "frame-ancestors 'self'"
 	handle /outpost.goauthentik.io/* {
 		reverse_proxy edge-authentik-server:9000 {
 			header_up Host {host}

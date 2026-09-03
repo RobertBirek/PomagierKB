@@ -38,8 +38,9 @@ export function normalizeQuestion(question: string): string {
 const TRANSITIONS: Record<GapStatus, GapStatus[]> = {
   open: ['in_draft', 'resolved', 'ignored'],
   in_draft: ['resolved', 'ignored'],
-  resolved: [],
-  ignored: [],
+  // reopen (program rozbudowy F8): ignore/resolve przestają być nieodwracalne
+  resolved: ['open'],
+  ignored: ['open'],
 };
 
 export interface GapInput {
@@ -58,14 +59,21 @@ export interface RecordGapResult {
   created: boolean;
 }
 
-/** Duplikat otwartej luki (po normalized_question) → zwróć istniejącą, podbij evidence_count. */
+/**
+ * Duplikat otwartej luki (po normalized_question W OBRĘBIE namespace — migracja 0005;
+ * wcześniej dedupe był globalny i to samo pytanie do dwóch KB zlewało się w jedną lukę)
+ * → zwróć istniejącą, podbij evidence_count.
+ */
 export function recordGap(db: Db, input: GapInput): RecordGapResult {
   const normalized = normalizeQuestion(input.question);
   if (!normalized) throw new AppError('validation_error', 'question jest puste po normalizacji');
+  const ns = input.kbNamespace ?? null;
   const tx = db.transaction((): RecordGapResult => {
     const existing = db
-      .prepare("SELECT * FROM learning_gaps WHERE normalized_question = ? AND status = 'open'")
-      .get(normalized) as GapRow | undefined;
+      .prepare(
+        "SELECT * FROM learning_gaps WHERE normalized_question = ? AND status = 'open' AND kb_namespace IS ?",
+      )
+      .get(normalized, ns) as GapRow | undefined;
     if (existing) {
       db.prepare('UPDATE learning_gaps SET evidence_count = evidence_count + 1 WHERE id = ?').run(
         existing.id,
@@ -94,8 +102,10 @@ export function recordGap(db: Db, input: GapInput): RecordGapResult {
       // Wyścig na ux_gaps_open_dedupe (drugi proces wstawił równolegle) → zwróć istniejącą.
       if (isConstraintError(err)) {
         const raced = db
-          .prepare("SELECT * FROM learning_gaps WHERE normalized_question = ? AND status = 'open'")
-          .get(normalized) as GapRow | undefined;
+          .prepare(
+            "SELECT * FROM learning_gaps WHERE normalized_question = ? AND status = 'open' AND kb_namespace IS ?",
+          )
+          .get(normalized, ns) as GapRow | undefined;
         if (raced) return { row: raced, created: false };
       }
       throw err;
@@ -119,6 +129,8 @@ export function getGapOrThrow(db: Db, id: string): GapRow {
 export interface GapListFilter {
   status?: GapStatus;
   kbNamespace?: string;
+  /** 'evidence' = najczęściej dopytywane najpierw; default 'created' (najnowsze). */
+  sort?: 'created' | 'evidence';
   limit?: number;
   offset?: number;
 }
@@ -138,8 +150,10 @@ export function listGaps(db: Db, filter: GapListFilter = {}): { items: GapRow[];
   const total = (db.prepare(`SELECT COUNT(*) AS n FROM learning_gaps ${cond}`).get(...params) as {
     n: number;
   }).n;
+  const order =
+    filter.sort === 'evidence' ? 'evidence_count DESC, created_at DESC' : 'created_at DESC';
   const items = db
-    .prepare(`SELECT * FROM learning_gaps ${cond} ORDER BY created_at DESC LIMIT ? OFFSET ?`)
+    .prepare(`SELECT * FROM learning_gaps ${cond} ORDER BY ${order} LIMIT ? OFFSET ?`)
     .all(...params, Math.min(filter.limit ?? 50, 200), filter.offset ?? 0) as GapRow[];
   return { items, total };
 }
@@ -174,6 +188,40 @@ export function setGapStatus(
     db.prepare(
       'UPDATE learning_gaps SET status = ?, draft_id = ?, processed_at = ?, processed_by = ? WHERE id = ?',
     ).run(to, opts.draftId ?? row.draft_id, nowIso(), opts.processedBy ?? null, id);
+    return getGapOrThrow(db, id);
+  });
+  return tx.immediate();
+}
+
+/**
+ * Reopen (ignored|resolved → open). Kolizja z JUŻ otwartą luką o tym samym
+ * znormalizowanym pytaniu i namespace → merge: otwarta przejmuje evidence_count
+ * reopenowanej, reopenowana zostaje w stanie terminalnym (zwracamy przetrwałą).
+ */
+export function reopenGap(db: Db, id: string, processedBy?: string): GapRow {
+  const tx = db.transaction((): GapRow => {
+    const row = getGapOrThrow(db, id);
+    if (!TRANSITIONS[row.status].includes('open')) {
+      throw new AppError('conflict', `nielegalne przejście luki: ${row.status} → open`, {
+        from: row.status,
+        to: 'open',
+      });
+    }
+    const openTwin = db
+      .prepare(
+        "SELECT * FROM learning_gaps WHERE normalized_question = ? AND status = 'open' AND kb_namespace IS ? AND id != ?",
+      )
+      .get(row.normalized_question, row.kb_namespace, id) as GapRow | undefined;
+    if (openTwin) {
+      db.prepare('UPDATE learning_gaps SET evidence_count = evidence_count + ? WHERE id = ?').run(
+        row.evidence_count,
+        openTwin.id,
+      );
+      return getGapOrThrow(db, openTwin.id);
+    }
+    db.prepare(
+      'UPDATE learning_gaps SET status = ?, processed_at = ?, processed_by = ? WHERE id = ?',
+    ).run('open', nowIso(), processedBy ?? null, id);
     return getGapOrThrow(db, id);
   });
   return tx.immediate();

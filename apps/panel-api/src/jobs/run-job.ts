@@ -30,7 +30,9 @@ const JOB_MODULES: Record<string, () => Promise<{ default: JobFn }>> = {
   noop: () => import('./noop.js'),
   build_kb: () => import('./build-kb.js'),
   quality_gate: () => import('./quality-gate.js'),
-  // kolejne joby (Faza 4+): create_kb, analyze_draft, export_drafts...
+  // gap_research: auto-research luk z sieci — ŚWIADOMIE niezaimplementowane
+  // (decyzja v1: bez auto-draftów; setting 'learning.autoDraft' zarezerwowany,
+  // fast-follow po sprawdzeniu ingestu URL — plan rozbudowy F8.4).
 };
 
 /** Linia logu z timestampem — stdout jest podpięty do pliku logu akcji. */

@@ -5,6 +5,7 @@ import {
   gapToApi,
   ignoreGap,
   listGapEntries,
+  reopenGapEntry,
   resolveGap,
   startDraftFromGap,
 } from '../services/learning.js';
@@ -36,7 +37,7 @@ interface IdParams {
 
 export default async function learningRoutes(app: FastifyInstance): Promise<void> {
   // ── GET /learning/gaps — lista z filtrami i meta.total ────────────────────
-  app.get<{ Querystring: { status?: GapStatus; namespace?: string; page: number; limit: number } }>(
+  app.get<{ Querystring: { status?: GapStatus; namespace?: string; sort?: 'created' | 'evidence'; page: number; limit: number } }>(
     '/learning/gaps',
     {
       config: { rbac: 'viewer', audit: false, csrf: false },
@@ -47,6 +48,7 @@ export default async function learningRoutes(app: FastifyInstance): Promise<void
           properties: {
             status: { type: 'string', enum: [...GAP_STATUSES] },
             namespace: { type: 'string', pattern: NAMESPACE_PATTERN },
+            sort: { type: 'string', enum: ['created', 'evidence'], default: 'created' },
             page: { type: 'integer', minimum: 1, default: 1 },
             limit: { type: 'integer', minimum: 1, maximum: 200, default: 50 },
           },
@@ -94,6 +96,21 @@ export default async function learningRoutes(app: FastifyInstance): Promise<void
     },
     async (req, reply) => {
       const gap = resolveGap(app.db, req.params.id, req.user!.id);
+      reply.auditContext = { resourceType: 'gap', resourceId: gap.id, after: { status: gap.status } };
+      return { ok: true as const, data: { gap: gapToApi(gap) } };
+    },
+  );
+
+  // ── POST /learning/gaps/:id/reopen — ignored|resolved → open (koniec
+  //    nieodwracalności ignore; kolizja z otwartą luką → merge evidence) ─────
+  app.post<{ Params: IdParams }>(
+    '/learning/gaps/:id/reopen',
+    {
+      config: { rbac: 'operator', audit: 'gap.reopen', csrf: true, rateLimitGroup: 'mutation' },
+      schema: { params: idParamsSchema, response: { 200: successRef, '4xx': errorRef, '5xx': errorRef } },
+    },
+    async (req, reply) => {
+      const gap = reopenGapEntry(app.db, req.params.id, req.user!.id);
       reply.auditContext = { resourceType: 'gap', resourceId: gap.id, after: { status: gap.status } };
       return { ok: true as const, data: { gap: gapToApi(gap) } };
     },

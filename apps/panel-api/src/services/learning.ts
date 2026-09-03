@@ -9,6 +9,7 @@ import {
   setGapStatus,
   type GapRow,
   type GapStatus,
+  reopenGap,
 } from '@pomagierkb/shared/db';
 import { AppError } from '@pomagierkb/shared/errors';
 import { humanize } from './messages.js';
@@ -54,6 +55,7 @@ export interface GapListQuery {
   namespace?: string;
   page: number;
   limit: number;
+  sort?: 'created' | 'evidence';
 }
 
 export function listGapEntries(
@@ -63,6 +65,7 @@ export function listGapEntries(
   const { items, total } = listGaps(db, {
     ...(query.status !== undefined && { status: query.status }),
     ...(query.namespace !== undefined && { kbNamespace: query.namespace }),
+    ...(query.sort !== undefined && { sort: query.sort }),
     limit: query.limit,
     offset: (query.page - 1) * query.limit,
   });
@@ -82,6 +85,10 @@ export function ignoreGap(db: Db, id: string, processedBy: string): GapRow {
 
 export function resolveGap(db: Db, id: string, processedBy: string): GapRow {
   return setGapStatus(db, id, 'resolved', { processedBy });
+}
+
+export function reopenGapEntry(db: Db, id: string, processedBy: string): GapRow {
+  return reopenGap(db, id, processedBy);
 }
 
 export interface StartDraftResult {

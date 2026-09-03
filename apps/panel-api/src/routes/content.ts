@@ -7,6 +7,7 @@ import {
   fileExtension,
   findIntakeByBlobPath,
   getIntake,
+  countIntakes,
   getIntakeOrThrow,
   insertIntake,
   intakeToDetail,
@@ -296,7 +297,7 @@ export default async function contentRoutes(app: FastifyInstance): Promise<void>
     async (req) => ({
       ok: true as const,
       data: { items: listIntakes(app.db, req.query.limit).map(intakeToListItem) },
-      meta: { limit: req.query.limit },
+      meta: { limit: req.query.limit, total: countIntakes(app.db) },
     }),
   );
 }

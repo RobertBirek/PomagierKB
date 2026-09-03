@@ -17,6 +17,7 @@ export const SETTINGS_KEYS = [
   'drafts.limits',
   'answer.minScore',
   'answer.rerank',
+  'learning.autoDraft',
 ] as const;
 
 export type SettingsKey = (typeof SETTINGS_KEYS)[number];
