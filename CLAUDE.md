@@ -34,6 +34,8 @@ docker compose -f deploy/kag/compose.yaml config -q
 docker compose -f compose.dev.yaml up    # dev: panel+mcp+SQLite+stub OpenSPG (bez pełnego stacka)
 deploy/scripts/smoke.sh   # smoke test po deployu
 npm run eval              # hit@k/MRR retrievalu na goldens.jsonl (DATA_DIR wskazuje bazę)
+node tools/ux-audit/e2e.mjs         # E2E klikalne na produkcji (10 checków, login akadmin)
+node tools/ux-audit/screenshot.mjs  # zrzuty produkcji (--pages /kb,... --out katalog)
 ```
 
 ## Architektura (skrót — pełny obraz w docs/design/PLAN.md)
@@ -44,8 +46,10 @@ npm run eval              # hit@k/MRR retrievalu na goldens.jsonl (DATA_DIR wska
 - **apps/mcp-server** — @modelcontextprotocol/sdk, Streamable HTTP stateless, profile po ścieżce
   /mcp/<profil>; auth Bearer sk-... (sha256 w SQLite). Narzędzia: kb_search/kb_answer/kb_list/
   kb_submit_draft/kb_feedback.
-- **apps/panel-web** — React 18 + Vite + TanStack Router/Query. Strony: ask (mobile-first),
-  add, inbox(+luki), kb, mcp, settings.
+- **apps/panel-web** — React 19 + Vite + TanStack Router/Query. Strony: overview, ask
+  (mobile-first), add, inbox(+luki), kb, mcp, settings. Design system v2 (Linear-like):
+  tokeny Tailwind v4 w src/styles/app.css, kit komponentów w src/ui/, shell (sidebar/
+  topbar/⌘K) w components/shell/ — nowe UI buduj Z KITU, nie gołym HTML/CSS ani .btn.
 - **packages/shared** — db (better-sqlite3 WAL, migracje SQL), audit (hash-chain), crypto,
   openspg (client/search/builder/login/models), llm (openai-compatible), schemas, errors.
 - **Stan**: JEDEN plik SQLite współdzielony panel-api+mcp-server (WAL, busy_timeout 5000,
@@ -72,9 +76,13 @@ npm run eval              # hit@k/MRR retrievalu na goldens.jsonl (DATA_DIR wska
   packages/shared/src/errors.ts.
 - Czysta logika (chunker, health, permissions, słownik komunikatów) w plikach bez frameworka,
   z testami vitest.
+- deploy/edge/Caddyfile to bind-mount POJEDYNCZEGO pliku: edycja podmienia inode, więc
+  `caddy reload` przeładuje starą wersję — po edycji zawsze `docker restart edge-caddy`.
 
 ## Git
 
 - Commity po angielsku (conventional: feat/fix/chore/docs...); push na origin main po każdej
   ukończonej fazie planu. Pre-commit gitleaks jest obowiązkowy (core.hooksPath=.githooks).
 - Remote: git@github.com:RobertBirek/PomagierKB.git (klucz SSH id_ed25519_github_robertbirek).
+- `gh` CLI zalogowany (konto RobertBirek) — PR-y/issues/CI przez gh. Klony https://github.com/
+  są globalnie przepisywane na SSH (insteadOf) — omija limity anonimowych pobrań.

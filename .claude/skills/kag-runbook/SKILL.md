@@ -53,3 +53,17 @@ npm run eval -- tools/eval/goldens.example.jsonl          # wskazany plik
 EVAL_MIN_HIT5=0.8 npm run eval                            # bramka progowa (exit 1 poniżej)
 ```
 Buduj goldens przyrostowo przy ingestach (w tym pytania NEGATYWNE spoza bazy).
+
+## Weryfikacja UI na produkcji (tools/ux-audit)
+```bash
+node tools/ux-audit/e2e.mjs                                # 10 checków E2E (login akadmin z deploy/edge/.env)
+node tools/ux-audit/screenshot.mjs --pages /kb,/overview --out /tmp/shots   # zrzuty: 2 viewporty × light/dark
+```
+Ścieżki w --pages Z wiodącym ukośnikiem (skrypt normalizuje, ale nie polegaj na tym).
+Zrzuty referencyjne przebudowy: docs/design/ux-audit/{before,after}/ + raport ux-audit.md.
+
+## Pułapka: deploy/edge/Caddyfile (bind-mount pojedynczego pliku)
+Edycja pliku podmienia inode, a mount w kontenerze trzyma stary → `docker exec edge-caddy
+caddy reload` przeładuje STARĄ wersję. Po każdej edycji Caddyfile: `docker restart edge-caddy`
+(sekundy przerwy na wszystkich vhostach), potem `curl -s -o /dev/null -w '%{http_code}'
+https://kag.ilovelighting.sanok.pl/mcp` (oczekiwane 200 = SPA, nie 405 JSON-RPC).
