@@ -75,6 +75,12 @@ const patchKbBodySchema = {
     // odcina literówki. Archiwizacja = PATCH {status:'archived'} (soft delete).
     status: { type: 'string', enum: ['draft', 'provisioning', 'active', 'error', 'archived'] },
     config: { type: 'object' },
+    // Routing hints cross-KB: słowa kluczowe ważące fuzję wyszukiwania (answer/routing.ts).
+    routingKeywords: {
+      type: 'array',
+      maxItems: 20,
+      items: { type: 'string', minLength: 2, maxLength: 64 },
+    },
   },
 } as const;
 
@@ -171,6 +177,7 @@ export default async function kbsRoutes(app: FastifyInstance): Promise<void> {
     description?: string;
     status?: KbStatus;
     config?: Record<string, unknown>;
+    routingKeywords?: string[];
   } }>(
     '/kbs/:namespace',
     {

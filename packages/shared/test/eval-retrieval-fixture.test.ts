@@ -22,8 +22,17 @@ const NS_LIGHT = 'LightingDocs';
 const NS_PROC = 'FirmProcedures';
 
 function seedCorpus(db: Db): void {
+  createKb(db, {
+    namespace: NS_LIGHT,
+    name: 'Oświetlenie',
+    routingKeywords: ['oświetlenie', 'oprawa', 'szynoprzewod', 'dali', 'luks'],
+  });
+  createKb(db, {
+    namespace: NS_PROC,
+    name: 'Procedury',
+    routingKeywords: ['urlop', 'delegacja', 'helpdesk', 'kadry'],
+  });
   for (const ns of [NS_LIGHT, NS_PROC]) {
-    createKb(db, { namespace: ns, name: `Baza ${ns}` });
     db.prepare("UPDATE kb_registry SET status = 'active' WHERE namespace = ?").run(ns);
   }
   replaceForDocument(db, NS_LIGHT, 'DOC_light01', [
@@ -109,5 +118,18 @@ describe('eval retrievalu na fixturach (bramka regresji CI)', () => {
     expect(namespaces.size).toBeGreaterThanOrEqual(1); // trigram AND może zawęzić — sanity, nie bramka
     expect(res.degraded).toBe(true); // bez openspg zawsze degraded
     expect(res.activeChannels).toBe(1);
+  });
+
+  it('routing hints: zapytanie o urlop boostuje KB procedur (matchedRouting)', async () => {
+    const db = testDb();
+    seedCorpus(db);
+    const ctx = makeCtx(db);
+    const res = await hybridSearch(ctx, {
+      query: 'kiedy złożyć wniosek urlopowy',
+      allowedNamespaces: [NS_LIGHT, NS_PROC],
+      limit: 10,
+    });
+    expect(res.matchedRouting).toContain(NS_PROC);
+    expect(res.results[0]?.namespace).toBe(NS_PROC);
   });
 });

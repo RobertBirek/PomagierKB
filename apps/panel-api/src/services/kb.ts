@@ -188,6 +188,8 @@ export interface KbPatch {
   description?: string;
   status?: KbStatus;
   config?: Record<string, unknown>;
+  /** Routing hints cross-KB (kb_registry.routing_keywords — ważenie fuzji wyszukiwania). */
+  routingKeywords?: string[];
 }
 
 /**
@@ -204,14 +206,22 @@ export function patchKbEntry(db: Db, namespace: string, patch: KbPatch): { befor
     if (patch.status !== undefined && patch.status !== before.status) {
       transitionKb(db, namespace, patch.status); // zagnieżdżona transakcja = savepoint
     }
-    if (patch.name !== undefined || patch.description !== undefined || patch.config !== undefined) {
+    if (
+      patch.name !== undefined ||
+      patch.description !== undefined ||
+      patch.config !== undefined ||
+      patch.routingKeywords !== undefined
+    ) {
       const current = getKbOrThrow(db, namespace);
       db.prepare(
-        'UPDATE kb_registry SET name = ?, description = ?, config_json = ?, updated_at = ? WHERE namespace = ?',
+        'UPDATE kb_registry SET name = ?, description = ?, config_json = ?, routing_keywords = ?, updated_at = ? WHERE namespace = ?',
       ).run(
         patch.name !== undefined ? patch.name.trim() : current.name,
         patch.description !== undefined ? patch.description : current.description,
         patch.config !== undefined ? JSON.stringify(patch.config) : current.config_json,
+        patch.routingKeywords !== undefined
+          ? JSON.stringify(patch.routingKeywords.map((k) => k.trim()).filter((k) => k !== ''))
+          : current.routing_keywords,
         nowIso(),
         namespace,
       );

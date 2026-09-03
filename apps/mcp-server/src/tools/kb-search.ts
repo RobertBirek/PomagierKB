@@ -104,6 +104,7 @@ export const kbSearchTool: KbTool = {
         type: 'array',
         items: { type: 'string', enum: ['openspg_down', 'openspg_no_hits', 'snippet_only', 'kb_dirty'] },
       },
+      matchedRouting: { type: 'array', items: { type: 'string' } },
     },
   },
   annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
@@ -116,7 +117,7 @@ export const kbSearchTool: KbTool = {
     if (nsCheck.namespaces.length === 0) {
       return errorResult('namespace_not_allowed', 'Profil klucza nie ma dostępu do żadnej aktywnej bazy wiedzy.');
     }
-    const { results, degraded, degradedReasons, tookMs } = await hybridSearch(ctx, {
+    const { results, degraded, degradedReasons, matchedRouting, tookMs } = await hybridSearch(ctx, {
       query: parsed.data.query,
       namespaces: nsCheck.namespaces,
       limit: parsed.data.limit,
@@ -124,7 +125,7 @@ export const kbSearchTool: KbTool = {
     });
     const decorated = decorate(ctx, results);
     return {
-      structured: { results: decorated, tookMs, degraded, degradedReasons },
+      structured: { results: decorated, tookMs, degraded, degradedReasons, matchedRouting },
       text: toMarkdown(decorated, degraded),
     };
   },

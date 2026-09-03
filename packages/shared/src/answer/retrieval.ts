@@ -2,6 +2,7 @@ import type { Db } from '../db/index.js';
 import { listKbs, searchFts, type KbRow } from '../db/index.js';
 import { rrfFuse, searchText, searchVector } from '../openspg/index.js';
 import type { OpenSpgClient, RankedList, SearchHit } from '../openspg/index.js';
+import { routeNamespaces } from './routing.js';
 import { withBreaker } from '../llm/index.js';
 import type { ChatRequest, ChatResult } from '../llm/index.js';
 
@@ -76,6 +77,8 @@ export interface RetrievalResult {
   degradedReasons: DegradedReason[];
   /** Liczba kanałów, które realnie weszły do fuzji (normalizacja topScore w answer). */
   activeChannels: number;
+  /** Namespace'y wzmocnione przez routing hints (kb_registry.routing_keywords). */
+  matchedRouting: string[];
   tookMs: number;
 }
 
@@ -195,21 +198,70 @@ export async function hybridSearch(
       degraded: true,
       degradedReasons: ['openspg_down'],
       activeChannels: 0,
+      matchedRouting: [],
       tookMs: Date.now() - started,
     };
   }
   // Jedna mapa rejestru na całe wyszukiwanie (zamiast getKb per namespace per kanał — N+1).
   const kbMap = new Map<string, KbRow>(listKbs(ctx.db).map((kb) => [kb.namespace, kb]));
 
+  // Routing hints: wagi per KB z routing_keywords/nazwy (tylko re-ważenie fuzji;
+  // jawny parametr namespaces nie jest modyfikowany).
+  const routing = routeNamespaces(
+    params.query,
+    namespaces.map((ns) => {
+      const kb = kbMap.get(ns);
+      let keywords: string[] = [];
+      try {
+        const parsed: unknown = JSON.parse(kb?.routing_keywords ?? '[]');
+        if (Array.isArray(parsed)) keywords = parsed.filter((k): k is string => typeof k === 'string');
+      } catch {
+        keywords = [];
+      }
+      return { namespace: ns, name: kb?.name ?? ns, routingKeywords: keywords };
+    }),
+  );
+
+  /**
+   * Ranking kanału z list per-namespace przez WAŻONY RRF (zamiast globalnego sortu
+   * po surowych score'ach — nieporównywalne między projektami OpenSPG: najgęstsza
+   * baza dominowała top-k). Każda KB wnosi ranking, routing hints ważą wkład.
+   */
+  const fusePerNamespace = (byNs: Map<string, ChannelHit[]>): ChannelHit[] => {
+    if (byNs.size <= 1) {
+      const only = [...byNs.values()][0] ?? [];
+      return only.slice(0, limit);
+    }
+    const lists: RankedList[] = [...byNs.entries()].map(([ns, items]) => ({
+      source: ns,
+      items,
+      weight: routing.weights.get(ns) ?? 1,
+    }));
+    const byId = new Map<string, ChannelHit>();
+    for (const items of byNs.values()) for (const h of items) if (!byId.has(h.id)) byId.set(h.id, h);
+    return rrfFuse(lists)
+      .slice(0, limit)
+      .map((f) => byId.get(f.id))
+      .filter((h): h is ChannelHit => h !== undefined);
+  };
+
   // (a) FTS5 — synchroniczny (better-sqlite3), timeout nie dotyczy; błąd → pusty kanał.
   let ftsHits: ChannelHit[] = [];
   try {
-    ftsHits = searchFts(ctx.db, params.query, namespaces, limit).map((r) => ({
+    const raw = searchFts(ctx.db, params.query, namespaces, limit).map((r) => ({
       id: r.id,
       namespace: r.namespace,
       snippet: r.snippet,
       ...(r.title !== null ? { title: r.title } : {}),
     }));
+    // Re-ważenie routingiem także w kanale lokalnym (spójnie z kanałami OpenSPG).
+    const byNs = new Map<string, ChannelHit[]>();
+    for (const h of raw) {
+      const list = byNs.get(h.namespace);
+      if (list === undefined) byNs.set(h.namespace, [h]);
+      else list.push(h);
+    }
+    ftsHits = fusePerNamespace(byNs);
   } catch (err) {
     ctx.log.warn(
       { err: err instanceof Error ? err.message : String(err) },
@@ -233,7 +285,7 @@ export async function hybridSearch(
             if (!queryVector || queryVector.length === 0) {
               throw new Error('embed zapytania zwrócił pusty wektor');
             }
-            const scored: { hit: SearchHit; ns: string }[] = [];
+            const byNs = new Map<string, ChannelHit[]>();
             for (const ns of vectorNamespaces) {
               const projectId = kbMap.get(ns)?.project_id;
               if (projectId === null || projectId === undefined) continue; // KB bez provisioningu
@@ -244,10 +296,10 @@ export async function hybridSearch(
                 queryVector,
                 topk: limit,
               });
-              for (const hit of res.items) scored.push({ hit, ns });
+              // kolejność per KB wg score (porównywalne WEWNĄTRZ projektu)
+              byNs.set(ns, [...res.items].sort((a, b) => b.score - a.score).map((h) => toChannelHit(h, ns)));
             }
-            scored.sort((a, b) => b.hit.score - a.hit.score);
-            return scored.slice(0, limit).map(({ hit, ns }) => toChannelHit(hit, ns));
+            return fusePerNamespace(byNs);
           }),
         )
       : Promise.resolve(null),
@@ -256,7 +308,7 @@ export async function hybridSearch(
           withBreaker(ctx.db, 'openspg', async () => {
             // TextSearchRequest wymaga projectId — wołamy per namespace i scalamy;
             // ns znany z pętli (id eksportera to DOC_/CHUNK_ — nie niesie namespace).
-            const all: { hit: SearchHit; ns: string }[] = [];
+            const byNs = new Map<string, ChannelHit[]>();
             for (const ns of namespaces) {
               const projectId = kbMap.get(ns)?.project_id;
               if (projectId === null || projectId === undefined) continue;
@@ -267,10 +319,9 @@ export async function hybridSearch(
                 page: 1,
                 topk: limit,
               });
-              for (const hit of res.items) all.push({ hit, ns });
+              byNs.set(ns, [...res.items].sort((a, b) => b.score - a.score).map((h) => toChannelHit(h, ns)));
             }
-            all.sort((a, b) => b.hit.score - a.hit.score);
-            return all.slice(0, limit).map(({ hit, ns }) => toChannelHit(hit, ns));
+            return fusePerNamespace(byNs);
           }),
         )
       : Promise.resolve(null),
@@ -325,5 +376,12 @@ export async function hybridSearch(
   // (snippet_only/kb_dirty) sygnalizowane TYLKO w degradedReasons.
   const degraded = !openspgWorked || (openspgItemCount === 0 && ftsHits.length > 0);
 
-  return { results, degraded, degradedReasons, activeChannels, tookMs: Date.now() - started };
+  return {
+    results,
+    degraded,
+    degradedReasons,
+    activeChannels,
+    matchedRouting: routing.matched,
+    tookMs: Date.now() - started,
+  };
 }

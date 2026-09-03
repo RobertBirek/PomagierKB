@@ -194,6 +194,8 @@ export async function probeSearch(
 export interface RankedList {
   source: string; // np. 'openspg_text' | 'openspg_vector'
   items: Array<{ id: string }>;
+  /** Mnożnik wkładu listy (routing hints cross-KB); default 1. */
+  weight?: number;
 }
 
 export interface FusedHit {
@@ -203,20 +205,22 @@ export interface FusedHit {
 }
 
 /**
- * Reciprocal Rank Fusion: score = Σ 1/(k + rank), rank 1-based per lista; dedup po id
+ * Reciprocal Rank Fusion: score = Σ weight/(k + rank), rank 1-based per lista; dedup po id
  * (także w obrębie jednej listy — liczy się pierwsze wystąpienie). Wynik deterministyczny:
- * sort po score malejąco, remis rozstrzyga id.
+ * sort po score malejąco, remis rozstrzyga id. Opcjonalna `weight` listy ([1, 1.5] w
+ * praktyce — routing hints cross-KB) mnoży wkład tej listy; default 1 = klasyczny RRF.
  */
 export function rrfFuse(lists: RankedList[], opts: { k?: number } = {}): FusedHit[] {
   const k = opts.k ?? 60;
   const fused = new Map<string, FusedHit>();
   for (const list of lists) {
+    const weight = list.weight ?? 1;
     const seen = new Set<string>();
     list.items.forEach((item, i) => {
       if (!item.id || seen.has(item.id)) return;
       seen.add(item.id);
       const hit = fused.get(item.id) ?? { id: item.id, score: 0, sources: [] };
-      hit.score += 1 / (k + i + 1);
+      hit.score += weight / (k + i + 1);
       if (!hit.sources.includes(list.source)) hit.sources.push(list.source);
       fused.set(item.id, hit);
     });
