@@ -17,6 +17,7 @@ export const SETTINGS_KEYS = [
   'drafts.limits',
   'answer.minScore',
   'answer.rerank',
+  'answer.rewrite',
   'learning.autoDraft',
 ] as const;
 

@@ -4,6 +4,9 @@ import { AppError } from '../errors.js';
 import { wrapUntrusted } from '../llm/index.js';
 import { hybridSearch } from './retrieval.js';
 import type { AnswerCtx, RetrievalHit } from './retrieval.js';
+import { rewriteQuery } from './rewrite.js';
+import { rerankHits, type RerankStrategy } from './rerank.js';
+import { answerCacheKey, dataVersion, getCachedAnswer, putCachedAnswer } from './cache.js';
 
 /**
  * Pipeline odpowiedzi z cytowaniami (backend-mcp §7.6 + PLAN) — WSPÓLNY dla
@@ -118,6 +121,33 @@ function readChatModelName(db: Db): string | null {
     /* null poniżej */
   }
   return null;
+}
+
+/** Odczyt stringa z settings (defensywny — jak readNumberSetting). */
+function readStringSetting(db: Db, key: string, fallback: string): string {
+  try {
+    const row = db
+      .prepare('SELECT value_json, is_secret FROM settings WHERE key = ?')
+      .get(key) as { value_json: string; is_secret: number } | undefined;
+    if (!row || row.is_secret === 1) return fallback;
+    const parsed: unknown = JSON.parse(row.value_json);
+    if (typeof parsed === 'string' && parsed !== '') return parsed;
+    if (parsed !== null && typeof parsed === 'object') {
+      const v = (parsed as Record<string, unknown>)['value'];
+      if (typeof v === 'string' && v !== '') return v;
+    }
+  } catch {
+    /* fallback */
+  }
+  return fallback;
+}
+
+/** Bool z settings: true/'on'/1 (defensywnie). */
+function readBoolSetting(db: Db, key: string, fallback: boolean): boolean {
+  const raw = readStringSetting(db, key, fallback ? 'on' : 'off');
+  if (raw === 'on' || raw === 'true' || raw === '1') return true;
+  if (raw === 'off' || raw === 'false' || raw === '0') return false;
+  return fallback;
 }
 
 function clamp01(x: number): number {
@@ -236,16 +266,39 @@ export async function answerQuestion(ctx: AnswerCtx, params: AnswerParams): Prom
   const apiKeyId = params.apiKeyId ?? null;
   const userId = params.userId ?? null;
 
+  const usedNamespaces =
+    params.namespaces && params.namespaces.length > 0 ? params.namespaces : params.allowedNamespaces;
+
+  // ── Cache odpowiedzi: klucz zawiera wersję danych (max export_runs.id) —
+  // rebuild bazy naturalnie unieważnia; trafienie = zero retrievalu i LLM. ──
+  const model0 = readChatModelName(ctx.db);
+  const cacheKey = answerCacheKey(
+    params.question,
+    usedNamespaces,
+    model0,
+    dataVersion(ctx.db, usedNamespaces),
+  );
+  const cached = getCachedAnswer(cacheKey);
+  if (cached !== null) return { ...cached, warnings: [...cached.warnings] };
+
+  // ── Query rewriting (setting 'answer.rewrite', default off): fraza dla kanałów
+  // tekstowych; wektor embeduje oryginał. Błąd/timeout → oryginał (rewrite.ts). ──
+  let textQuery: string | undefined;
+  if (ctx.llm !== null && readBoolSetting(ctx.db, 'answer.rewrite', false)) {
+    const rw = await rewriteQuery(ctx.llm, params.question);
+    const suffix = rw.keywords.length > 0 ? ` ${rw.keywords.join(' ')}` : '';
+    textQuery = `${rw.rewritten}${suffix}`.trim();
+  }
+
   params.onPhase?.('retrieval');
   const retrieval = await hybridSearch(ctx, {
     query: params.question,
+    ...(textQuery !== undefined ? { textQuery } : {}),
     allowedNamespaces: params.allowedNamespaces,
     limit: maxSources * 2,
     mode: 'hybrid',
     ...(params.namespaces !== undefined ? { namespaces: params.namespaces } : {}),
   });
-  const usedNamespaces =
-    params.namespaces && params.namespaces.length > 0 ? params.namespaces : params.allowedNamespaces;
   const topScore = retrieval.results[0]?.score ?? 0;
   // topNorm: 1.0 = rank 1 we WSZYSTKICH kanałach, które weszły do fuzji (bez saturacji
   // przy zgodzie 2 kanałów i bez inflacji przy jednym) — wspólny dla bramki i confidence.
@@ -295,8 +348,21 @@ export async function answerQuestion(ctx: AnswerCtx, params: AnswerParams): Prom
     throw new AppError('not_ready', 'LLM nie jest skonfigurowany — kb_answer niedostępne');
   }
 
+  // ── Rerank top-k PO bramce (nie płacimy za embed odrzuconych zapytań);
+  // strategia z 'answer.rerank' (default embed — patrz rerank.ts). ──
+  const strategy = readStringSetting(ctx.db, 'answer.rerank', 'embed');
+  const rerank = await rerankHits(
+    ctx.db,
+    ctx.llm,
+    (['off', 'embed', 'llm'] as const).includes(strategy as RerankStrategy)
+      ? (strategy as RerankStrategy)
+      : 'embed',
+    params.question,
+    retrieval.results,
+  );
+
   // ── Kontekst [1..n] w budżecie tokenów ──
-  const { sources, snippetFallbacks } = buildContext(ctx.db, retrieval.results, maxSources);
+  const { sources, snippetFallbacks } = buildContext(ctx.db, rerank.hits, maxSources);
   if (snippetFallbacks > 0) {
     warnings.push(
       `Dla ${snippetFallbacks} źródł(a/eł) brak pełnej treści w mirrorze — kontekst ograniczony do snippetu.`,
@@ -316,7 +382,7 @@ export async function answerQuestion(ctx: AnswerCtx, params: AnswerParams): Prom
 
   params.onPhase?.('generating');
   const chatResult = await ctx.llm.chat({ system: systemPrompt(language), user });
-  const model = readChatModelName(ctx.db);
+  const model = model0;
 
   // ── Parsowanie CONFIDENCE + walidacja cytowań post-hoc ──
   const { answer: withoutConfidence, llmSelf } = parseConfidenceLine(chatResult.text);
@@ -338,12 +404,14 @@ export async function answerQuestion(ctx: AnswerCtx, params: AnswerParams): Prom
       ...(s.hit.sourceRef !== undefined ? { sourceRef: s.hit.sourceRef } : {}),
     }));
 
-  // ── confidence = 0.5*llmSelf + 0.3*topScoreNorm + 0.2*coverage (topNorm z bramki) ──
+  // ── confidence = 0.5*llmSelf + 0.3*sygnał_trafności + 0.2*coverage; sygnał =
+  // cosinus topu z reranku embed (realna trafność), fallback: topNorm z fuzji. ──
+  const relevanceSignal = rerank.topCosine !== null ? clamp01(rerank.topCosine) : topNorm;
   const coverage = sources.length > 0 ? cited.length / sources.length : 0;
   let confidence =
     llmSelf !== null
-      ? clamp01(0.5 * llmSelf + 0.3 * topNorm + 0.2 * coverage)
-      : clamp01(0.6 * topNorm + 0.4 * coverage); // brak CONFIDENCE → sam retrieval (§7.6 pkt 4)
+      ? clamp01(0.5 * llmSelf + 0.3 * relevanceSignal + 0.2 * coverage)
+      : clamp01(0.6 * relevanceSignal + 0.4 * coverage); // brak CONFIDENCE → sam retrieval (§7.6 pkt 4)
   if (llmSelf === null) {
     warnings.push('Model nie zwrócił linii CONFIDENCE — pewność policzona z samego retrievalu.');
   }
@@ -382,7 +450,7 @@ export async function answerQuestion(ctx: AnswerCtx, params: AnswerParams): Prom
     tookMs: Date.now() - started,
   });
 
-  return {
+  const result: AnswerResult = {
     answer,
     citations,
     confidence,
@@ -393,4 +461,7 @@ export async function answerQuestion(ctx: AnswerCtx, params: AnswerParams): Prom
     answerId: answerRow.id,
     warnings,
   };
+  // Cache tylko pewnych, niezdegradowanych odpowiedzi (rebuild i tak unieważnia klucz).
+  if (!result.degraded && confidence >= threshold) putCachedAnswer(cacheKey, result);
+  return result;
 }

@@ -57,6 +57,11 @@ export interface RetrievalHit {
 
 export interface HybridSearchParams {
   query: string;
+  /**
+   * Wariant zapytania dla kanałów TEKSTOWYCH (FTS + OpenSPG text) — query
+   * rewriting; kanał wektorowy zawsze embeduje oryginalne `query`. Default = query.
+   */
+  textQuery?: string;
   /** Zbiór namespace dozwolonych dla wołającego — przekazywany JAWNIE. */
   allowedNamespaces: string[];
   namespaces?: string[];
@@ -188,6 +193,7 @@ export async function hybridSearch(
   const started = Date.now();
   const limit = Math.min(Math.max(params.limit ?? 8, 1), 20);
   const mode: RetrievalMode = params.mode ?? 'hybrid';
+  const textQuery = params.textQuery !== undefined && params.textQuery.trim() !== '' ? params.textQuery : params.query;
   const allowed = new Set(params.allowedNamespaces);
   const namespaces = (
     params.namespaces && params.namespaces.length > 0 ? params.namespaces : params.allowedNamespaces
@@ -248,7 +254,7 @@ export async function hybridSearch(
   // (a) FTS5 — synchroniczny (better-sqlite3), timeout nie dotyczy; błąd → pusty kanał.
   let ftsHits: ChannelHit[] = [];
   try {
-    const raw = searchFts(ctx.db, params.query, namespaces, limit).map((r) => ({
+    const raw = searchFts(ctx.db, textQuery, namespaces, limit).map((r) => ({
       id: r.id,
       namespace: r.namespace,
       snippet: r.snippet,
@@ -314,7 +320,7 @@ export async function hybridSearch(
               if (projectId === null || projectId === undefined) continue;
               const res = await searchText(openspg, {
                 projectId,
-                queryString: params.query,
+                queryString: textQuery,
                 labelConstraints: [`${ns}.Chunk`, `${ns}.ReferenceDocument`],
                 page: 1,
                 topk: limit,

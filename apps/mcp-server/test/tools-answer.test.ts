@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
+import { clearAnswerCache } from '@pomagierkb/shared/answer';
 import { kbAnswerTool } from '../src/tools/index.js';
 import { makeCtx, mockLlm, seedKb, seedLightingChunks, testDb } from './helpers-tools.js';
 
@@ -22,6 +23,8 @@ function gapCount(db: ReturnType<typeof testDb>): number {
 }
 
 describe('kb_answer', () => {
+  beforeEach(() => clearAnswerCache()); // cache odpowiedzi jest per proces
+
   it('happy path: odpowiedź z cytowaniem [1], answerId i zapisem do answers', async () => {
     const db = testDb();
     seedKb(db, 'LightingDocs');

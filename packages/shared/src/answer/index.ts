@@ -21,3 +21,7 @@ export type {
   AnswerPhase,
   AnswerResult,
 } from './answer.js';
+export { rewriteQuery, parseRewriteResponse, clearRewriteCache } from './rewrite.js';
+export { rerankHits, cosine, parseLlmOrder } from './rerank.js';
+export type { RerankStrategy, RerankOutcome } from './rerank.js';
+export { answerCacheKey, dataVersion, getCachedAnswer, putCachedAnswer, clearAnswerCache } from './cache.js';
