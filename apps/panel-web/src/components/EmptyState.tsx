@@ -2,8 +2,8 @@ import type { ReactNode } from 'react';
 import { t } from '../i18n/t';
 
 export interface EmptyStateProps {
-  /** Emoji/znak — celowo proste (bez biblioteki ikon). */
-  icon?: string;
+  /** Emoji/znak albo ikona (np. lucide) — string pozostaje wspierany. */
+  icon?: ReactNode;
   title?: string;
   description?: string;
   /** CTA — soczewka product: „puste stany z konkretnym CTA". */

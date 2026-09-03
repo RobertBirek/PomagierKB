@@ -1,120 +1,85 @@
-import { useState } from 'react';
-import { Link, Outlet, useRouterState } from '@tanstack/react-router';
-import { useMutation } from '@tanstack/react-query';
-import { useMe } from '../hooks/useMe';
-import { apiFetch } from '../lib/api';
-import { can, PAGE_PERMISSION, type Role } from '../lib/permissions';
-import { t, type PlKey } from '../i18n/t';
-import { ThemeToggle } from './ThemeToggle';
-import { HealthIndicator } from './HealthIndicator';
+/**
+ * APP SHELL v2 (Linear-like): Sidebar (desktop) + Topbar + MobileNav (<768px).
+ * Nawigacja WYŁĄCZNIE po stronach dozwolonych dla roli (can() przez rejestr
+ * shell/nav.ts); gating bieżącej ścieżki to UX — egzekwuje backend.
+ * Brak sesji → apiFetch w useMe robi redirect na /auth/login.
+ */
+import { HeadContent, Outlet, useRouterState } from '@tanstack/react-router';
+import { Lock } from 'lucide-react';
+import { TooltipProvider } from '@/ui/tooltip';
+import { useMe } from '@/hooks/useMe';
+import { can, PAGE_PERMISSION } from '@/lib/permissions';
+import { t } from '@/i18n/t';
 import { EmptyState } from './EmptyState';
 import { Skeleton } from './Skeleton';
+import { Sidebar, useSidebarCollapsed } from './shell/Sidebar';
+import { Topbar } from './shell/Topbar';
+import { MobileNav } from './shell/MobileNav';
 
-/** Pozycje nawigacji — kolejność = kolejność w pasku; filtrowane przez can(). */
-const NAV_ITEMS = [
-  { path: '/ask', label: 'nav.ask', icon: '💬' },
-  { path: '/add', label: 'nav.add', icon: '➕' },
-  { path: '/inbox', label: 'nav.inbox', icon: '📥' },
-  { path: '/kb', label: 'nav.kb', icon: '📚' },
-  { path: '/mcp', label: 'nav.mcp', icon: '🔌' },
-  { path: '/settings', label: 'nav.settings', icon: '⚙️' },
-] as const satisfies readonly { path: string; label: PlKey; icon: string }[];
-
-const ROLE_LABEL: Record<Role, PlKey> = {
-  viewer: 'header.role.viewer',
-  operator: 'header.role.operator',
-  admin: 'header.role.admin',
-};
-
-function UserMenu({ displayName, role }: { displayName: string; role: Role }) {
-  const [open, setOpen] = useState(false);
-  const logout = useMutation({
-    mutationFn: () => apiFetch<{ logoutUrl: string }>('/auth/logout', { method: 'POST' }),
-    onSuccess: (data) => window.location.assign(data.logoutUrl),
-  });
+/** Szkielet shellu (pending) i rama stanu błędu — wspólna konstrukcja. */
+function ShellFrame({ children, busy }: { children: React.ReactNode; busy?: boolean }) {
   return (
-    <div className="user-menu">
-      <button
-        type="button"
-        className="btn btn-ghost btn-sm"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        title={t('header.loggedInAs', { name: displayName })}
-        onClick={() => setOpen((v) => !v)}
-      >
-        👤 <span className="user-menu-name">{displayName}</span>
-      </button>
-      {open && (
-        <div className="user-menu-panel card stack" role="menu">
-          <div>
-            <strong>{displayName}</strong>
-            <div className="muted">{t(ROLE_LABEL[role])}</div>
-          </div>
-          <button
-            type="button"
-            className="btn"
-            role="menuitem"
-            disabled={logout.isPending}
-            onClick={() => logout.mutate()}
-          >
-            {t('header.logout')}
-          </button>
+    <div className="min-h-dvh md:grid md:grid-cols-[auto_1fr]">
+      <div className="hidden w-60 border-r border-border bg-surface md:block" aria-hidden="true">
+        <div className="flex h-12 items-center gap-2 px-3">
+          <span className="flex size-5 items-center justify-center rounded-md bg-accent text-2xs font-semibold text-on-accent">
+            P
+          </span>
+          <span className="text-sm font-semibold">PomagierKB</span>
         </div>
-      )}
+      </div>
+      <div className="flex min-w-0 flex-col">
+        <div className="h-12 border-b border-border bg-bg/80" />
+        <main className="flex flex-col gap-4 px-4 py-5 md:px-6" {...(busy === true ? { 'aria-busy': true } : {})}>
+          {children}
+        </main>
+      </div>
     </div>
   );
 }
 
-/**
- * Layout aplikacji: nagłówek (logo, wskaźnik zdrowia, motyw, menu użytkownika),
- * nawigacja WYŁĄCZNIE po stronach dozwolonych dla roli (can()), na mobile dolny
- * pasek. Brak sesji → apiFetch w useMe robi redirect na /auth/login.
- */
 export function RootLayout() {
   const me = useMe();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const [collapsed, toggleSidebar] = useSidebarCollapsed();
 
   if (me.isPending) {
     return (
-      <div className="app-shell">
-        <header className="app-header">
-          <span className="app-logo">PomagierKB</span>
-        </header>
-        <main className="app-main stack" aria-busy="true">
+      <>
+        <HeadContent />
+        <ShellFrame busy>
           <Skeleton height="40px" />
           <Skeleton height="180px" />
-        </main>
-      </div>
+        </ShellFrame>
+      </>
     );
   }
 
   if (me.isError || me.data === undefined) {
     return (
-      <div className="app-shell">
-        <header className="app-header">
-          <span className="app-logo">PomagierKB</span>
-        </header>
-        <main className="app-main">
+      <>
+        <HeadContent />
+        <ShellFrame>
           <EmptyState
             icon="🔌"
             title={t('common.error')}
             description={t('error.network')}
             action={
-              <button type="button" className="btn btn-primary" onClick={() => void me.refetch()}>
+              <button
+                type="button"
+                className="inline-flex h-8 items-center rounded-md bg-accent px-3 text-sm font-medium text-on-accent hover:bg-accent-hover"
+                onClick={() => void me.refetch()}
+              >
                 {t('common.retry')}
               </button>
             }
           />
-        </main>
-      </div>
+        </ShellFrame>
+      </>
     );
   }
 
   const role = me.data.user.role;
-  const allowed = NAV_ITEMS.filter((item) => {
-    const perm = PAGE_PERMISSION[item.path];
-    return perm !== undefined && can(role, perm);
-  });
 
   // Gating bieżącej ścieżki (UX — egzekwuje backend): strona spoza roli → komunikat.
   const section = '/' + (pathname.split('/')[1] ?? '');
@@ -122,35 +87,28 @@ export function RootLayout() {
   const forbidden = sectionPerm !== undefined && !can(role, sectionPerm);
 
   return (
-    <div className="app-shell">
-      <header className="app-header">
-        <Link to="/ask" className="app-logo">
-          PomagierKB
-        </Link>
-        <nav className="app-nav" aria-label="Nawigacja">
-          {allowed.map((item) => (
-            <Link key={item.path} to={item.path} activeProps={{ className: 'active' }}>
-              {t(item.label)}
-            </Link>
-          ))}
-        </nav>
-        <div className="app-header-actions">
-          <HealthIndicator />
-          <ThemeToggle />
-          <UserMenu displayName={me.data.user.displayName} role={role} />
+    <TooltipProvider>
+      <a
+        href="#main"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-2 focus:top-2 focus:z-(--z-toast) focus:rounded-md focus:bg-surface focus:px-3 focus:py-2 focus:text-sm focus:shadow-md"
+      >
+        {t('shell.skipToContent')}
+      </a>
+      <HeadContent />
+      <div className="min-h-dvh md:grid md:grid-cols-[auto_1fr]">
+        <Sidebar role={role} collapsed={collapsed} />
+        <div className="flex min-w-0 flex-col">
+          <Topbar displayName={me.data.user.displayName} role={role} onToggleSidebar={toggleSidebar} />
+          <main id="main" tabIndex={-1} className="px-4 py-5 pb-24 md:px-6 md:pb-8">
+            {forbidden ? (
+              <EmptyState icon={<Lock size={32} aria-hidden="true" />} title={t('error.forbidden')} />
+            ) : (
+              <Outlet />
+            )}
+          </main>
         </div>
-      </header>
-      <main className="app-main">
-        {forbidden ? <EmptyState icon="🔒" title={t('error.forbidden')} /> : <Outlet />}
-      </main>
-      <nav className="bottom-nav" aria-label="Nawigacja mobilna">
-        {allowed.map((item) => (
-          <Link key={item.path} to={item.path} activeProps={{ className: 'active' }}>
-            <div aria-hidden="true">{item.icon}</div>
-            {t(item.label)}
-          </Link>
-        ))}
-      </nav>
-    </div>
+      </div>
+      <MobileNav role={role} />
+    </TooltipProvider>
   );
 }

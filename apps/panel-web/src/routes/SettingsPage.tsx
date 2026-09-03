@@ -947,6 +947,9 @@ const TAB_LABEL: Record<SettingsTab, PlKey> = {
   thresholds: 'settings.tabs.thresholds',
   system: 'settings.tabs.system',
   diag: 'settings.tabs.diag',
+  // zakładki Fazy 3 (trasa już je przyjmuje; UI dodaje agent /settings)
+  audit: 'settings.tabs.audit',
+  health: 'settings.tabs.health',
 };
 
 const SETTINGS_TABS: readonly SettingsTab[] = ['llm', 'thresholds', 'system', 'diag'];

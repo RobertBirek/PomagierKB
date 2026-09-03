@@ -595,6 +595,49 @@ export const pl = {
   'system.breakers.stateClosed': 'Zamknięty (OK)',
   'system.breakers.stateOpen': 'Otwarty (blokuje)',
   'system.breakers.stateHalfOpen': 'Półotwarty (próba)',
+
+  // ── ui: prymitywy design systemu v2 (src/ui/*) ──
+  'ui.clear': 'Wyczyść',
+  'ui.loading': 'Wczytywanie…',
+  'ui.close': 'Zamknij',
+  'ui.cancel': 'Anuluj',
+  'ui.confirm': 'Potwierdź',
+  'ui.dismiss': 'Zamknij powiadomienie',
+
+  // ── ui v2: komponenty danych (DataTable, CodeBlock, Breadcrumbs) ──
+  'table.range': '{from}–{to} z {total}',
+  'table.page': 'Strona {page}',
+  'table.selectAll': 'Zaznacz wszystkie widoczne',
+  'table.selectRow': 'Zaznacz wiersz',
+  'ui.copyCode': 'Kopiuj do schowka',
+  'ui.copyManually': 'Nie udało się skopiować — zaznacz i skopiuj ręcznie',
+  'ui.breadcrumbs': 'Ścieżka nawigacji',
+
+  // ── APP SHELL v2 (sidebar/topbar/mobile nav — agent shellu) ──
+  'nav.section.work': 'Praca',
+  'nav.section.resources': 'Zasoby',
+  'nav.section.system': 'System',
+  'nav.overview': 'Przegląd',
+  'nav.more': 'Więcej',
+  'nav.moreTitle': 'Cała nawigacja',
+  'shell.skipToContent': 'Przejdź do treści',
+  'shell.sidebar.toggle': 'Zwiń/rozwiń panel boczny',
+  'header.search': 'Szukaj…',
+  'header.theme.system': 'Motyw systemowy',
+  'header.commandPalette.title': 'Paleta poleceń',
+  'header.commandPalette.placeholder': 'Wpisz, czego szukasz…',
+  'header.commandPalette.empty': 'Brak wyników',
+  'notFound.title': 'Nie znaleziono strony',
+  'notFound.description': 'Ten adres nie istnieje albo strona została przeniesiona.',
+  'notFound.goAsk': 'Przejdź do Zapytaj',
+  'routeError.title': 'Coś poszło nie tak podczas wyświetlania strony',
+  'routeError.description': 'Spróbuj odświeżyć — jeśli problem wróci, skontaktuj się z administratorem.',
+  'routeError.reload': 'Odśwież',
+  'routeError.details': 'Szczegóły techniczne',
+  'overview.placeholder': 'Przegląd — w budowie (Faza 3).',
+  // etykiety nowych zakładek /settings (trasa już je przyjmuje; UI doda agent Fazy 3)
+  'settings.tabs.audit': 'Audyt',
+  'settings.tabs.health': 'Health',
 } as const;
 
 export type PlKey = keyof typeof pl;

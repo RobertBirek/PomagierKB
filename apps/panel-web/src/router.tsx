@@ -3,6 +3,7 @@
  * KONWENCJA DLA AGENTÓW STRON: trasa już istnieje i wskazuje na
  * src/routes/<Nazwa>Page.tsx — podmieniaj ZAWARTOŚĆ pliku strony, nie router.
  * Nowe pod-trasy / search-params dopisuj przy swojej trasie poniżej.
+ * Tytuły dokumentu: head() per trasa (HeadContent renderuje RootLayout).
  */
 import {
   createRootRoute,
@@ -11,7 +12,14 @@ import {
   redirect,
 } from '@tanstack/react-router';
 import { RootLayout } from './components/RootLayout';
+import { NotFound } from './components/shell/NotFound';
+import { RouteError } from './components/shell/RouteError';
+import { documentTitle } from './components/shell/nav';
+import { apiFetch } from './lib/api';
+import { queryClient } from './lib/queryClient';
 import { parseAddSearch } from './lib/prefill';
+import type { Me } from './hooks/useMe';
+import { OverviewPage } from './routes/OverviewPage';
 import { AskPage } from './routes/AskPage';
 import { AddPage } from './routes/AddPage';
 import { InboxPage } from './routes/InboxPage';
@@ -19,32 +27,73 @@ import { KbPage } from './routes/KbPage';
 import { McpPage } from './routes/McpPage';
 import { SettingsPage } from './routes/SettingsPage';
 
-const rootRoute = createRootRoute({ component: RootLayout });
+/** head() trasy — tytuł dokumentu z rejestru nawigacji (shell/nav.ts). */
+function routeHead(path: string) {
+  return () => ({ meta: [{ title: documentTitle(path) }] });
+}
 
-/** Indeks → /ask (jedyna strona dostępna dla każdego zalogowanego). */
+const rootRoute = createRootRoute({
+  component: RootLayout,
+  notFoundComponent: NotFound,
+  errorComponent: RouteError,
+});
+
+/**
+ * Indeks → wg roli: viewer na /ask, operator/admin na /overview.
+ * ensureQueryData współdzieli cache ['me'] z useMe; błąd (np. API w restarcie)
+ * → bezpieczny fallback /ask (useMe/apiFetch i tak obsłużą sesję).
+ */
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
-  beforeLoad: () => {
-    throw redirect({ to: '/ask' });
+  beforeLoad: async () => {
+    let to = '/ask';
+    try {
+      const me = await queryClient.ensureQueryData({
+        queryKey: ['me'],
+        queryFn: () => apiFetch<Me>('/api/v1/me'),
+        staleTime: 60_000,
+      });
+      if (me.user.role !== 'viewer') to = '/overview';
+    } catch {
+      /* fallback: /ask */
+    }
+    throw redirect({ to });
   },
+});
+
+const overviewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/overview',
+  head: routeHead('/overview'),
+  component: OverviewPage,
 });
 
 const askRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/ask',
+  head: routeHead('/ask'),
   component: AskPage,
 });
 
-/** Search-params /add: ?question= — prefill z luki wiedzy albo z /ask (nie-wiem). */
+/**
+ * Search-params /add: ?question= — prefill z luki wiedzy albo z /ask (nie-wiem);
+ * ?tab=file — zakładka (default 'text' nie jest serializowany).
+ */
 export interface AddSearch {
   question?: string;
+  tab?: 'text' | 'file';
 }
 
 const addRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/add',
-  validateSearch: (search: Record<string, unknown>): AddSearch => parseAddSearch(search),
+  validateSearch: (search: Record<string, unknown>): AddSearch => {
+    const out: AddSearch = parseAddSearch(search);
+    if (search['tab'] === 'file') out.tab = 'file';
+    return out;
+  },
+  head: routeHead('/add'),
   component: AddPage,
 });
 
@@ -78,12 +127,14 @@ const inboxRoute = createRoute({
     if (Number.isInteger(page) && page > 1) out.page = page;
     return out;
   },
+  head: routeHead('/inbox'),
   component: InboxPage,
 });
 
 const kbRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/kb',
+  head: routeHead('/kb'),
   component: KbPage,
 });
 
@@ -104,31 +155,53 @@ const mcpRoute = createRoute({
     }
     return {};
   },
+  head: routeHead('/mcp'),
   component: McpPage,
 });
 
-/** Zakładki /settings — deep-link (?tab=system). Default (llm) bez parametru. */
-export type SettingsTab = 'llm' | 'thresholds' | 'system' | 'diag';
-const SETTINGS_TABS: readonly SettingsTab[] = ['llm', 'thresholds', 'system', 'diag'];
+/**
+ * Zakładki /settings — deep-link (?tab=system). Default (llm) bez parametru.
+ * Filtry zakładek system/audit (Faza 3): status/type/page (zadania w tle),
+ * from/to/action/actor/outcome (audyt) — walidacja łagodna (niepuste stringi).
+ */
+export type SettingsTab = 'llm' | 'thresholds' | 'system' | 'diag' | 'audit' | 'health';
+const SETTINGS_TABS: readonly SettingsTab[] = ['llm', 'thresholds', 'system', 'diag', 'audit', 'health'];
 export interface SettingsSearch {
   tab?: SettingsTab;
+  status?: string;
+  type?: string;
+  page?: number;
+  from?: string;
+  to?: string;
+  action?: string;
+  actor?: string;
+  outcome?: string;
 }
 
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/settings',
   validateSearch: (search: Record<string, unknown>): SettingsSearch => {
+    const out: SettingsSearch = {};
     const tab = search['tab'];
     if (typeof tab === 'string' && tab !== 'llm' && (SETTINGS_TABS as readonly string[]).includes(tab)) {
-      return { tab: tab as SettingsTab };
+      out.tab = tab as SettingsTab;
     }
-    return {};
+    for (const key of ['status', 'type', 'from', 'to', 'action', 'actor', 'outcome'] as const) {
+      const value = optionalString(search[key]);
+      if (value !== undefined) out[key] = value;
+    }
+    const page = Number(search['page']);
+    if (Number.isInteger(page) && page > 1) out.page = page;
+    return out;
   },
+  head: routeHead('/settings'),
   component: SettingsPage,
 });
 
 const routeTree = rootRoute.addChildren([
   indexRoute,
+  overviewRoute,
   askRoute,
   addRoute,
   inboxRoute,

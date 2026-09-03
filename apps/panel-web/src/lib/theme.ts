@@ -45,6 +45,16 @@ export function toggleTheme(): Theme {
   return next;
 }
 
+/** Jawny wybór motywu (menu w topbarze): aplikuje i zapamiętuje. */
+export function setTheme(theme: Theme): void {
+  applyTheme(theme);
+  try {
+    window.localStorage.setItem(STORAGE_KEY, theme);
+  } catch {
+    /* prywatny tryb — motyw po prostu nie przetrwa odświeżenia */
+  }
+}
+
 /** Tryb „system": usuwa zapisany wybór — initTheme/prefers-color-scheme przejmują. */
 export function clearStoredTheme(): void {
   try {

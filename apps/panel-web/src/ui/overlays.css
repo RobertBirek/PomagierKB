@@ -1,0 +1,116 @@
+/* Animacje overlayów design systemu v2 (dialog/sheet/dropdown/popover/toast).
+   Celowo osobny plik (app.css to fundament tokenów — nie dotykamy). Radix czeka
+   na zakończenie CSS-animacji przed odmontowaniem, więc keyframes (a nie
+   transition) dają płynne wejście I wyjście. prefers-reduced-motion obsługuje
+   globalna reguła w app.css (animation-duration ~0). */
+
+@keyframes ui-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes ui-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes ui-dialog-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+@keyframes ui-dialog-out {
+  to {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.97);
+  }
+}
+@keyframes ui-slide-in-right {
+  from {
+    transform: translateX(100%);
+  }
+}
+@keyframes ui-slide-out-right {
+  to {
+    transform: translateX(100%);
+  }
+}
+@keyframes ui-slide-in-bottom {
+  from {
+    transform: translateY(100%);
+  }
+}
+@keyframes ui-slide-out-bottom {
+  to {
+    transform: translateY(100%);
+  }
+}
+@keyframes ui-pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(-2px);
+  }
+}
+@keyframes ui-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+@keyframes ui-toast-out {
+  to {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+/* Tło (scrim) — wspólne dla Dialog/AlertDialog/Sheet. */
+.ui-anim-overlay[data-state='open'] {
+  animation: ui-fade-in var(--duration-overlay) var(--ease-out-expo);
+}
+.ui-anim-overlay[data-state='closed'] {
+  animation: ui-fade-out var(--duration-base) ease-in forwards;
+}
+
+/* Dialog wycentrowany — delikatny zoom-in. */
+.ui-anim-dialog[data-state='open'] {
+  animation: ui-dialog-in var(--duration-overlay) var(--ease-out-expo);
+}
+.ui-anim-dialog[data-state='closed'] {
+  animation: ui-dialog-out var(--duration-base) ease-in forwards;
+}
+
+/* Sheet: wjazd z prawej / z dołu. */
+.ui-anim-sheet-right[data-state='open'] {
+  animation: ui-slide-in-right var(--duration-overlay) var(--ease-out-expo);
+}
+.ui-anim-sheet-right[data-state='closed'] {
+  animation: ui-slide-out-right var(--duration-base) ease-in forwards;
+}
+.ui-anim-sheet-bottom[data-state='open'] {
+  animation: ui-slide-in-bottom var(--duration-overlay) var(--ease-out-expo);
+}
+.ui-anim-sheet-bottom[data-state='closed'] {
+  animation: ui-slide-out-bottom var(--duration-base) ease-in forwards;
+}
+
+/* Dropdown/Popover — szybki pop. */
+.ui-anim-pop[data-state='open'] {
+  animation: ui-pop-in var(--duration-base) var(--ease-out-expo);
+}
+.ui-anim-pop[data-state='closed'] {
+  animation: ui-fade-out var(--duration-fast) ease-in forwards;
+}
+
+/* Toasty — wejście/wyjście translate+opacity. */
+.ui-toast-in {
+  animation: ui-toast-in var(--duration-base) var(--ease-out-expo);
+}
+.ui-toast-out {
+  animation: ui-toast-out var(--duration-base) ease-in forwards;
+}
