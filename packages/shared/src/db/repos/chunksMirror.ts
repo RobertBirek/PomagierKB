@@ -1,4 +1,5 @@
 import type { Db } from '../open.js';
+import { PL_QUERY_STOPWORDS } from '../../text/stopwords.js';
 import { nowIso } from '../open.js';
 
 /** Mirror chunków + FTS5 (trigram) — fallback retrievalu i snippety po polsku. */
@@ -63,18 +64,11 @@ export interface FtsResult {
  * dopasowuje podciągi, więc dłuższe tokeny przycinamy o końcówkę fleksyjną
  * (np. 'szynoprzewodów' znajdzie też 'szynoprzewodach').
  */
-/** Polskie stopwordy pytań — w AND-semantyce trigramów ubijają całe zapytanie. */
-const PL_STOPWORDS = new Set([
-  'jak', 'jaki', 'jaka', 'jakie', 'jakiego', 'jakiej', 'jakich', 'ile', 'czy', 'gdzie',
-  'kiedy', 'kto', 'komu', 'czego', 'czym', 'dlaczego', 'ktory', 'która', 'które', 'który',
-  'jest', 'sa', 'są', 'ma', 'mają', 'maja', 'byc', 'być', 'oraz', 'lub', 'albo', 'ale',
-  'dla', 'przy', 'nad', 'pod', 'przez', 'bez', 'ten', 'tym', 'tej', 'tego', 'sie', 'się',
-  'nie', 'tak', 'moze', 'może', 'mozna', 'można', 'trzeba', 'nalezy', 'należy',
-]);
+// Stopwordy zapytań — jedno źródło w text/stopwords.ts (audyt: dwie rozbieżne listy).
 
 function stems(query: string): string[] {
   const tokens = (query.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [])
-    .filter((t) => t.length >= 3 && !PL_STOPWORDS.has(t));
+    .filter((t) => t.length >= 3 && !PL_QUERY_STOPWORDS.has(t));
   return tokens.map((t) => (t.length >= 6 ? t.slice(0, t.length - 2) : t));
 }
 

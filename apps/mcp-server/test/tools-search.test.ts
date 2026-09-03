@@ -31,7 +31,7 @@ describe('kb_search', () => {
     const out = res.structured as SearchOut;
     expect(out.degraded).toBe(true);
     expect(out.results).toHaveLength(1);
-    expect(out.results[0]?.id).toBe('LightingDocs:Chunk:1');
+    expect(out.results[0]?.id).toBe('CHUNK_ld000001_001');
     expect(out.results[0]?.namespace).toBe('LightingDocs');
     expect(out.results[0]?.source).toBe('fallback_fts');
     expect(out.results[0]?.score).toBeGreaterThan(0);

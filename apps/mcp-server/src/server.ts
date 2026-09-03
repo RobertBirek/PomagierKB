@@ -124,11 +124,23 @@ export function buildServer(opts: BuildServerOptions): McpServerBundle {
     if (openspg === null) return;
     const row = db
       .prepare(
-        "SELECT namespace FROM kb_registry WHERE status = 'active' ORDER BY is_default DESC, namespace LIMIT 1",
+        "SELECT namespace, project_id FROM kb_registry WHERE status = 'active' AND project_id IS NOT NULL ORDER BY is_default DESC, namespace LIMIT 1",
       )
-      .get() as { namespace: string } | undefined;
-    if (row === undefined) return; // brak aktywnych KB — sonda nie ma czego sprawdzić
-    const result = await probeSearch(openspg, row.namespace);
+      .get() as { namespace: string; project_id: number } | undefined;
+    if (row === undefined) return; // brak aktywnych, sprovisionowanych KB — sonda nie ma czego sprawdzić
+    // Realny projectId (bez niego OpenSPG szuka w projekcie 0 → sonda kłamała) i realny
+    // wektor z embeddings, gdy LLM skonfigurowany (wektor zerowy → odrzut przez wymiar).
+    let queryVector: number[] | undefined;
+    try {
+      const llm = buildToolLlm(db, config);
+      if (llm !== null) [queryVector] = await llm.embed(['sonda']);
+    } catch {
+      queryVector = undefined; // brak LLM/embeddingu → uczciwe vectorOk=false z wektorem zerowym
+    }
+    const result = await probeSearch(openspg, row.namespace, {
+      projectId: row.project_id,
+      ...(queryVector !== undefined && queryVector.length > 0 ? { queryVector } : {}),
+    });
     lastProbe = { at: new Date(now()).toISOString(), namespace: row.namespace, ...result };
   }
 

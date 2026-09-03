@@ -37,7 +37,7 @@ describe('kb_answer', () => {
     expect(out.answerId).toMatch(/^ans_/);
     expect(out.citations).toHaveLength(1);
     expect(out.citations[0]?.n).toBe(1);
-    expect(out.citations[0]?.id).toBe('LightingDocs:Chunk:1');
+    expect(out.citations[0]?.id).toBe('CHUNK_ld000001_001');
     expect(out.citations[0]?.namespace).toBe('LightingDocs');
     // confidence = 0.5*0.8 (llmSelf) + 0.3*1 (topNorm) + 0.2*1 (coverage) = 0.9 > próg 0.45
     expect(out.confidence).toBeCloseTo(0.9, 5);

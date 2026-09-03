@@ -6,12 +6,12 @@ describe('repos/chunksMirror (FTS5 trigram)', () => {
   function seed(db: ReturnType<typeof testDb>) {
     replaceForDocument(db, 'LightingDocs', 'doc1', [
       {
-        id: 'LightingDocs:Chunk:1',
+        id: 'CHUNK_ld000001_001',
         title: 'Montaż szynoprzewodów',
         content: 'Przy montażu szynoprzewodach trójfazowych maksymalne obciążenie wynosi 16A.',
       },
       {
-        id: 'LightingDocs:Chunk:2',
+        id: 'CHUNK_ld000001_002',
         title: 'Sterowanie DALI',
         content: 'Magistrala DALI pozwala sterować oprawami indywidualnie.',
       },
@@ -27,7 +27,7 @@ describe('repos/chunksMirror (FTS5 trigram)', () => {
     // zapytanie w dopełniaczu, dokument ma miejscownik ('szynoprzewodach')
     const results = searchFts(db, 'szynoprzewodów obciążenie', ['LightingDocs'], 8);
     expect(results).toHaveLength(1);
-    expect(results[0]?.id).toBe('LightingDocs:Chunk:1');
+    expect(results[0]?.id).toBe('CHUNK_ld000001_001');
     expect(results[0]?.docId).toBe('doc1');
     expect(results[0]?.snippet).toContain('<b>');
     expect(results[0]?.bm25).toBeLessThan(0); // bm25() w SQLite: im mniejsze, tym lepsze
@@ -46,7 +46,7 @@ describe('repos/chunksMirror (FTS5 trigram)', () => {
     seed(db);
     expect(() => searchFts(db, '"DALI" AND (sterowanie) OR *', ['LightingDocs'], 8)).not.toThrow();
     const results = searchFts(db, '"DALI" sterowanie!', ['LightingDocs'], 8);
-    expect(results[0]?.id).toBe('LightingDocs:Chunk:2');
+    expect(results[0]?.id).toBe('CHUNK_ld000001_002');
     expect(buildMatchExpression('a b')).toBeNull(); // same krótkie tokeny → brak zapytania
   });
 

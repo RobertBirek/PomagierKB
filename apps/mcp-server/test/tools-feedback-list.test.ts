@@ -8,7 +8,7 @@ function seedAnswer(db: Db, apiKeyId?: string): string {
   return recordAnswer(db, {
     question: 'Jakie jest maksymalne obciążenie szynoprzewodów?',
     namespaces: ['LightingDocs'],
-    citations: [{ n: 1, id: 'LightingDocs:Chunk:1', namespace: 'LightingDocs' }],
+    citations: [{ n: 1, id: 'CHUNK_ld000001_001', namespace: 'LightingDocs' }],
     confidence: 0.9,
     source: 'mcp',
     apiKeyId: apiKeyId ?? null,

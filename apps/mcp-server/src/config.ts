@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path';
 import type { Db } from '@pomagierkb/shared/db';
 import { getSetting } from '@pomagierkb/shared/db';
 import { unseal } from '@pomagierkb/shared/crypto';
-import { createLlmClient, type LlmLogger } from '@pomagierkb/shared/llm';
+import { createLlmClient, withBreaker, type LlmLogger } from '@pomagierkb/shared/llm';
 import type { ToolLlm } from './tools/types.js';
 
 /**
@@ -158,8 +158,10 @@ export function buildToolLlm(db: Db, config: McpConfig, logger?: LlmLogger): Too
           model: embedCfg.model,
           ...(logger !== undefined ? { logger } : {}),
         });
+  // Breaker w gorącej ścieżce: awarie LLM otwierają 'llm.chat'/'llm.embeddings'
+  // w tabeli breakers (kokpit widzi realny stan; otwarty → not_ready bez wołania API).
   return {
-    chat: (req) => chatClient.chat(req),
-    embed: (texts) => embedClient.embed(texts),
+    chat: (req) => withBreaker(db, 'llm.chat', () => chatClient.chat(req)),
+    embed: (texts) => withBreaker(db, 'llm.embeddings', () => embedClient.embed(texts)),
   };
 }

@@ -14,12 +14,12 @@ const inputZod = z.strictObject({
   mode: z.enum(['hybrid', 'text', 'vector']).default('hybrid'),
 });
 
-/** Etykieta grafu z konwencji id 'Ns:Typ:hash' (tylko gdy prefiks = namespace wyniku). */
+/** Etykieta grafu z prefiksu id eksportera (CHUNK_/DOC_/TOPIC_ — patrz exporter.ts). */
 function deriveLabel(hit: RetrievalHit): string | undefined {
-  const parts = hit.id.split(':');
-  if (parts.length >= 2 && parts[0] === hit.namespace && parts[1] !== undefined && parts[1] !== '') {
-    return `${parts[0]}.${parts[1]}`;
-  }
+  if (hit.namespace === '') return undefined;
+  if (hit.id.startsWith('CHUNK_')) return `${hit.namespace}.Chunk`;
+  if (hit.id.startsWith('DOC_')) return `${hit.namespace}.ReferenceDocument`;
+  if (hit.id.startsWith('TOPIC_')) return `${hit.namespace}.Topic`;
   return undefined;
 }
 
@@ -100,6 +100,10 @@ export const kbSearchTool: KbTool = {
       },
       tookMs: { type: 'integer' },
       degraded: { type: 'boolean' },
+      degradedReasons: {
+        type: 'array',
+        items: { type: 'string', enum: ['openspg_down', 'openspg_no_hits', 'snippet_only', 'kb_dirty'] },
+      },
     },
   },
   annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
@@ -112,7 +116,7 @@ export const kbSearchTool: KbTool = {
     if (nsCheck.namespaces.length === 0) {
       return errorResult('namespace_not_allowed', 'Profil klucza nie ma dostępu do żadnej aktywnej bazy wiedzy.');
     }
-    const { results, degraded, tookMs } = await hybridSearch(ctx, {
+    const { results, degraded, degradedReasons, tookMs } = await hybridSearch(ctx, {
       query: parsed.data.query,
       namespaces: nsCheck.namespaces,
       limit: parsed.data.limit,
@@ -120,7 +124,7 @@ export const kbSearchTool: KbTool = {
     });
     const decorated = decorate(ctx, results);
     return {
-      structured: { results: decorated, tookMs, degraded },
+      structured: { results: decorated, tookMs, degraded, degradedReasons },
       text: toMarkdown(decorated, degraded),
     };
   },

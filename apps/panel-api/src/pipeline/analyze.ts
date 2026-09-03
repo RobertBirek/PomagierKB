@@ -1,4 +1,5 @@
 import type { KbRow } from '@pomagierkb/shared/db';
+import { TAG_STOPWORDS } from '@pomagierkb/shared/text';
 import { kbRoutingKeywords } from '@pomagierkb/shared/db';
 import { wrapUntrusted, type LlmClient } from '@pomagierkb/shared/llm';
 
@@ -42,15 +43,8 @@ export const TAGS_MAX = 8;
 export const TAG_MAX_LEN = 64;
 export const SUMMARY_MAX = 400;
 
-/** Krótka lista stopwords PL do heurystyki tagów (celowo minimalna, w module). */
-export const PL_STOPWORDS: ReadonlySet<string> = new Set([
-  'oraz', 'albo', 'lub', 'ale', 'żeby', 'aby', 'więc', 'czyli', 'jednak', 'także',
-  'tylko', 'przez', 'dla', 'przy', 'nad', 'pod', 'bez', 'jako', 'jest', 'być',
-  'był', 'była', 'było', 'były', 'będzie', 'mają', 'może', 'można', 'trzeba',
-  'tego', 'tej', 'tym', 'tych', 'jego', 'jej', 'ich', 'nas', 'was', 'jak',
-  'gdy', 'kiedy', 'gdzie', 'który', 'która', 'które', 'których', 'którym',
-  'this', 'that', 'with', 'from', 'have', 'are', 'was', 'were', 'the', 'and', 'for',
-]);
+/** Stopwords do heurystyki tagów — jedno źródło w shared/text (re-eksport dla testów). */
+export const PL_STOPWORDS: ReadonlySet<string> = TAG_STOPWORDS;
 
 /** documentTypes z config_json bazy: [{name, description}] → nazwy. */
 export function kbDocumentTypes(row: KbRow): string[] {

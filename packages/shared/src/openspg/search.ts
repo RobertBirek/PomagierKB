@@ -177,7 +177,9 @@ export async function probeSearch(
     const r = await searchVector(client, {
       projectId,
       label: `${namespace}.Chunk`,
-      propertyKey: 'contentPreview',
+      // 'content' = pole faktycznie indeksowane TextAndVector (kanał produkcyjny);
+      // 'contentPreview' jest tylko Text — sonda na nim była trwale czerwona.
+      propertyKey: 'content',
       queryVector: opts.queryVector ?? new Array<number>(8).fill(0),
       topk: 1,
     });

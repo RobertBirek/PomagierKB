@@ -9,7 +9,7 @@ import {
   type RecordFeedbackResult,
 } from '@pomagierkb/shared/db';
 import { unseal as unsealAesGcm } from '@pomagierkb/shared/crypto';
-import { createLlmClient } from '@pomagierkb/shared/llm';
+import { createLlmClient, withBreaker } from '@pomagierkb/shared/llm';
 import { OpenSpgClient } from '@pomagierkb/shared/openspg';
 import type { AnswerLlm } from '@pomagierkb/shared/answer';
 import { AppError } from '@pomagierkb/shared/errors';
@@ -152,9 +152,10 @@ export function createAskService(deps: AskServiceDeps): AskService {
     const embedCfg = readLlmSetting(db, 'llm.embeddings', tokenEncKeyB64) ?? chatCfg;
     const chatClient = makeLlmClient(chatCfg);
     const embedClient = embedCfg === chatCfg ? chatClient : makeLlmClient(embedCfg);
+    // Breaker jak w buildToolLlm mcp-servera — kokpit widzi realny stan llm.* z ruchu.
     return {
-      chat: (req) => chatClient.chat(req),
-      embed: (texts) => embedClient.embed(texts),
+      chat: (req) => withBreaker(db, 'llm.chat', () => chatClient.chat(req)),
+      embed: (texts) => withBreaker(db, 'llm.embeddings', () => embedClient.embed(texts)),
     };
   }
 

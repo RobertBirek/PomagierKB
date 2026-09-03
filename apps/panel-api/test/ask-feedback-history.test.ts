@@ -20,7 +20,7 @@ function seedAnswer(userId: string, question: string): string {
   return recordAnswer(db, {
     question,
     namespaces: ['LightingDocs'],
-    citations: [{ n: 1, id: 'LightingDocs:Chunk:1', namespace: 'LightingDocs' }],
+    citations: [{ n: 1, id: 'CHUNK_ld000001_001', namespace: 'LightingDocs' }],
     confidence: 0.8,
     model: 'chat-test',
     source: 'panel',

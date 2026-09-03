@@ -50,14 +50,14 @@ export function seedKb(db: Db, namespace: string, opts: { embeddingModel?: strin
 export function seedLightingChunks(db: Db): void {
   replaceForDocument(db, 'LightingDocs', 'doc1', [
     {
-      id: 'LightingDocs:Chunk:1',
+      id: 'CHUNK_ld000001_001',
       title: 'Montaż szynoprzewodów',
       content:
         'Przy montażu na szynoprzewodach trójfazowych maksymalne obciążenie toru wynosi 16 amperów na fazę.',
       sourceRef: 'https://example.com/karta.pdf',
     },
     {
-      id: 'LightingDocs:Chunk:2',
+      id: 'CHUNK_ld000001_002',
       title: 'Sterowanie DALI',
       content: 'Magistrala DALI pozwala sterować oprawami indywidualnie i grupowo.',
     },

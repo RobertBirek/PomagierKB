@@ -519,9 +519,7 @@ export const pl = {
     'Odpowiedź z pewnością poniżej progu trafia do rejestru luk wiedzy („Czego baza nie wie”). Wyższy próg = więcej zgłoszeń do uzupełnienia przez kuratora.',
   'settings.thresholds.minScoreTitle': 'Próg odmowy odpowiedzi (answer.minScore)',
   'settings.thresholds.minScoreDesc':
-    'Gdy najlepszy wynik wyszukiwania jest poniżej progu, baza uczciwie mówi „nie znalazłem” zamiast zgadywać.',
-  'settings.thresholds.minScoreReadOnly':
-    'Wartość systemowa — w tej wersji panel jej nie zmienia (poza białą listą ustawień API).',
+    'Gdy znormalizowany najlepszy wynik wyszukiwania (1.0 = pierwsze miejsce we wszystkich kanałach) jest poniżej progu, baza uczciwie mówi „nie znalazłem” zamiast zgadywać.',
   'settings.thresholds.value': 'Wartość: {value}',
   'settings.thresholds.default': 'domyślnie {value}',
   'settings.thresholds.saved': 'Próg zapisany',
@@ -841,8 +839,6 @@ export const pl = {
   'settings.thresholds.valueLabel': 'Wartość',
   'settings.thresholds.undo': 'Cofnij',
   'settings.thresholds.undone': 'Przywrócono poprzednią wartość: {value}',
-  'settings.thresholds.minScoreBackendNote':
-    'Zmiana wymaga aktualizacji backendu — klucz answer.minScore jest poza białą listą ustawień (SETTINGS_KEYS).',
   'system.actions.status': 'Status',
   'system.actions.typeOther': 'inny…',
   'system.actions.typeCustom': 'Własny typ',

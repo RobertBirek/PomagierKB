@@ -15,6 +15,8 @@ export const SETTINGS_KEYS = [
   'chunking',
   'ingest.limits',
   'drafts.limits',
+  'answer.minScore',
+  'answer.rerank',
 ] as const;
 
 export type SettingsKey = (typeof SETTINGS_KEYS)[number];

@@ -1,7 +1,8 @@
 import type { Db } from '../db/index.js';
-import { getKb, searchFts } from '../db/index.js';
+import { listKbs, searchFts, type KbRow } from '../db/index.js';
 import { rrfFuse, searchText, searchVector } from '../openspg/index.js';
 import type { OpenSpgClient, RankedList, SearchHit } from '../openspg/index.js';
+import { withBreaker } from '../llm/index.js';
 import type { ChatRequest, ChatResult } from '../llm/index.js';
 
 /**
@@ -62,9 +63,19 @@ export interface HybridSearchParams {
   mode?: RetrievalMode;
 }
 
+/** Powody degradacji — do diagnostyki agenta/panelu (degraded = reasons.length > 0). */
+export type DegradedReason =
+  | 'openspg_down' // żaden kanał OpenSPG nie zadziałał (awaria/timeout/breaker)
+  | 'openspg_no_hits' // OpenSPG działał, ale nic nie znalazł, a lokalny mirror tak
+  | 'snippet_only' // któryś wynik bez pełnej treści (tylko 300-znakowy snippet)
+  | 'kb_dirty'; // przeszukana KB ma zmiany nie wbudowane w graf (mirror może wyprzedzać)
+
 export interface RetrievalResult {
   results: RetrievalHit[];
   degraded: boolean;
+  degradedReasons: DegradedReason[];
+  /** Liczba kanałów, które realnie weszły do fuzji (normalizacja topScore w answer). */
+  activeChannels: number;
   tookMs: number;
 }
 
@@ -91,12 +102,6 @@ function firstString(fields: Record<string, unknown>, keys: string[]): string | 
     if (typeof v === 'string' && v.trim() !== '') return v;
   }
   return undefined;
-}
-
-/** Namespace z id w konwencji 'Ns:Typ:hash' — tylko gdy prefiks jest znanym namespace. */
-function deriveNamespace(id: string, known: Set<string>): string | undefined {
-  const prefix = id.split(':')[0];
-  return prefix !== undefined && known.has(prefix) ? prefix : undefined;
 }
 
 function toChannelHit(hit: SearchHit, namespace: string): ChannelHit {
@@ -185,9 +190,16 @@ export async function hybridSearch(
     params.namespaces && params.namespaces.length > 0 ? params.namespaces : params.allowedNamespaces
   ).filter((ns) => allowed.has(ns));
   if (namespaces.length === 0) {
-    return { results: [], degraded: true, tookMs: Date.now() - started };
+    return {
+      results: [],
+      degraded: true,
+      degradedReasons: ['openspg_down'],
+      activeChannels: 0,
+      tookMs: Date.now() - started,
+    };
   }
-  const nsSet = new Set(namespaces);
+  // Jedna mapa rejestru na całe wyszukiwanie (zamiast getKb per namespace per kanał — N+1).
+  const kbMap = new Map<string, KbRow>(listKbs(ctx.db).map((kb) => [kb.namespace, kb]));
 
   // (a) FTS5 — synchroniczny (better-sqlite3), timeout nie dotyczy; błąd → pusty kanał.
   let ftsHits: ChannelHit[] = [];
@@ -205,56 +217,62 @@ export async function hybridSearch(
     );
   }
 
-  // (b)+(c) OpenSPG — równolegle, każdy z własnym timeoutem 5 s.
+  // (b)+(c) OpenSPG — równolegle, każdy z własnym timeoutem 5 s i breakerem
+  // ('openspg' w tabeli breakers: otwarty → kanał od razu null, kokpit widzi stan).
   const openspg = ctx.openspg;
   const llm = ctx.llm;
-  const vectorNamespaces = namespaces.filter((ns) => (getKb(ctx.db, ns)?.embedding_model ?? '') !== '');
+  const vectorNamespaces = namespaces.filter((ns) => (kbMap.get(ns)?.embedding_model ?? '') !== '');
   const vectorEnabled = mode !== 'text' && openspg !== null && llm !== null && vectorNamespaces.length > 0;
   const textEnabled = mode !== 'vector' && openspg !== null;
 
   const [vectorHits, textHits] = await Promise.all([
     vectorEnabled && openspg && llm
-      ? runChannel(ctx, 'openspg_vector', async () => {
-          const [queryVector] = await llm.embed([params.query]);
-          if (!queryVector || queryVector.length === 0) {
-            throw new Error('embed zapytania zwrócił pusty wektor');
-          }
-          const scored: { hit: SearchHit; ns: string }[] = [];
-          for (const ns of vectorNamespaces) {
-            const projectId = getKb(ctx.db, ns)?.project_id;
-            if (projectId === null || projectId === undefined) continue; // KB bez provisioningu
-            const res = await searchVector(openspg, {
-              projectId,
-              label: `${ns}.Chunk`,
-              propertyKey: 'content',
-              queryVector,
-              topk: limit,
-            });
-            for (const hit of res.items) scored.push({ hit, ns });
-          }
-          scored.sort((a, b) => b.hit.score - a.hit.score);
-          return scored.slice(0, limit).map(({ hit, ns }) => toChannelHit(hit, ns));
-        })
+      ? runChannel(ctx, 'openspg_vector', () =>
+          withBreaker(ctx.db, 'openspg', async () => {
+            const [queryVector] = await llm.embed([params.query]);
+            if (!queryVector || queryVector.length === 0) {
+              throw new Error('embed zapytania zwrócił pusty wektor');
+            }
+            const scored: { hit: SearchHit; ns: string }[] = [];
+            for (const ns of vectorNamespaces) {
+              const projectId = kbMap.get(ns)?.project_id;
+              if (projectId === null || projectId === undefined) continue; // KB bez provisioningu
+              const res = await searchVector(openspg, {
+                projectId,
+                label: `${ns}.Chunk`,
+                propertyKey: 'content',
+                queryVector,
+                topk: limit,
+              });
+              for (const hit of res.items) scored.push({ hit, ns });
+            }
+            scored.sort((a, b) => b.hit.score - a.hit.score);
+            return scored.slice(0, limit).map(({ hit, ns }) => toChannelHit(hit, ns));
+          }),
+        )
       : Promise.resolve(null),
     textEnabled && openspg
-      ? runChannel(ctx, 'openspg_text', async () => {
-          // TextSearchRequest wymaga projectId — wołamy per namespace i scalamy.
-          const all: SearchHit[] = [];
-          for (const ns of namespaces) {
-            const projectId = getKb(ctx.db, ns)?.project_id;
-            if (projectId === null || projectId === undefined) continue;
-            const res = await searchText(openspg, {
-              projectId,
-              queryString: params.query,
-              labelConstraints: [`${ns}.Chunk`, `${ns}.ReferenceDocument`],
-              page: 1,
-              topk: limit,
-            });
-            all.push(...res.items);
-          }
-          const items = all.sort((a, b) => b.score - a.score).slice(0, limit);
-          return items.map((hit) => toChannelHit(hit, deriveNamespace(hit.id, nsSet) ?? ''));
-        })
+      ? runChannel(ctx, 'openspg_text', () =>
+          withBreaker(ctx.db, 'openspg', async () => {
+            // TextSearchRequest wymaga projectId — wołamy per namespace i scalamy;
+            // ns znany z pętli (id eksportera to DOC_/CHUNK_ — nie niesie namespace).
+            const all: { hit: SearchHit; ns: string }[] = [];
+            for (const ns of namespaces) {
+              const projectId = kbMap.get(ns)?.project_id;
+              if (projectId === null || projectId === undefined) continue;
+              const res = await searchText(openspg, {
+                projectId,
+                queryString: params.query,
+                labelConstraints: [`${ns}.Chunk`, `${ns}.ReferenceDocument`],
+                page: 1,
+                topk: limit,
+              });
+              for (const hit of res.items) all.push({ hit, ns });
+            }
+            all.sort((a, b) => b.hit.score - a.hit.score);
+            return all.slice(0, limit).map(({ hit, ns }) => toChannelHit(hit, ns));
+          }),
+        )
       : Promise.resolve(null),
   ]);
 
@@ -270,9 +288,11 @@ export async function hybridSearch(
   const textMap = new Map((textHits ?? []).map((h) => [h.id, h]));
   const mirror = mirrorLookup(ctx.db, fused.map((f) => f.id));
 
+  let snippetOnly = false;
   const results: RetrievalHit[] = fused.map((f) => {
     const detail = ftsMap.get(f.id) ?? vectorMap.get(f.id) ?? textMap.get(f.id);
     const m = mirror.get(f.id);
+    if (m === undefined) snippetOnly = true; // brak pełnej treści w mirrorze — kontekst z samego snippetu
     const namespace = (detail?.namespace !== '' ? detail?.namespace : undefined) ?? m?.namespace ?? '';
     const title = detail?.title ?? m?.title ?? undefined;
     const snippet = detail?.snippet ?? (m ? truncateSnippet(m.content) : '');
@@ -289,10 +309,21 @@ export async function hybridSearch(
   });
 
   // degraded: żaden kanał OpenSPG nie zadziałał ALBO OpenSPG działał, ale nic nie
-  // znalazł, podczas gdy lokalny mirror znalazł (jawny bezpiecznik — §7.5).
+  // znalazł, podczas gdy lokalny mirror znalazł (jawny bezpiecznik — §7.5) — plus
+  // powody miękkie: wynik bez pełnej treści, przeszukana KB z dirty=1 (mirror może
+  // wyprzedzać graf, bo eksport pisze mirror przed buildem).
   const openspgWorked = vectorHits !== null || textHits !== null;
   const openspgItemCount = (vectorHits?.length ?? 0) + (textHits?.length ?? 0);
+  const degradedReasons: DegradedReason[] = [];
+  if (!openspgWorked) degradedReasons.push('openspg_down');
+  else if (openspgItemCount === 0 && ftsHits.length > 0) degradedReasons.push('openspg_no_hits');
+  if (snippetOnly) degradedReasons.push('snippet_only');
+  if (namespaces.some((ns) => (kbMap.get(ns)?.dirty ?? 0) === 1)) degradedReasons.push('kb_dirty');
+
+  const activeChannels = lists.length;
+  // Kontrakt degraded (bool) bez zmian: twarde powody jak dotychczas; miękkie
+  // (snippet_only/kb_dirty) sygnalizowane TYLKO w degradedReasons.
   const degraded = !openspgWorked || (openspgItemCount === 0 && ftsHits.length > 0);
 
-  return { results, degraded, tookMs: Date.now() - started };
+  return { results, degraded, degradedReasons, activeChannels, tookMs: Date.now() - started };
 }

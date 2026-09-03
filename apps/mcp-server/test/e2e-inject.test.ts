@@ -91,7 +91,7 @@ describe('E2E mcp-server: pełny przepływ narzędzi przez transport Streamable 
       degraded: boolean;
     };
     expect(searchOut.degraded).toBe(true);
-    expect(searchOut.results[0]?.id).toBe('LightingDocs:Chunk:1');
+    expect(searchOut.results[0]?.id).toBe('CHUNK_ld000001_001');
     expect(searchOut.results[0]?.source).toBe('fallback_fts');
     expect(searchRes.content[0]?.text).toContain('Montaż szynoprzewodów');
 
@@ -114,7 +114,7 @@ describe('E2E mcp-server: pełny przepływ narzędzi przez transport Streamable 
     };
     expect(mock.calls.chat).toBe(1); // dowód: odpowiadał mock, nie prawdziwy LLM
     expect(answerOut.answer).toContain('[1]');
-    expect(answerOut.citations[0]?.id).toBe('LightingDocs:Chunk:1');
+    expect(answerOut.citations[0]?.id).toBe('CHUNK_ld000001_001');
     expect(answerOut.confidence).toBeGreaterThan(0.45);
     expect(answerOut.gapRecorded).toBe(false);
     const answerRow = h.db

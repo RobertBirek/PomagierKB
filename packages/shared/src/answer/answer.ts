@@ -65,8 +65,14 @@ const CONTEXT_CHAR_BUDGET = 6000 * CHARS_PER_TOKEN;
 const CHUNK_CHAR_LIMIT = 1200 * CHARS_PER_TOKEN;
 /** Teoretyczny top RRF pojedynczego kanału: 1/(60+1) — do normalizacji top score. */
 const RRF_TOP1 = 1 / 61;
-/** Próg retrievalu bramki odmowy (settings 'answer.minScore'); ~rank 40 jednego kanału. */
-const ANSWER_MIN_SCORE_DEFAULT = 0.01;
+/**
+ * Próg bramki odmowy na ZNORMALIZOWANYM topie (topScore / (activeChannels*RRF_TOP1)):
+ * 1.0 = rank 1 we wszystkich działających kanałach. 0.2 ≈ rank 5 pojedynczego kanału.
+ * (Stara semantyka surowego RRF przepuszczała wszystko: rank 1 = 1/61 > 0.01.)
+ */
+const ANSWER_MIN_SCORE_DEFAULT = 0.2;
+/** Wartości legacy sprzed normalizacji (surowe RRF, <0.05) traktujemy jak brak ustawienia. */
+const ANSWER_MIN_SCORE_LEGACY_CUTOFF = 0.05;
 const LEARNING_THRESHOLD_DEFAULT = 0.45;
 
 export const NO_ANSWER_TEXT =
@@ -74,9 +80,9 @@ export const NO_ANSWER_TEXT =
   'konkretnej bazy; brakującą treść można dodać przez kb_submit_draft (trafi do recenzji).';
 
 /**
- * Defensywny odczyt liczby z tabeli settings: 'answer.minScore' jest poza białą listą
- * repo settings, więc czytamy wprost — brak wiersza, sekret lub zły kształt → default.
- * 'learning.threshold' czytany tak samo dla spójności.
+ * Defensywny odczyt liczby z tabeli settings (klucze są na białej liście i ustawialne
+ * przez API; surowy SELECT zamiast repo settings, bo answer.ts nie może zależeć od
+ * DI seal/unseal) — brak wiersza, sekret lub zły kształt → default.
  */
 function readNumberSetting(db: Db, key: string, fallback: number): number {
   try {
@@ -143,17 +149,24 @@ function chunkContent(db: Db, id: string, fallback: string): string {
 }
 
 /** Budżet ~6000 tokenów, per chunk ≤1200 tokenów, numeracja [1..n] stabilna. */
-function buildContext(db: Db, hits: RetrievalHit[], maxSources: number): ContextSource[] {
+function buildContext(
+  db: Db,
+  hits: RetrievalHit[],
+  maxSources: number,
+): { sources: ContextSource[]; snippetFallbacks: number } {
   const sources: ContextSource[] = [];
   let used = 0;
+  let snippetFallbacks = 0;
   for (const hit of hits.slice(0, maxSources)) {
-    let content = chunkContent(db, hit.id, hit.snippet);
+    const full = chunkContent(db, hit.id, hit.snippet);
+    if (full === stripHighlights(hit.snippet) && hit.snippet.endsWith('…')) snippetFallbacks++;
+    let content = full;
     if (content.length > CHUNK_CHAR_LIMIT) content = `${content.slice(0, CHUNK_CHAR_LIMIT)}…`;
     if (sources.length > 0 && used + content.length > CONTEXT_CHAR_BUDGET) break;
     sources.push({ n: sources.length + 1, hit, content });
     used += content.length;
   }
-  return sources;
+  return { sources, snippetFallbacks };
 }
 
 function systemPrompt(language: 'pl' | 'en'): string {
@@ -234,17 +247,23 @@ export async function answerQuestion(ctx: AnswerCtx, params: AnswerParams): Prom
   const usedNamespaces =
     params.namespaces && params.namespaces.length > 0 ? params.namespaces : params.allowedNamespaces;
   const topScore = retrieval.results[0]?.score ?? 0;
-  const minScore = readNumberSetting(ctx.db, 'answer.minScore', ANSWER_MIN_SCORE_DEFAULT);
+  // topNorm: 1.0 = rank 1 we WSZYSTKICH kanałach, które weszły do fuzji (bez saturacji
+  // przy zgodzie 2 kanałów i bez inflacji przy jednym) — wspólny dla bramki i confidence.
+  const activeChannels = Math.max(retrieval.activeChannels, 1);
+  const topNorm = clamp01(topScore / (activeChannels * RRF_TOP1));
+  const minScoreRaw = readNumberSetting(ctx.db, 'answer.minScore', ANSWER_MIN_SCORE_DEFAULT);
+  const minScore =
+    minScoreRaw < ANSWER_MIN_SCORE_LEGACY_CUTOFF ? ANSWER_MIN_SCORE_DEFAULT : minScoreRaw;
 
   // ── Bramka odmowy: słaby retrieval → no_answer + luka, BEZ wywołania chat_llm ──
-  if (retrieval.results.length === 0 || topScore < minScore) {
+  if (retrieval.results.length === 0 || topNorm < minScore) {
     recordGap(ctx.db, {
       question: params.question,
       source: params.source,
       kbNamespace: usedNamespaces[0] ?? null,
       confidence: 0,
       apiKeyId,
-      metadata: { reason: 'no_answer_gate', topScore, minScore },
+      metadata: { reason: 'no_answer_gate', topScore, topNorm, minScore },
     });
     const answerRow = recordAnswer(ctx.db, {
       question: params.question,
@@ -277,7 +296,12 @@ export async function answerQuestion(ctx: AnswerCtx, params: AnswerParams): Prom
   }
 
   // ── Kontekst [1..n] w budżecie tokenów ──
-  const sources = buildContext(ctx.db, retrieval.results, maxSources);
+  const { sources, snippetFallbacks } = buildContext(ctx.db, retrieval.results, maxSources);
+  if (snippetFallbacks > 0) {
+    warnings.push(
+      `Dla ${snippetFallbacks} źródł(a/eł) brak pełnej treści w mirrorze — kontekst ograniczony do snippetu.`,
+    );
+  }
   const sourcesBlock = sources
     .map((s) => {
       const title = s.hit.title ?? s.hit.id;
@@ -314,8 +338,7 @@ export async function answerQuestion(ctx: AnswerCtx, params: AnswerParams): Prom
       ...(s.hit.sourceRef !== undefined ? { sourceRef: s.hit.sourceRef } : {}),
     }));
 
-  // ── confidence = 0.5*llmSelf + 0.3*topScoreNorm + 0.2*coverage ──
-  const topNorm = clamp01(topScore / RRF_TOP1);
+  // ── confidence = 0.5*llmSelf + 0.3*topScoreNorm + 0.2*coverage (topNorm z bramki) ──
   const coverage = sources.length > 0 ? cited.length / sources.length : 0;
   let confidence =
     llmSelf !== null

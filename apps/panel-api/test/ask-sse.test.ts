@@ -96,7 +96,7 @@ beforeAll(async () => {
   transitionKb(db, 'LightingDocs', 'active');
   replaceForDocument(db, 'LightingDocs', 'doc1', [
     {
-      id: 'LightingDocs:Chunk:1',
+      id: 'CHUNK_ld000001_001',
       title: 'Montaż szynoprzewodów',
       content:
         'Przy montażu na szynoprzewodach trójfazowych maksymalne obciążenie toru wynosi 16 amperów na fazę.',
@@ -162,7 +162,7 @@ describe('POST /api/v1/ask — pełny przepływ SSE', () => {
     expect(result.degraded).toBe(true); // OpenSPG nieosiągalny → tylko FTS5
     expect(result.confidence).toBeGreaterThan(0.5);
     expect(result.citations.length).toBeGreaterThan(0);
-    expect(result.citations[0]).toMatchObject({ n: 1, id: 'LightingDocs:Chunk:1', namespace: 'LightingDocs' });
+    expect(result.citations[0]).toMatchObject({ n: 1, id: 'CHUNK_ld000001_001', namespace: 'LightingDocs' });
     expect(result.answerId).toMatch(/^ans_\d{8}_[0-9a-f]{8}$/);
 
     expect(llm.chatCalls()).toBe(1);
