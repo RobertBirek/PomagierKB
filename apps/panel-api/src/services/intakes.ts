@@ -12,7 +12,7 @@ import { humanize, INTAKE_STAGES } from './messages.js';
  * Czysta logika na db + zapis blobów DATA_DIR/uploads/<sha256[:2]>/<sha256>.
  */
 
-export type IntakeSourceKind = 'upload' | 'text' | 'api';
+export type IntakeSourceKind = 'upload' | 'text' | 'api' | 'url';
 export type IntakeStatus = 'received' | 'extracted' | 'cleaned' | 'analyzed' | 'drafted' | 'failed';
 
 export interface IntakeRow {

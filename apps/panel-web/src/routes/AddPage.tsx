@@ -49,7 +49,7 @@ const TEXT_MAX = 100_000;
 /** Próg ostrzeżenia licznika znaków (90% limitu). */
 const TEXT_WARN = TEXT_MAX * 0.9;
 
-type AddTab = 'text' | 'file';
+type AddTab = 'text' | 'file' | 'url';
 
 export function AddPage() {
   const me = useMe();
@@ -57,13 +57,17 @@ export function AddPage() {
   const queryClient = useQueryClient();
   const search = useSearch({ from: '/add' });
   const gapQuestion = search.question;
-  const tab: AddTab = search.tab === 'file' ? 'file' : 'text';
+  const tab: AddTab = search.tab === 'file' ? 'file' : search.tab === 'url' ? 'url' : 'text';
 
   // ── stan formularza tekstowego ──
   const [text, setText] = useState('');
   const [title, setTitle] = useState(gapQuestion ?? '');
   const [sourceUrl, setSourceUrl] = useState('');
   const [textError, setTextError] = useState<string | null>(null);
+
+  // ── stan trybu URL (ingest z sieci przez safe_http po stronie backendu) ──
+  const [fetchUrl, setFetchUrl] = useState('');
+  const [urlError, setUrlError] = useState<string | null>(null);
 
   // ── stan trybu plikowego (kolejka kliencka + obiekty File poza reducerem) ──
   const [queue, dispatchQueue] = useReducer(fileQueueReducer, [] as readonly FileQueueItem[]);
@@ -90,6 +94,7 @@ export function AddPage() {
     const next: AddSearch = {};
     if (gapQuestion !== undefined) next.question = gapQuestion;
     if (value === 'file') next.tab = 'file';
+    if (value === 'url') next.tab = 'url';
     void navigate({ to: '/add', search: next, replace: true });
   };
 
@@ -114,6 +119,31 @@ export function AddPage() {
       setTextError(err instanceof ApiError ? err.message : t('common.error'));
     },
   });
+
+  // ── tryb URL: POST JSON {url} — backend pobiera treść (safe_http) i analizuje ──
+  const submitUrl = useMutation({
+    mutationFn: (url: string) => apiFetch<SubmitResponse>('/api/v1/content', { method: 'POST', body: { url } }),
+    onSuccess: (data) => {
+      setActive({ intakeId: data.intakeId, deduplicated: data.deduplicated === true });
+      setFetchUrl('');
+      setUrlError(null);
+      void queryClient.invalidateQueries({ queryKey: ['content-list'] });
+    },
+    onError: (err) => {
+      setUrlError(err instanceof ApiError ? err.message : t('common.error'));
+    },
+  });
+
+  function handleUrlSubmit(): void {
+    if (submitUrl.isPending) return;
+    const trimmed = fetchUrl.trim();
+    if (!/^https?:\/\//.test(trimmed)) {
+      setUrlError(t('add.url.invalid'));
+      return;
+    }
+    setUrlError(null);
+    submitUrl.mutate(trimmed);
+  }
 
   function handleTextSubmit(): void {
     if (submitText.isPending) return;
@@ -214,6 +244,7 @@ export function AddPage() {
   function onSubmit(ev: FormEvent): void {
     ev.preventDefault();
     if (tab === 'text') handleTextSubmit();
+    else if (tab === 'url') handleUrlSubmit();
     else void uploadAll();
   }
 
@@ -269,6 +300,7 @@ export function AddPage() {
                 <TabsList>
                   <TabsTrigger value="text">{t('add.tab.text')}</TabsTrigger>
                   <TabsTrigger value="file">{t('add.tab.file')}</TabsTrigger>
+                  <TabsTrigger value="url">{t('add.tab.url')}</TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="text" className="flex flex-col gap-4">
@@ -311,6 +343,26 @@ export function AddPage() {
                   </Field>
                   {/* bez selecta KB — bazę dobiera analiza treści (plan: atrapa usunięta) */}
                   <Alert variant="info">{t('add.kbAuto.info')}</Alert>
+                </TabsContent>
+
+                <TabsContent value="url" className="flex flex-col gap-4">
+                  <Field
+                    label={t('add.url.label')}
+                    required
+                    hint={t('add.url.hint')}
+                    {...(urlError !== null ? { error: urlError } : {})}
+                  >
+                    <Input
+                      type="url"
+                      value={fetchUrl}
+                      placeholder="https://…"
+                      onChange={(ev) => {
+                        setFetchUrl(ev.target.value);
+                        if (urlError !== null) setUrlError(null);
+                      }}
+                    />
+                  </Field>
+                  <Alert variant="info">{t('add.url.info')}</Alert>
                 </TabsContent>
 
                 <TabsContent value="file" className="flex flex-col gap-4">
@@ -434,9 +486,11 @@ export function AddPage() {
                 <Button
                   type="submit"
                   variant="primary"
-                  loading={submitText.isPending || uploading}
+                  loading={submitText.isPending || submitUrl.isPending || uploading}
                 >
-                  {submitText.isPending || uploading ? t('add.submitting') : t('add.submit')}
+                  {submitText.isPending || submitUrl.isPending || uploading
+                    ? t('add.submitting')
+                    : t('add.submit')}
                 </Button>
               </div>
             </form>

@@ -143,6 +143,12 @@ export const pl = {
   'add.pageDescription':
     'Wklejony tekst lub wgrany plik przejdzie przez przetwarzanie i trafi jako szkic do recenzji.',
   'add.tab.text': 'Tekst',
+  'add.tab.url': 'Adres URL',
+  'add.url.label': 'Adres strony do pobrania',
+  'add.url.hint': 'Publiczny adres http(s) — treść pobierze i przeanalizuje pipeline (limit 10 MB).',
+  'add.url.info':
+    'Pobieramy wyłącznie publiczne adresy (bez sieci wewnętrznych) o typie HTML/tekst/Markdown/PDF/JSON. Bazę wiedzy dobierze analiza treści, a szkic trafi do recenzji w Inboxie.',
+  'add.url.invalid': 'Podaj pełny adres zaczynający się od http:// lub https://.',
   'add.tab.file': 'Plik',
   'add.gapHeader': 'Uzupełniasz lukę: {question}',
   'add.text.label': 'Treść',

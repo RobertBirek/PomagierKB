@@ -8,9 +8,11 @@ import { createLlmClient, type LlmClient } from '@pomagierkb/shared/llm';
 import type { AppConfig } from '../config.js';
 import {
   nextReceivedIntake,
+  saveBlob,
   updateIntake,
   type IntakeRow,
 } from '../services/intakes.js';
+import { safeFetch, type SafeFetchDeps } from '../services/safe-http.js';
 import { extractContent, ExtractError } from './extract.js';
 import { cleanWithOptionalAi } from './clean.js';
 import { pickProfile } from './cleanProfiles.js';
@@ -27,6 +29,8 @@ import { analyzeContent } from './analyze.js';
 export interface IntakeWorkerDeps {
   /** Wstrzykiwany w testach zamiast globalnego fetch (Stirling/Tika). */
   fetchImpl?: typeof globalThis.fetch;
+  /** Zależności safe_http (testy: resolve/fetch bez sieci). */
+  safeHttp?: SafeFetchDeps;
   /** Klient chat_llm do analyze; undefined = zbuduj z settings; null = brak (heurystyka). */
   chatLlm?: LlmClient | null;
   /** Klient openie do czyszczenia AI; undefined = z settings (gdy aiClean), null = wyłączony. */
@@ -64,10 +68,25 @@ export function llmFromSettings(
   }
 }
 
+/** Uzupełnienie intake'u po fetchu URL (blob_path/mime/size poza IntakePatch). */
+function updateIntakeFetch(db: Db, id: string, blobPath: string, mime: string, size: number): IntakeRow {
+  db.prepare('UPDATE intakes SET blob_path = ?, mime = ?, size_bytes = ?, updated_at = ? WHERE id = ?').run(
+    blobPath,
+    mime,
+    size,
+    new Date().toISOString(),
+    id,
+  );
+  return db.prepare('SELECT * FROM intakes WHERE id = ?').get(id) as IntakeRow;
+}
+
 const SOURCE_KIND_TO_DRAFT: Record<IntakeRow['source_kind'], DraftSourceType> = {
   upload: 'upload',
   text: 'text',
   api: 'api',
+  // 'url' mapowane na 'api': drafts.source_type nie ma wartości 'url' (rebuild tabeli
+  // z FK od learning_gaps niemożliwy w transakcji migratora); URL żyje w source_ref.
+  url: 'api',
 };
 
 /** Kod błędu do kolumny intakes.error (ExtractError/AppError → kod, reszta → 'internal'). */
@@ -82,12 +101,31 @@ function errorCode(err: unknown): string {
  * zapisywane od razu (widoczny postęp w GET /content/:id). Rzuty łapane
  * przez wołającego (tick) → status failed.
  */
+/** Mapowanie Content-Type z sieci na mime rozumiany przez kaskadę ekstrakcji. */
+const URL_CONTENT_TYPE_TO_MIME: Record<string, string> = {
+  'text/html': 'text/html',
+  'application/xhtml+xml': 'text/html',
+  'text/plain': 'text/plain',
+  'text/markdown': 'text/markdown',
+  'application/pdf': 'application/pdf',
+  'application/json': 'application/json',
+};
+
 export async function processIntake(
   db: Db,
   config: AppConfig,
   row: IntakeRow,
   deps: IntakeWorkerDeps = {},
 ): Promise<IntakeRow> {
+  // ── Etap 1b (tylko source_kind='url'): pobranie treści przez safe_http ────
+  if (row.source_kind === 'url' && row.blob_path === null) {
+    if (row.source_url === null) throw new AppError('internal', `intake ${row.id} typu url bez source_url`);
+    const fetched = await safeFetch(row.source_url, deps.safeHttp ?? {});
+    const { blobPath } = saveBlob(config.dataDir, fetched.buffer);
+    const mime = URL_CONTENT_TYPE_TO_MIME[fetched.contentType] ?? 'text/plain';
+    row = updateIntakeFetch(db, row.id, blobPath, mime, fetched.buffer.length);
+  }
+
   // ── Etap 2: ekstrakcja (kaskada Stirling → OCR → Tika z progiem jakości) ──
   if (row.blob_path === null) {
     throw new AppError('internal', `intake ${row.id} bez blob_path`);

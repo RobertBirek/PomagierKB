@@ -82,7 +82,7 @@ const askRoute = createRoute({
  */
 export interface AddSearch {
   question?: string;
-  tab?: 'text' | 'file';
+  tab?: 'text' | 'file' | 'url';
 }
 
 const addRoute = createRoute({
@@ -91,6 +91,7 @@ const addRoute = createRoute({
   validateSearch: (search: Record<string, unknown>): AddSearch => {
     const out: AddSearch = parseAddSearch(search);
     if (search['tab'] === 'file') out.tab = 'file';
+    if (search['tab'] === 'url') out.tab = 'url';
     return out;
   },
   head: routeHead('/add'),

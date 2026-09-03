@@ -21,11 +21,14 @@ import {
   type IntakeSourceKind,
 } from '../services/intakes.js';
 import { readIngestLimits } from '../services/pipeline-settings.js';
+import { validateFetchUrl } from '../services/safe-http-policy.js';
 
 /**
  * Trasy /api/v1/content — Etap 1 pipeline'u (Intake, pipeline-frontend §c):
- * POST przyjmuje multipart plik (≤50 MB, whitelist rozszerzeń) LUB JSON
- * {text, title?, sourceUrl?} (sourceUrl to WYŁĄCZNIE metadana — v1 bez fetchu),
+ * POST przyjmuje multipart plik (≤50 MB, whitelist rozszerzeń), JSON
+ * {text, title?, sourceUrl?} (sourceUrl przy text = metadana provenance) LUB
+ * JSON {url} — ingest z sieci: worker pobiera treść przez safe_http (SSRF
+ * fail-closed: DNS-pinning, prywatne IP odrzucane, cap 10 MB, allowlist typów),
  * zapisuje blob content-addressed i wpis intakes (202 {intakeId}); przetwarza
  * asynchronicznie worker in-process (pipeline/intake-worker.ts).
  * Dedup po sha256 treści + Idempotency-Key → 200 z istniejącym id.
@@ -44,10 +47,23 @@ interface TextBody {
   sourceUrl: string | null;
 }
 
+/** Body {url} — zgłoszenie adresu do pobrania przez worker (walidacja polityki OD RAZU). */
+function parseUrlBody(o: Record<string, unknown>): string {
+  const extra = Object.keys(o).filter((k) => k !== 'url');
+  if (extra.length > 0) throw new AppError('validation_error', `nieznane pola: ${extra.join(', ')}`);
+  const url = o['url'];
+  if (typeof url !== 'string' || url.length > 2048) {
+    throw new AppError('validation_error', 'pole url musi być adresem ≤2048 znaków');
+  }
+  const check = validateFetchUrl(url);
+  if (!check.ok) throw new AppError('validation_error', `adres odrzucony: ${check.reason}`);
+  return check.url.href;
+}
+
 /** Walidacja JSON body {text, title?, sourceUrl?} — ręczna (patrz komentarz modułu). */
 function parseTextBody(body: unknown): TextBody {
   if (typeof body !== 'object' || body === null || Array.isArray(body)) {
-    throw new AppError('validation_error', 'wymagany plik (multipart) albo JSON {text, title?, sourceUrl?}');
+    throw new AppError('validation_error', 'wymagany plik (multipart) albo JSON {text,...} albo {url}');
   }
   const o = body as Record<string, unknown>;
   const allowed = new Set(['text', 'title', 'sourceUrl']);
@@ -153,13 +169,31 @@ export default async function contentRoutes(app: FastifyInstance): Promise<void>
         sourceKind = 'upload';
         originalName = file.filename ?? null;
         mime = extMime;
+      } else if (
+        typeof req.body === 'object' && req.body !== null && !Array.isArray(req.body) &&
+        'url' in (req.body as Record<string, unknown>)
+      ) {
+        // Ingest URL: intake bez bloba — worker pobierze treść przez safe_http.
+        const href = parseUrlBody(req.body as Record<string, unknown>);
+        const row = insertIntake(app.db, {
+          sourceKind: 'url',
+          originalName: null,
+          mime: null,
+          sourceUrl: href,
+          blobPath: null,
+          createdBy: user.id,
+        });
+        if (idemKey !== null) rememberIdempotency(user.id, idemKey, row.id);
+        reply.auditContext = { resourceType: 'intake', resourceId: row.id, after: { sourceKind: 'url', sourceUrl: href } };
+        reply.status(202);
+        return { ok: true as const, data: { intakeId: row.id, status: row.status } };
       } else {
         const body = parseTextBody(req.body);
         buffer = Buffer.from(body.text, 'utf8');
         sourceKind = 'text';
         originalName = body.title; // titleHint dla analyze
         mime = 'text/plain';
-        sourceUrl = body.sourceUrl; // tylko metadana provenance (v1 bez fetchu)
+        sourceUrl = body.sourceUrl; // metadana provenance (fetch tylko dla source_kind='url')
       }
 
       // Konfigurowalny limit ('ingest.limits' — klucz wreszcie czytany); multipart

@@ -270,6 +270,66 @@ describe('walidacja i RBAC', () => {
   });
 });
 
+describe('POST /content {url} → worker pobiera przez safe_http → draft', () => {
+  it('202, fetch wstrzyknięty, status drafted, sourceRef = URL', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/content',
+      headers: { ...as('operator'), 'content-type': 'application/json' },
+      payload: { url: 'https://example.com/oswietlenie-awaryjne' },
+    });
+    expect(res.statusCode).toBe(202);
+    const intakeId = (res.json() as { data: { intakeId: string } }).data.intakeId;
+
+    const urlDeps = {
+      ...offlineDeps,
+      safeHttp: {
+        resolve: async () => ['93.184.216.34'],
+        fetchImpl: (async () =>
+          new Response(`${TEXT} Wersja pobrana z sieci.`, {
+            status: 200,
+            headers: { 'content-type': 'text/plain' },
+          })) as never,
+      },
+    };
+    await tickIntakeWorker(db, app.config, urlDeps);
+    const intake = getIntake(db, intakeId);
+    expect(intake?.status).toBe('drafted');
+    expect(intake?.mime).toBe('text/plain');
+    const draft = getDraft(db, intake!.draft_id!);
+    expect(draft?.source_ref).toBe('https://example.com/oswietlenie-awaryjne');
+    expect(draft?.source_type).toBe('api'); // mapowanie url→api (migracja 0004, komentarz)
+    expect(draft?.content_md).toContain('pobrana z sieci');
+  });
+
+  it('URL prywatny odrzucony już w trasie (400); fetch_blocked w workerze → failed', async () => {
+    const bad = await app.inject({
+      method: 'POST',
+      url: '/api/v1/content',
+      headers: { ...as('operator'), 'content-type': 'application/json' },
+      payload: { url: 'https://example.com:8887/openspg' },
+    });
+    expect(bad.statusCode).toBe(400);
+
+    const ok = await app.inject({
+      method: 'POST',
+      url: '/api/v1/content',
+      headers: { ...as('operator'), 'content-type': 'application/json' },
+      payload: { url: 'https://internal.example/tajne' },
+    });
+    const intakeId = (ok.json() as { data: { intakeId: string } }).data.intakeId;
+    const blockedDeps = {
+      ...offlineDeps,
+      safeHttp: { resolve: async () => ['192.168.0.7'] },
+    };
+    await tickIntakeWorker(db, app.config, blockedDeps);
+    const intake = getIntake(db, intakeId);
+    expect(intake?.status).toBe('failed');
+    expect(intake?.error).toBe('fetch_blocked');
+    expect(MESSAGES[intake!.error!]).toBeDefined(); // ludzki komunikat istnieje
+  });
+});
+
 describe('POST /content/:id/retry (ponowienie nieudanego intake)', () => {
   it('failed → received → worker kończy draftem; limit prób → 409', async () => {
     // Zły UTF-8 w .txt → worker ustawia failed

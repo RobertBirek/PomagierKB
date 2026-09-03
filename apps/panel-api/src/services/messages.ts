@@ -50,6 +50,9 @@ export const INTAKE_STAGES = [
 export const INTAKE_ERROR_CODES = [
   'extraction_below_quality_threshold',
   'invalid_encoding',
+  'fetch_blocked',
+  'fetch_failed',
+  'fetch_too_large',
 ] as const;
 
 /** Statusy draftów w Inboxie (shared repos/drafts.ts — DraftStatus). */
@@ -130,6 +133,18 @@ export const MESSAGES: Record<string, HumanMessage> = {
     label: 'przetwarzanie nieudane',
     description: 'Treści nie udało się przetworzyć.',
     action: 'Sprawdź szczegóły błędu przy wpisie i spróbuj z inną wersją dokumentu.',
+  },
+  fetch_blocked: {
+    label: 'adres odrzucony przez politykę bezpieczeństwa',
+    action: 'Pobieramy tylko publiczne adresy http/https (bez sieci wewnętrznych) o dozwolonym typie treści.',
+  },
+  fetch_failed: {
+    label: 'nie udało się pobrać treści z adresu',
+    action: 'Sprawdź, czy strona działa, i ponów pobranie przyciskiem „Ponów”.',
+  },
+  fetch_too_large: {
+    label: 'treść spod adresu jest za duża',
+    action: 'Limit pobrania to 10 MB — zapisz stronę jako PDF/tekst i dodaj plikiem.',
   },
   extraction_below_quality_threshold: {
     label: 'za mało tekstu w dokumencie',

@@ -10,6 +10,9 @@ export const ERROR_CODES = {
   action_already_running: 409,
   payload_too_large: 413,
   unsupported_media_type: 415,
+  fetch_blocked: 422, // safe_http: URL/IP/typ treści odrzucony polityką (SSRF fail-closed)
+  fetch_failed: 502, // safe_http: DNS/połączenie/HTTP != 2xx/timeout
+  fetch_too_large: 413, // safe_http: przekroczony cap rozmiaru streamu
   preflight_failed: 422,
   rate_limited: 429,
   internal: 500,
