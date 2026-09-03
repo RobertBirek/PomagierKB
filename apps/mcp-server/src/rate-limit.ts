@@ -20,7 +20,7 @@ export class RateLimiter {
     const t = this.now();
     let hits = this.buckets.get(bucket);
     if (hits === undefined) {
-      if (this.buckets.size >= MAX_BUCKETS) this.buckets.clear(); // bezpiecznik pamięci
+      if (this.buckets.size >= MAX_BUCKETS) this.evict(t, windowMs);
       hits = [];
       this.buckets.set(bucket, hits);
     }
@@ -31,6 +31,33 @@ export class RateLimiter {
     }
     hits.push(t);
     return { ok: true, retryAfter: 0 };
+  }
+
+  /**
+   * Bezpiecznik pamięci BEZ kasowania aktywnych okien: najpierw wypadają buckety
+   * przeterminowane (ostatni hit poza oknem), a gdy to nie starczy — najstarsze.
+   * `clear()` było tu podatnością: zalew unikalnych kluczy zerował limity wszystkim.
+   */
+  private evict(t: number, windowMs: number): void {
+    for (const [key, hits] of this.buckets) {
+      const last = hits[hits.length - 1];
+      if (last === undefined || last <= t - windowMs) this.buckets.delete(key);
+    }
+    if (this.buckets.size < MAX_BUCKETS) return;
+    // Nic przeterminowanego: wypada bucket o najmniejszej aktywności (najmniej hitów,
+    // tiebreak: najstarszy hit) — jednorazowe buckety spray'a giną przed aktywnymi oknami.
+    let victimKey: string | null = null;
+    let victimHits = Infinity;
+    let victimLast = Infinity;
+    for (const [key, hits] of this.buckets) {
+      const last = hits[hits.length - 1] ?? 0;
+      if (hits.length < victimHits || (hits.length === victimHits && last < victimLast)) {
+        victimHits = hits.length;
+        victimLast = last;
+        victimKey = key;
+      }
+    }
+    if (victimKey !== null) this.buckets.delete(victimKey);
   }
 
   reset(): void {

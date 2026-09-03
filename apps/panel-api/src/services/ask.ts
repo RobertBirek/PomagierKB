@@ -257,5 +257,6 @@ export function submitAskFeedback(
   if (answer === null || answer.user_id !== userId) {
     throw new AppError('not_found', `odpowiedź nie istnieje: ${answerId}`);
   }
-  return recordFeedback(db, answerId, verdict, comment ?? null, userId);
+  // owner także w repo (obrona w głąb — guard nie zniknie przy refaktorze tej funkcji)
+  return recordFeedback(db, answerId, verdict, comment ?? null, userId, { userId });
 }

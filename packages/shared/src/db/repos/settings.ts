@@ -14,6 +14,7 @@ export const SETTINGS_KEYS = [
   'learning.threshold',
   'chunking',
   'ingest.limits',
+  'drafts.limits',
 ] as const;
 
 export type SettingsKey = (typeof SETTINGS_KEYS)[number];

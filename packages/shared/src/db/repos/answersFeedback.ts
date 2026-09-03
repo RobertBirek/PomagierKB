@@ -87,36 +87,54 @@ export interface RecordFeedbackResult {
   feedback: FeedbackRow;
   /** Luka wiedzy utworzona/zaktualizowana automatycznie przy verdict='down'. */
   gap: GapRow | null;
+  /** true tylko gdy luka POWSTAŁA; false gdy dedupe podbiło evidence_count istniejącej. */
+  gapCreated: boolean;
 }
 
-/** Feedback do odpowiedzi; kciuk w dół → automatyczna luka (source 'feedback'). */
+/** Guard własności odpowiedzi — feedback tylko do własnych answerId (anty-IDOR). */
+export type FeedbackOwner = { apiKeyId: string } | { userId: string };
+
+/**
+ * Feedback do odpowiedzi; kciuk w dół → automatyczna luka (source 'feedback').
+ * Z podanym `owner` odpowiedź nienależąca do wołającego rzuca not_found (ten sam
+ * kod co nieistniejąca — cudzy klucz nie może enumerować ważnych answerId).
+ */
 export function recordFeedback(
   db: Db,
   answerId: string,
   verdict: FeedbackVerdict,
   comment?: string | null,
   createdBy?: string | null,
+  owner?: FeedbackOwner | null,
 ): RecordFeedbackResult {
   const tx = db.transaction((): RecordFeedbackResult => {
     const answer = getAnswerOrThrow(db, answerId);
+    if (owner) {
+      const owns =
+        'apiKeyId' in owner ? answer.api_key_id === owner.apiKeyId : answer.user_id === owner.userId;
+      if (!owns) throw new AppError('not_found', `odpowiedź nie istnieje: ${answerId}`);
+    }
     const id = `fb_${hex8()}${hex8()}`;
     db.prepare(
       'INSERT INTO feedback (id, answer_id, verdict, comment, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?)',
     ).run(id, answerId, verdict, comment ?? null, createdBy ?? null, nowIso());
     let gap: GapRow | null = null;
+    let gapCreated = false;
     if (verdict === 'down') {
       const namespaces = parseJson<string[]>(answer.namespaces_json, []);
-      gap = recordGap(db, {
+      const recorded = recordGap(db, {
         question: answer.question,
         source: 'feedback',
         kbNamespace: namespaces[0] ?? null,
         confidence: answer.confidence,
         apiKeyId: answer.api_key_id,
         metadata: { answerId, ...(comment ? { comment } : {}) },
-      }).row;
+      });
+      gap = recorded.row;
+      gapCreated = recorded.created;
     }
     const feedback = db.prepare('SELECT * FROM feedback WHERE id = ?').get(id) as FeedbackRow;
-    return { feedback, gap };
+    return { feedback, gap, gapCreated };
   });
   return tx.immediate();
 }

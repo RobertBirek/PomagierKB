@@ -14,7 +14,33 @@ export const DRAFT_LIMITS = {
   contentMax: 100_000,
   tagsMax: 10,
   perDay: 100,
+  /** Limit per zgłaszający (klucz MCP lub użytkownik) — jeden agent nie zagłodzi reszty. */
+  perSubmitterPerDay: 25,
 } as const;
+
+/**
+ * Limity dzienne z ustawień ('drafts.limits', np. {"perDay":200,"perSubmitterPerDay":40})
+ * z twardymi domyślnymi. Surowy SELECT zamiast repo settings — klucz nie jest sekretem,
+ * a drafts.ts nie może zależeć od DI seal/unseal.
+ */
+function readDailyLimits(db: Db): { perDay: number; perSubmitterPerDay: number } {
+  const fallback = { perDay: DRAFT_LIMITS.perDay, perSubmitterPerDay: DRAFT_LIMITS.perSubmitterPerDay };
+  try {
+    const row = db.prepare("SELECT value_json FROM settings WHERE key = 'drafts.limits'").get() as
+      | { value_json: string }
+      | undefined;
+    if (!row) return fallback;
+    const parsed = JSON.parse(row.value_json) as { perDay?: unknown; perSubmitterPerDay?: unknown };
+    const num = (v: unknown, d: number): number =>
+      typeof v === 'number' && Number.isFinite(v) && v >= 1 ? Math.floor(v) : d;
+    return {
+      perDay: num(parsed.perDay, fallback.perDay),
+      perSubmitterPerDay: num(parsed.perSubmitterPerDay, fallback.perSubmitterPerDay),
+    };
+  } catch {
+    return fallback;
+  }
+}
 
 export interface DraftRow {
   id: string;
@@ -76,11 +102,36 @@ function countToday(db: Db): number {
   return row.n;
 }
 
+/** Dzisiejsze drafty danego zgłaszającego (klucz LUB użytkownik) — pod limit per submitter. */
+function countTodayBySubmitter(db: Db, input: DraftCreateInput): number {
+  const dayStart = `${ymdDashed()}T00:00:00.000Z`;
+  if (input.submittedByKey) {
+    const row = db
+      .prepare('SELECT COUNT(*) AS n FROM drafts WHERE created_at >= ? AND submitted_by_key = ?')
+      .get(dayStart, input.submittedByKey) as { n: number };
+    return row.n;
+  }
+  if (input.submittedByUser) {
+    const row = db
+      .prepare('SELECT COUNT(*) AS n FROM drafts WHERE created_at >= ? AND submitted_by_user = ?')
+      .get(dayStart, input.submittedByUser) as { n: number };
+    return row.n;
+  }
+  return 0;
+}
+
 export function createDraft(db: Db, input: DraftCreateInput): DraftRow {
   validateCreate(input);
   const tx = db.transaction(() => {
-    if (countToday(db) >= DRAFT_LIMITS.perDay) {
-      throw new AppError('rate_limited', `limit dzienny draftów wyczerpany (${DRAFT_LIMITS.perDay}/dzień)`);
+    const limits = readDailyLimits(db);
+    if (countToday(db) >= limits.perDay) {
+      throw new AppError('rate_limited', `limit dzienny draftów wyczerpany (${limits.perDay}/dzień)`);
+    }
+    if (countTodayBySubmitter(db, input) >= limits.perSubmitterPerDay) {
+      throw new AppError(
+        'rate_limited',
+        `limit dzienny draftów tego zgłaszającego wyczerpany (${limits.perSubmitterPerDay}/dzień na klucz/użytkownika)`,
+      );
     }
     const now = nowIso();
     const id = `draft_${ymdDashed()}_${hex8()}_${slugify(input.title)}`;

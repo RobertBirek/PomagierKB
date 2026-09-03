@@ -44,6 +44,48 @@ describe('repos/drafts', () => {
     ).toThrowError(/tagów/);
   });
 
+  it('limit per zgłaszający: klucz A wyczerpuje kwotę, klucz B i użytkownik dalej mogą', () => {
+    const db = testDb();
+    for (let i = 0; i < DRAFT_LIMITS.perSubmitterPerDay; i++) {
+      createDraft(db, {
+        title: `Agent A ${i}`,
+        content: `treść ${i}`,
+        sourceType: 'mcp',
+        submittedByKey: 'key_A',
+      });
+    }
+    try {
+      createDraft(db, { title: 'nadmiar A', content: 'x', sourceType: 'mcp', submittedByKey: 'key_A' });
+      expect.unreachable('powinno rzucić');
+    } catch (err) {
+      expect((err as AppError).code).toBe('rate_limited');
+      expect((err as AppError).message).toContain('zgłaszającego');
+    }
+    // inny klucz i panelowy użytkownik nie są zagłodzeni
+    expect(
+      createDraft(db, { title: 'Agent B', content: 'y', sourceType: 'mcp', submittedByKey: 'key_B' }).id,
+    ).toBeTruthy();
+    const uid = seedUser(db, 'u1');
+    expect(
+      createDraft(db, { title: 'Człowiek', content: 'z', sourceType: 'text', submittedByUser: uid }).id,
+    ).toBeTruthy();
+  });
+
+  it("ustawienie 'drafts.limits' nadpisuje kwotę per zgłaszający", () => {
+    const db = testDb();
+    db.prepare(
+      "INSERT INTO settings (key, value_json, is_secret, updated_at) VALUES ('drafts.limits', ?, 0, datetime('now'))",
+    ).run(JSON.stringify({ perSubmitterPerDay: 2 }));
+    createDraft(db, { title: 'a', content: '1', sourceType: 'mcp', submittedByKey: 'k' });
+    createDraft(db, { title: 'b', content: '2', sourceType: 'mcp', submittedByKey: 'k' });
+    try {
+      createDraft(db, { title: 'c', content: '3', sourceType: 'mcp', submittedByKey: 'k' });
+      expect.unreachable('powinno rzucić');
+    } catch (err) {
+      expect((err as AppError).code).toBe('rate_limited');
+    }
+  });
+
   it('limit dzienny: powyżej 100 draftów → rate_limited', () => {
     const db = testDb();
     for (let i = 0; i < DRAFT_LIMITS.perDay; i++) {

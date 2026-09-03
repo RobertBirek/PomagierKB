@@ -37,6 +37,7 @@ export const kbFeedbackTool: KbTool = {
     properties: {
       ok: { type: 'boolean' },
       gapCreated: { type: 'boolean' },
+      gapUpdated: { type: 'boolean' },
     },
   },
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
@@ -49,7 +50,16 @@ export const kbFeedbackTool: KbTool = {
     if (!parsed.ok) return parsed.result;
     const { answerId, verdict, comment } = parsed.data;
     try {
-      const { gap } = recordFeedback(ctx.db, answerId, verdict, comment ?? null, ctx.keyRow.id);
+      // owner = anty-IDOR: klucz ocenia wyłącznie odpowiedzi wydane temu kluczowi
+      // (cudzy/panelowy answerId → not_found, bez wyroczni istnienia).
+      const { gap, gapCreated } = recordFeedback(
+        ctx.db,
+        answerId,
+        verdict,
+        comment ?? null,
+        ctx.keyRow.id,
+        { apiKeyId: ctx.keyRow.id },
+      );
       appendAudit(ctx.db, {
         actor: ctx.keyRow.id,
         actorType: 'api_key',
@@ -58,14 +68,16 @@ export const kbFeedbackTool: KbTool = {
         resourceId: answerId,
         metadata: { verdict, hasComment: comment !== undefined },
       });
-      const gapCreated = gap !== null;
+      const gapUpdated = gap !== null && !gapCreated;
       const text =
         verdict === 'up'
           ? 'Dziękuję — zapisałem pozytywną ocenę odpowiedzi.'
           : gapCreated
             ? 'Dziękuję — zapisałem negatywną ocenę i zarejestrowałem lukę wiedzy do uzupełnienia.'
-            : 'Dziękuję — zapisałem negatywną ocenę odpowiedzi.';
-      return { structured: { ok: true, gapCreated }, text };
+            : gapUpdated
+              ? 'Dziękuję — zapisałem negatywną ocenę; taka luka wiedzy już czeka na uzupełnienie (podbiłem jej wagę).'
+              : 'Dziękuję — zapisałem negatywną ocenę odpowiedzi.';
+      return { structured: { ok: true, gapCreated, gapUpdated }, text };
     } catch (err) {
       const mapped = appErrorToResult(err);
       if (mapped) return mapped;
