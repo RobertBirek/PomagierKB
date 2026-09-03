@@ -30,6 +30,7 @@ const JOB_MODULES: Record<string, () => Promise<{ default: JobFn }>> = {
   noop: () => import('./noop.js'),
   build_kb: () => import('./build-kb.js'),
   quality_gate: () => import('./quality-gate.js'),
+  quality_answers: () => import('./quality-answers.js'),
   // gap_research: auto-research luk z sieci — ŚWIADOMIE niezaimplementowane
   // (decyzja v1: bez auto-draftów; setting 'learning.autoDraft' zarezerwowany,
   // fast-follow po sprawdzeniu ingestu URL — plan rozbudowy F8.4).

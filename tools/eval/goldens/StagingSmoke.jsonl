@@ -1,0 +1,5 @@
+{"question":"Jaki jest strumień świetlny oprawy HighBay LED 150W?","expectedIds":["DOC_EF8A5D4D"],"namespaces":["StagingSmoke"],"expectedNamespace":"StagingSmoke"}
+{"question":"Czy oprawa HighBay obsługuje sterowanie DALI?","expectedIds":["CHUNK_EF8A5D4D_001"],"namespaces":["StagingSmoke"],"expectedNamespace":"StagingSmoke"}
+{"question":"oprawa do magazynu wysokiego składowania","expectedIds":["DOC_EF8A5D4D"],"namespaces":["StagingSmoke"],"expectedNamespace":"StagingSmoke"}
+{"question":"Jaka jest procedura urlopowa w firmie?","negative":true}
+{"question":"przepis na bigos staropolski","negative":true}

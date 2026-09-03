@@ -142,6 +142,15 @@ export function OverviewPage() {
     enabled: canSettings,
     queryFn: () => apiFetchWithMeta<{ items: unknown[] }>('/api/v1/actions?status=error&limit=1'),
   });
+  const quality = useQuery({
+    queryKey: ['learning-quality'],
+    queryFn: () =>
+      apiFetch<{ report: { verdict: 'OK' | 'WARN' | 'FAIL'; createdAt: string; checks: { details?: Record<string, unknown> }[] } | null }>(
+        '/api/v1/learning/quality',
+      ),
+    staleTime: 60_000,
+  });
+
   const recent = useQuery({
     queryKey: ['overview', 'actions-recent'],
     enabled: canInbox,
@@ -342,6 +351,49 @@ export function OverviewPage() {
                   })}
                 </ul>
               )}
+            </CardBody>
+          </Card>
+        )}
+
+        {/* Jakość odpowiedzi — ostatni tygodniowy raport quality_answers */}
+        {quality.data?.report != null && (
+          <Card>
+            <CardHeader className="flex items-center justify-between">
+              <h2 className="text-base font-semibold text-text">{t('overview.quality.title')}</h2>
+              <Badge
+                variant={
+                  quality.data.report.verdict === 'OK'
+                    ? 'ok'
+                    : quality.data.report.verdict === 'WARN'
+                      ? 'warn'
+                      : 'fail'
+                }
+              >
+                {quality.data.report.verdict}
+              </Badge>
+            </CardHeader>
+            <CardBody className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-text-secondary">
+              {(() => {
+                const d = quality.data.report.checks[0]?.details as
+                  | { answers?: number; noAnswerRate?: number | null; feedback?: { downRate?: number | null }; openGaps?: number }
+                  | undefined;
+                if (d === undefined) return null;
+                return (
+                  <>
+                    <span>{t('overview.quality.answers', { n: d.answers ?? 0 })}</span>
+                    {d.noAnswerRate != null && (
+                      <span>{t('overview.quality.noAnswer', { pct: Math.round(d.noAnswerRate * 100) })}</span>
+                    )}
+                    {d.feedback?.downRate != null && (
+                      <span>{t('overview.quality.down', { pct: Math.round(d.feedback.downRate * 100) })}</span>
+                    )}
+                    {d.openGaps !== undefined && <span>{t('overview.quality.gaps', { n: d.openGaps })}</span>}
+                    <span className="basis-full text-xs text-text-tertiary">
+                      {t('overview.quality.asOf', { date: new Date(quality.data.report.createdAt).toLocaleString('pl-PL') })}
+                    </span>
+                  </>
+                );
+              })()}
             </CardBody>
           </Card>
         )}

@@ -10,6 +10,8 @@ import {
   startDraftFromGap,
 } from '../services/learning.js';
 import { GAP_STATUSES } from '../services/messages.js';
+import { latestQualityReport } from '@pomagierkb/shared/db';
+import { startAction } from '../services/actions-runner.js';
 
 /**
  * Trasy /api/v1/learning — luki wiedzy (pętla uczenia, pipeline-frontend §d).
@@ -98,6 +100,48 @@ export default async function learningRoutes(app: FastifyInstance): Promise<void
       const gap = resolveGap(app.db, req.params.id, req.user!.id);
       reply.auditContext = { resourceType: 'gap', resourceId: gap.id, after: { status: gap.status } };
       return { ok: true as const, data: { gap: gapToApi(gap) } };
+    },
+  );
+
+  // ── GET /learning/quality — ostatni tygodniowy raport jakości odpowiedzi ──
+  app.get(
+    '/learning/quality',
+    {
+      config: { rbac: 'viewer', audit: false, csrf: false },
+      schema: { response: { 200: successRef, '4xx': errorRef, '5xx': errorRef } },
+    },
+    async () => {
+      const report = latestQualityReport(app.db, '__all__');
+      return {
+        ok: true as const,
+        data: {
+          report:
+            report !== null
+              ? {
+                  verdict: report.verdict,
+                  createdAt: report.created_at,
+                  checks: JSON.parse(report.checks_json) as unknown[],
+                }
+              : null,
+        },
+      };
+    },
+  );
+
+  // ── POST /learning/quality-report — 202: akcja quality_answers (agregacja 7 dni) ──
+  app.post(
+    '/learning/quality-report',
+    {
+      config: { rbac: 'operator', audit: 'learning.quality_report', csrf: true, rateLimitGroup: 'mutation' },
+      schema: { response: { 202: successRef, '4xx': errorRef, '5xx': errorRef } },
+    },
+    async (req, reply) => {
+      const action = startAction(
+        { db: app.db, dataDir: app.config.dataDir, warn: (msg) => req.log.warn(msg) },
+        { type: 'quality_answers', resource: 'learning:quality', params: {}, startedBy: req.user?.id ?? null },
+      );
+      reply.auditContext = { resourceType: 'learning', resourceId: 'quality', metadata: { actionId: action.id } };
+      return reply.status(202).send({ ok: true as const, data: { actionId: action.id } });
     },
   );
 
