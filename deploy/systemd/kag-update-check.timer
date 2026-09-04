@@ -1,0 +1,12 @@
+# kag-update-check.timer — 2. dzień miesiąca, 05:15 (po miesięcznym cold-backupie).
+[Unit]
+Description=PomagierKB — timer raportu aktualizacji obrazow (2. dzien, 05:15)
+
+[Timer]
+OnCalendar=*-*-02 05:15:00
+RandomizedDelaySec=30m
+Persistent=true
+Unit=kag-update-check.service
+
+[Install]
+WantedBy=timers.target

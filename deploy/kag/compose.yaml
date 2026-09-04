@@ -63,7 +63,8 @@ services:
       - ./mysql-init/10-create-app-user.sh:/docker-entrypoint-initdb.d/zz-create-app-user.sh:ro
       - /etc/localtime:/etc/localtime:ro
     networks:
-      - kag-internal
+      # datastores: OpenSPG i jego bazy odseparowane od parserow niezaufanych tresci
+      - kag-datastores
 
   neo4j:
     <<: [*security_defaults, *logging]
@@ -107,7 +108,8 @@ services:
       - ${DATA_ROOT:?DATA_ROOT is required}/kag/neo4j/import:/import
       - /etc/localtime:/etc/localtime:ro
     networks:
-      - kag-internal
+      # datastores: OpenSPG i jego bazy odseparowane od parserow niezaufanych tresci
+      - kag-datastores
 
   minio:
     <<: [*security_defaults, *logging]
@@ -134,7 +136,8 @@ services:
       - ${DATA_ROOT:?DATA_ROOT is required}/kag/minio:/data
       - /etc/localtime:/etc/localtime:ro
     networks:
-      - kag-internal
+      # datastores: OpenSPG i jego bazy odseparowane od parserow niezaufanych tresci
+      - kag-datastores
 
   server:
     <<: [*security_defaults, *logging]
@@ -183,7 +186,9 @@ services:
       minio:
         condition: service_healthy
     networks:
-      - kag-internal
+      # datastores zamiast kag-internal: port 8887 (bez auth) widzą tylko panel i mcp —
+      # Tika/Stirling (parsery NIEZAUFANYCH uploadów) nie mają do niego drogi.
+      - kag-datastores
       # JEDYNA usługa z egresem — wywołania API LLM (wektoryzacja, ekstrakcja)
       - kag-egress
 
@@ -287,6 +292,7 @@ services:
         condition: service_healthy
     networks:
       - kag-internal
+      - kag-datastores
       # ingress z Caddy + egress do LLM i do Authentika (aliasy caddy w edge-net)
       - edge-net
 
@@ -329,12 +335,17 @@ services:
       panel:
         condition: service_healthy
     networks:
-      - kag-internal
+      # mcp nie używa Tika/Stirling — wystarczą datastores (OpenSPG) i edge (ingress)
+      - kag-datastores
       - edge-net
 
 networks:
-  # internal: true — brak NAT/internetu; OpenSPG niedostępny z zewnątrz
+  # internal: true — brak NAT/internetu; parsery treści (Tika/Stirling) + panel
   kag-internal:
+    internal: true
+  # internal: true — OpenSPG (8887 bez auth!) i jego bazy; TYLKO panel i mcp
+  # (infra.md „faza 2": separacja od parserów niezaufanych uploadów)
+  kag-datastores:
     internal: true
   # egress TYLKO dla release-openspg-server (API LLM)
   kag-egress:

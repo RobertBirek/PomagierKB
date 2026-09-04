@@ -30,3 +30,27 @@ zstd -dc /srv/kag-data/backups/images/<obraz>@<digest>.tar.zst | docker load
    digestów w `deploy/kag/.env`, `compose up -d`, smoke + eval + e2e.
 4. Rollback = powrót digestów + odtworzenie mysql/neo4j/minio ze snapshotu
    sprzed operacji (graf i metadane muszą wrócić RAZEM).
+
+## Stan upstreamu (sprawdzony 2026-09-04)
+
+Ostatnie wydanie **v0.8 (2025-06-29)** jest zarazem ostatnim commitem na głównej
+gałęzi — projekt od ~14 miesięcy bez aktywności. Nasze obrazy == `latest` w
+rejestrze (weryfikacja digestów przez API). Miesięczny raport aktualizacji:
+`kag-update-check.timer` (2. dzień, 05:15; powiadomienie na ALERT_WEBHOOK_URL).
+
+## Mitygacja sieciowa (wdrożona — „faza 2" z infra.md)
+
+Port 8887 (bez auth) żyje w wydzielonej sieci `kag-datastores` (OpenSPG+MySQL+
+Neo4j+MinIO+panel+mcp). **Tika i Stirling — parsery NIEZAUFANYCH uploadów — nie
+mają do niego drogi** (zostały na `kag-internal` z panelem). Test negatywny:
+`docker exec kag-stirling curl http://release-openspg-server:8887/` musi paść.
+
+## Rampa zjazdowa (opcja strategiczna, NIE plan)
+
+Gdyby OpenSPG/DozerDB stały się nie do utrzymania: architektura już dziś działa
+zdegradowana bez grafu (SQLite = źródło prawdy o treści, FTS5 lokalnie, rerank
+`embed` liczy trafność jednym modelem query-time). Naturalna migracja kanału
+wektorowego to **sqlite-vec** w tym samym pliku DB — kanały `hybridSearch` są
+wymienne (packages/shared/src/answer/retrieval.ts), więc zmiana jest izolowana:
+nowy kanał + eksport wektorów przy buildzie, bez dotykania MCP/panelu. Decyzję
+podjąć dopiero przy realnym sygnale (awaria bez naprawy / brak kompatybilności OS).

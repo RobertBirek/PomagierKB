@@ -1,0 +1,25 @@
+# kag-update-check.service — miesięczny raport dostępnych aktualizacji obrazów
+# (skopeo; TYLKO raportuje — aktualizacja jest zawsze świadomą operacją operatora).
+# Instalacja: cp deploy/systemd/kag-update-check.{service,timer} /etc/systemd/system/
+#             systemctl daemon-reload && systemctl enable --now kag-update-check.timer
+[Unit]
+Description=PomagierKB — miesieczny raport aktualizacji obrazow
+Documentation=file:/kag/docs/deployment.md
+After=network-online.target
+Wants=network-online.target
+OnFailure=kag-alert@%n.service
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/kag
+Environment=DATA_ROOT=/srv/kag-data
+EnvironmentFile=-/etc/kag/alerts.env
+ExecStart=/kag/deploy/scripts/update_notify.sh
+TimeoutStartSec=15min
+Nice=10
+
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
