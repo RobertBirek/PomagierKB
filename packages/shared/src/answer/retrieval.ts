@@ -123,7 +123,27 @@ export function stripLiteralQuotes(value: string): string {
     : value;
 }
 
-function toChannelHit(hit: SearchHit, namespace: string): ChannelHit {
+const EXPORT_ID_RE = /^(CHUNK_|DOC_|TOPIC_)/;
+
+/**
+ * Kanały OpenSPG zwracają w zewnętrznym `docId`/`id` NUMERYCZNY id węzła
+ * (zweryfikowane live: docId "8"), a nasz id eksportera siedzi w properties.id.
+ * Bez rozwiązania takie trafienie truje fuzję i cytowania (id bezużyteczne dla
+ * kb_get_source/kb_entity_get). Zwraca id w konwencji eksportera albo null
+ * (trafienie do odrzucenia).
+ */
+export function resolveExportId(hit: SearchHit): string | null {
+  const outer = stripLiteralQuotes(hit.id);
+  if (EXPORT_ID_RE.test(outer)) return outer;
+  const inner = hit.fields['id'];
+  if (typeof inner === 'string') {
+    const clean = stripLiteralQuotes(inner);
+    if (EXPORT_ID_RE.test(clean)) return clean;
+  }
+  return null;
+}
+
+function toChannelHit(hit: SearchHit, namespace: string, resolvedId?: string): ChannelHit {
   const title = firstString(hit.fields, ['title', 'name']);
   const content = firstString(hit.fields, [
     'content',
@@ -134,7 +154,7 @@ function toChannelHit(hit: SearchHit, namespace: string): ChannelHit {
   ]);
   const sourceRef = firstString(hit.fields, ['sourceRef', 'source_ref', 'sourceUrl', 'url']);
   return {
-    id: hit.id,
+    id: resolvedId ?? hit.id,
     namespace,
     ...(title !== undefined ? { title: stripLiteralQuotes(title) } : {}),
     ...(content !== undefined ? { snippet: truncateSnippet(stripLiteralQuotes(content)) } : {}),
@@ -313,8 +333,18 @@ export async function hybridSearch(
                 queryVector,
                 topk: limit,
               });
-              // kolejność per KB wg score (porównywalne WEWNĄTRZ projektu)
-              byNs.set(ns, [...res.items].sort((a, b) => b.score - a.score).map((h) => toChannelHit(h, ns)));
+              // kolejność per KB wg score (porównywalne WEWNĄTRZ projektu);
+              // id rozwiązywane do konwencji eksportera (numeryczne id węzła → drop)
+              byNs.set(
+                ns,
+                [...res.items]
+                  .sort((a, b) => b.score - a.score)
+                  .map((h) => {
+                    const id = resolveExportId(h);
+                    return id === null ? null : toChannelHit(h, ns, id);
+                  })
+                  .filter((h): h is ChannelHit => h !== null),
+              );
             }
             return fusePerNamespace(byNs);
           }),
@@ -336,7 +366,16 @@ export async function hybridSearch(
                 page: 1,
                 topk: limit,
               });
-              byNs.set(ns, [...res.items].sort((a, b) => b.score - a.score).map((h) => toChannelHit(h, ns)));
+              byNs.set(
+                ns,
+                [...res.items]
+                  .sort((a, b) => b.score - a.score)
+                  .map((h) => {
+                    const id = resolveExportId(h);
+                    return id === null ? null : toChannelHit(h, ns, id);
+                  })
+                  .filter((h): h is ChannelHit => h !== null),
+              );
             }
             return fusePerNamespace(byNs);
           }),

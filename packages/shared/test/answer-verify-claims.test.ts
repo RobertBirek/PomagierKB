@@ -107,3 +107,20 @@ describe('verifyClaim', () => {
     expect(res.gapRecorded).toBe(false);
   });
 });
+
+describe('resolveExportId (numeryczne id węzłów OpenSPG — zweryfikowane live)', () => {
+  it('preferuje id w konwencji eksportera; properties.id ratuje numeryczny docId; śmieci → null', async () => {
+    const { resolveExportId } = await import('../src/answer/index.js');
+    // zewnętrzny id już poprawny
+    expect(resolveExportId({ id: 'CHUNK_ab_001', score: 1, fields: {} })).toBe('CHUNK_ab_001');
+    // realny kształt z serwera: docId "8", prawdziwy id w fields.id
+    expect(resolveExportId({ id: '8', score: 1.4, fields: { id: 'CHUNK_EF8A5D4D_000' } })).toBe(
+      'CHUNK_EF8A5D4D_000',
+    );
+    // quirk cudzysłowów też obsłużony
+    expect(resolveExportId({ id: '9', score: 1, fields: { id: '"DOC_X_TYTUL"' } })).toBe('DOC_X_TYTUL');
+    // nierozwiązywalne → null (trafienie do odrzucenia, nie zatruwa cytowań)
+    expect(resolveExportId({ id: '77', score: 1, fields: { name: 'cokolwiek' } })).toBeNull();
+    expect(resolveExportId({ id: '77', score: 1, fields: { id: 'inny-format' } })).toBeNull();
+  });
+});

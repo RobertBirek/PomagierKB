@@ -3,7 +3,7 @@
  * używany przez mcp-server (kb_search/kb_answer) i panel-api (POST /api/v1/ask).
  * Kontekst zgeneralizowany: {db, llm, openspg, log} + allowedNamespaces JAWNIE.
  */
-export { hybridSearch, stripLiteralQuotes } from './retrieval.js';
+export { hybridSearch, stripLiteralQuotes, resolveExportId } from './retrieval.js';
 export type {
   AnswerCtx,
   AnswerLlm,
