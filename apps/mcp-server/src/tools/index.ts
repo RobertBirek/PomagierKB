@@ -5,6 +5,9 @@ import { kbListTool } from './kb-list.js';
 import { kbGetSourceTool } from './kb-get-source.js';
 import { kbListDocumentsTool } from './kb-list-documents.js';
 import { kbDraftStatusTool } from './kb-draft-status.js';
+import { kbEntityGetTool } from './kb-entity-get.js';
+import { kbGraphNeighborsTool } from './kb-graph-neighbors.js';
+import { kbClaimVerifyTool } from './kb-claim-verify.js';
 import { kbSubmitDraftTool } from './kb-submit-draft.js';
 import { kbFeedbackTool } from './kb-feedback.js';
 
@@ -20,6 +23,9 @@ export const ALL_TOOLS: KbTool[] = [
   kbGetSourceTool,
   kbListDocumentsTool,
   kbDraftStatusTool,
+  kbEntityGetTool,
+  kbGraphNeighborsTool,
+  kbClaimVerifyTool,
   kbSubmitDraftTool,
   kbFeedbackTool,
 ];
@@ -34,6 +40,9 @@ export {
   kbGetSourceTool,
   kbListDocumentsTool,
   kbDraftStatusTool,
+  kbEntityGetTool,
+  kbGraphNeighborsTool,
+  kbClaimVerifyTool,
   kbSubmitDraftTool,
   kbFeedbackTool,
 };

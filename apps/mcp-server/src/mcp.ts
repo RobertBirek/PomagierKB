@@ -3,6 +3,8 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import {
   CallToolRequestSchema,
   ErrorCode,
+  GetPromptRequestSchema,
+  ListPromptsRequestSchema,
   ListToolsRequestSchema,
   McpError,
   type ServerResult,
@@ -11,6 +13,7 @@ import { AppError } from '@pomagierkb/shared/errors';
 import type { KbTool, ToolCtx, ToolResult } from './tools/types.js';
 import { hasWriteScope, toolRequiresWrite } from './profiles.js';
 import { validateInput } from './validate.js';
+import { ALL_PROMPTS } from './prompts.js';
 
 /**
  * Fabryka McpServer per żądanie (§7.1): StreamableHTTPServerTransport bezstanowy
@@ -99,10 +102,46 @@ export function createMcpPair(opts: McpPairOptions): {
   );
   const visible = opts.tools.filter((t) => allowed.has(t.name));
 
+  // Prompty widoczne dla profili z odczytem (kb_search) — workflow, nie dane.
+  const promptsVisible = allowed.has('kb_search');
   const server = new Server(
     { name: opts.serverName ?? 'pomagierkb', version: opts.serverVersion ?? ctx.config.version },
-    { capabilities: { tools: {} } },
+    { capabilities: { tools: {}, ...(promptsVisible ? { prompts: {} } : {}) } },
   );
+
+  if (promptsVisible) {
+    server.setRequestHandler(ListPromptsRequestSchema, () => {
+      return {
+        prompts: ALL_PROMPTS.map((p) => ({
+          name: p.name,
+          title: p.title,
+          description: p.description,
+          arguments: p.arguments,
+        })),
+      } as unknown as ServerResult;
+    });
+    server.setRequestHandler(GetPromptRequestSchema, (request) => {
+      const prompt = ALL_PROMPTS.find((p) => p.name === request.params.name);
+      if (prompt === undefined) {
+        throw new McpError(ErrorCode.MethodNotFound, `nieznany prompt: ${request.params.name}`);
+      }
+      const args: Record<string, string> = {};
+      for (const [k, v] of Object.entries(request.params.arguments ?? {})) {
+        if (typeof v === 'string') args[k] = v;
+      }
+      const missing = prompt.arguments.filter((a) => a.required && (args[a.name] ?? '') === '');
+      if (missing.length > 0) {
+        throw new McpError(
+          ErrorCode.InvalidParams,
+          `brak wymaganych argumentów promptu: ${missing.map((a) => a.name).join(', ')}`,
+        );
+      }
+      return {
+        description: prompt.description,
+        messages: [{ role: 'user', content: { type: 'text', text: prompt.render(args) } }],
+      } as unknown as ServerResult;
+    });
+  }
 
   server.setRequestHandler(ListToolsRequestSchema, () => {
     return {

@@ -85,7 +85,7 @@ describe('PROFILE_ID_RE / MCP_TOOLS (lustro backendu)', () => {
   });
 
   it('lista narzędzi zgodna z KNOWN_MCP_TOOLS z shared', () => {
-    expect([...MCP_TOOLS]).toEqual(['kb_search', 'kb_answer', 'kb_list', 'kb_get_source', 'kb_list_documents', 'kb_draft_status', 'kb_submit_draft', 'kb_feedback']);
+    expect([...MCP_TOOLS]).toEqual(['kb_search', 'kb_answer', 'kb_list', 'kb_get_source', 'kb_list_documents', 'kb_draft_status', 'kb_entity_get', 'kb_graph_neighbors', 'kb_claim_verify', 'kb_submit_draft', 'kb_feedback']);
   });
 });
 

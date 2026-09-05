@@ -12,3 +12,4 @@ export * from './repos/answersFeedback.js';
 export * from './repos/settings.js';
 export * from './repos/manifests.js';
 export * from './repos/chunksMirror.js';
+export * from './repos/graphEdges.js';

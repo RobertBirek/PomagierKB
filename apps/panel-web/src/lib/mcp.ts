@@ -16,6 +16,9 @@ export const MCP_TOOLS = [
   'kb_get_source',
   'kb_list_documents',
   'kb_draft_status',
+  'kb_entity_get',
+  'kb_graph_neighbors',
+  'kb_claim_verify',
   'kb_submit_draft',
   'kb_feedback',
 ] as const;

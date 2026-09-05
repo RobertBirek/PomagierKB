@@ -112,6 +112,17 @@ function firstString(fields: Record<string, unknown>, keys: string[]): string | 
   return undefined;
 }
 
+/**
+ * Quirk buildera OpenSPG (zweryfikowany live 2026-09-04): property importowane
+ * z CSV są przechowywane z LITERALNYMI cudzysłowami (`"\"Tytuł\""`). Strip
+ * w jednym miejscu — wszystkie pola tekstowe z kanałów OpenSPG przechodzą tędy.
+ */
+export function stripLiteralQuotes(value: string): string {
+  return value.length >= 2 && value.startsWith('"') && value.endsWith('"')
+    ? value.slice(1, -1)
+    : value;
+}
+
 function toChannelHit(hit: SearchHit, namespace: string): ChannelHit {
   const title = firstString(hit.fields, ['title', 'name']);
   const content = firstString(hit.fields, [
@@ -125,9 +136,9 @@ function toChannelHit(hit: SearchHit, namespace: string): ChannelHit {
   return {
     id: hit.id,
     namespace,
-    ...(title !== undefined ? { title } : {}),
-    ...(content !== undefined ? { snippet: truncateSnippet(content) } : {}),
-    ...(sourceRef !== undefined ? { sourceRef } : {}),
+    ...(title !== undefined ? { title: stripLiteralQuotes(title) } : {}),
+    ...(content !== undefined ? { snippet: truncateSnippet(stripLiteralQuotes(content)) } : {}),
+    ...(sourceRef !== undefined ? { sourceRef: stripLiteralQuotes(sourceRef) } : {}),
   };
 }
 

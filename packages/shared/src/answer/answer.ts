@@ -7,6 +7,7 @@ import type { AnswerCtx, RetrievalHit } from './retrieval.js';
 import { rewriteQuery } from './rewrite.js';
 import { rerankHits, type RerankStrategy } from './rerank.js';
 import { answerCacheKey, dataVersion, getCachedAnswer, putCachedAnswer } from './cache.js';
+import { extractClaims, type AnswerClaim } from './claims.js';
 
 /**
  * Pipeline odpowiedzi z cytowaniami (backend-mcp §7.6 + PLAN) — WSPÓLNY dla
@@ -54,6 +55,8 @@ export interface AnswerCitation {
 export interface AnswerResult {
   answer: string;
   citations: AnswerCitation[];
+  /** Kontrakt evidence: zdania-twierdzenia z numerami cytowań [n] (bez kosztu LLM). */
+  claims: AnswerClaim[];
   confidence: number;
   model: string | null;
   degraded: boolean;
@@ -334,6 +337,7 @@ export async function answerQuestion(ctx: AnswerCtx, params: AnswerParams): Prom
     return {
       answer: NO_ANSWER_TEXT,
       citations: [],
+      claims: [],
       confidence: 0,
       model: null,
       degraded: retrieval.degraded,
@@ -453,6 +457,7 @@ export async function answerQuestion(ctx: AnswerCtx, params: AnswerParams): Prom
   const result: AnswerResult = {
     answer,
     citations,
+    claims: extractClaims(answer),
     confidence,
     model,
     degraded: retrieval.degraded,

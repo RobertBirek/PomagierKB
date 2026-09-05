@@ -14,3 +14,5 @@ export {
   type SearchShape, type SearchHit, type NormalizedSearch, type SearchTextParams,
   type SearchVectorParams, type SearchProbeResult, type RankedList, type FusedHit,
 } from './search.js';
+export { querySpgType, sanitizeEntityProperties } from './query.js';
+export type { SpgEntity, QuerySpgTypeParams } from './query.js';

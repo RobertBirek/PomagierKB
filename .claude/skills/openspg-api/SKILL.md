@@ -101,3 +101,29 @@ Zdekompilowane DTO + potwierdzone na żywym serwerze (wcześniej HTTP 400):
   `{projectId (WYMAGANE), label: "Ns.Chunk", propertyKey, queryVector, topk, efSearch}`.
 Konsekwencja: klient musi znać projectId per namespace (u nas: kb_registry.project_id),
 więc zapytania idą PER NAMESPACE i są scalane (RRF).
+
+## query/spgType i reason/run — ZWERYFIKOWANE W BOJU (2026-09-04)
+
+- `POST /public/v1/query/spgType` (bez cookie): `{projectId, spgType: "Ns.Chunk",
+  ids: ["CHUNK_..."]}` → goły array `[{id, spgType, properties}]`. PUŁAPKI:
+  - `properties` zawiera `_content_vector`/`_name_vector` (po 1536 floatów) —
+    ZAWSZE odcinaj przed zwróceniem/logowaniem;
+  - wszystkie property poza `id` mają LITERALNE cudzysłowy (`name = "\"Tytuł\""`,
+    `sectionOrder = "\"0\""`) — quirk buildera przy imporcie CSV; strip `^"..."$`
+    (shared: `stripLiteralQuotes` w answer/retrieval.ts).
+- `POST /public/v1/reason/run` (KGDSL, synchroniczny): `{projectId, dsl}` →
+  `{task: {status: "FINISH", resultTableResult: {total, header, rows}}}`.
+  - **LIMIT nie istnieje w KGDSL** (KGDSLInvalidTokenException);
+  - równość property musi obejmować literalne cudzysłowy:
+    `WHERE s.sourceDocumentRefId == '"DOC_..."'`;
+  - **KRYTYCZNE: odpowiedź zawiera `task.graphStoreUrl` z hasłem Neo4j czystym
+    tekstem** — NIGDY nie proxy'ować surowo (MCP/API) ani nie logować bez redakcji.
+- Flow `/public/v1/reasoner/session|task|dialog/*` — NIE UŻYWAĆ (w optimaKB 12/12
+  RUNNING_TIMEOUT + bug projectId=appId).
+
+## Graf NIE MA krawędzi (potwierdzone empirycznie w Neo4j, 2026-09-04)
+
+`MATCH ()-[r]->()` w bazie projektu → **0 relacji**. Relacje `*RefId` z naszego
+schematu to zwykłe property typu string — traversal po stronie OpenSPG nie
+istnieje. Nawigacja grafowa (neighbors/path) działa na tabeli `graph_edges`
+w SQLite (wypełnianej przy eksporcie), NIE przez reasoner.

@@ -7,6 +7,8 @@ import {
   finishExportRun,
   listDrafts,
   replaceForDocument,
+  replaceEdgesForNamespace,
+  type GraphEdge,
   startExportRun,
   upsertExportFile,
   type ChunkInput,
@@ -148,6 +150,8 @@ export interface ExportRows {
   chunks: Record<string, string>[];
   /** Wejście mirroru FTS per dokument (docId → chunki). */
   mirror: { docId: string; title: string; sourceRef: string | null; chunks: ChunkInput[] }[];
+  /** Krawędzie grafu (chunk→doc, doc→topic) — graph_edges w SQLite (Neo4j bez krawędzi). */
+  edges: GraphEdge[];
 }
 
 /** Buduje wiersze wszystkich trzech plików z promowanych draftów (bez IO). */
@@ -160,6 +164,7 @@ export function buildExportRows(
   const documents: Record<string, string>[] = [];
   const chunkRows: Record<string, string>[] = [];
   const mirror: ExportRows['mirror'] = [];
+  const edges: GraphEdge[] = [];
 
   for (const draft of drafts) {
     const analysis = parseJson<Record<string, unknown>>(draft.analysis_json, {});
@@ -230,6 +235,8 @@ export function buildExportRows(
       });
     }
     mirror.push({ docId, title: draft.title, sourceRef: draft.source_ref, chunks: mirrorChunks });
+    for (const chunk of mirrorChunks) edges.push({ srcId: chunk.id, rel: 'in_document', dstId: docId });
+    for (const topicId of topicIds) edges.push({ srcId: docId, rel: 'about_topic', dstId: topicId });
   }
 
   const topicRows = [...topics.entries()]
@@ -244,7 +251,7 @@ export function buildExportRows(
       summary: '',
     }));
 
-  return { topics: topicRows, documents, chunks: chunkRows, mirror };
+  return { topics: topicRows, documents, chunks: chunkRows, mirror, edges };
 }
 
 // ── runExport: pliki + manifesty + mirror ───────────────────────────────────
@@ -324,6 +331,9 @@ export function runExport(
     db.prepare(
       `DELETE FROM chunks_mirror WHERE namespace = ?${keepIds.length > 0 ? ` AND doc_id NOT IN (${placeholders})` : ''}`,
     ).run(namespace, ...keepIds);
+
+    // Krawędzie grafu: pełna podmiana per namespace (jak mirror) — kb_graph_neighbors.
+    replaceEdgesForNamespace(db, namespace, rows.edges);
 
     finishExportRun(db, run.id, 'success', { docCount: rows.documents.length, chunkCount: rows.chunks.length });
     return { runId: run.id, dir, files, docCount: rows.documents.length, chunkCount: rows.chunks.length };

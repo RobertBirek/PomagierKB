@@ -20,6 +20,7 @@ const inputZod = z.strictObject({
     .refine((s) => URL.canParse(s), { message: 'sourceUrl musi być poprawnym URI' })
     .optional(),
   tags: z.array(z.string()).max(10).optional(),
+  idempotencyKey: z.string().min(8).max(128).optional(),
 });
 
 export const kbSubmitDraftTool: KbTool = {
@@ -38,6 +39,12 @@ export const kbSubmitDraftTool: KbTool = {
       content: { type: 'string', minLength: 50, maxLength: 100000, description: 'Markdown' },
       sourceUrl: { type: 'string', format: 'uri' },
       tags: { type: 'array', items: { type: 'string' }, maxItems: 10 },
+      idempotencyKey: {
+        type: 'string',
+        minLength: 8,
+        maxLength: 128,
+        description: 'Klucz idempotencji per klucz API — retry zwraca ten sam draftId zamiast duplikatu',
+      },
     },
   },
   outputSchema: {
@@ -60,7 +67,7 @@ export const kbSubmitDraftTool: KbTool = {
     }
     const parsed = parseInput(inputZod, input);
     if (!parsed.ok) return parsed.result;
-    const { namespace, title, content, sourceUrl, tags } = parsed.data;
+    const { namespace, title, content, sourceUrl, tags, idempotencyKey } = parsed.data;
     if (!ctx.allowedNamespaces.includes(namespace)) {
       return errorResult(
         'namespace_not_allowed',
@@ -68,7 +75,23 @@ export const kbSubmitDraftTool: KbTool = {
       );
     }
 
-    // Idempotencja: identyczna treść w tym namespace z pending draftem → istniejący id.
+    // Idempotencja jawna (stateless retry może trafić inną instancję): (klucz API,
+    // idempotencyKey) → istniejący draft NIEZALEŻNIE od treści (indeks z migracji 0006).
+    if (idempotencyKey !== undefined) {
+      const prior = ctx.db
+        .prepare(
+          "SELECT id, status FROM drafts WHERE submitted_by_key = ? AND json_extract(metadata_json, '$.idempotencyKey') = ? ORDER BY created_at DESC LIMIT 1",
+        )
+        .get(ctx.keyRow.id, idempotencyKey) as { id: string; status: string } | undefined;
+      if (prior !== undefined) {
+        return {
+          structured: { draftId: prior.id, status: 'inbox', reviewRequired: true, duplicate: true },
+          text: `To zgłoszenie już istnieje (idempotencyKey) — zwracam draft \`${prior.id}\` (status: ${prior.status}). Nie utworzono duplikatu.`,
+        };
+      }
+    }
+
+    // Idempotencja treściowa: identyczna treść w tym namespace z pending draftem → istniejący id.
     const hash = createHash('sha256').update(content, 'utf8').digest('hex');
     const existing = findByContentHash(ctx.db, namespace, hash);
     if (existing !== null && existing.status === 'pending') {
@@ -88,6 +111,7 @@ export const kbSubmitDraftTool: KbTool = {
         namespace,
         sourceRef: sourceUrl ?? null,
         tags: tags ?? [],
+        ...(idempotencyKey !== undefined ? { metadata: { idempotencyKey } } : {}),
         submittedByKey: ctx.keyRow.id,
       });
       appendAudit(ctx.db, {

@@ -66,6 +66,17 @@ export const kbAnswerTool: KbTool = {
           },
         },
       },
+      claims: {
+        type: 'array',
+        items: {
+          type: 'object',
+          required: ['claim', 'evidenceNs'],
+          properties: {
+            claim: { type: 'string' },
+            evidenceNs: { type: 'array', items: { type: 'integer' } },
+          },
+        },
+      },
       confidence: { type: 'number', minimum: 0, maximum: 1 },
       model: { type: 'string' },
       degraded: { type: 'boolean' },
@@ -105,6 +116,7 @@ export const kbAnswerTool: KbTool = {
       structured: {
         answer: res.answer,
         citations: res.citations,
+        claims: res.claims,
         confidence: res.confidence,
         ...(res.model !== null ? { model: res.model } : {}),
         degraded: res.degraded,

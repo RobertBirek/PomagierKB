@@ -74,7 +74,7 @@ describe('E2E mcp-server: pełny przepływ narzędzi przez transport Streamable 
     const names = (list.json() as RpcEnvelope<{ tools: { name: string }[] }>).result.tools.map(
       (t) => t.name,
     );
-    expect(names).toEqual(['kb_search', 'kb_answer', 'kb_list', 'kb_get_source', 'kb_list_documents', 'kb_draft_status', 'kb_feedback']);
+    expect(names).toEqual(['kb_search', 'kb_answer', 'kb_list', 'kb_get_source', 'kb_list_documents', 'kb_draft_status', 'kb_entity_get', 'kb_graph_neighbors', 'kb_claim_verify', 'kb_feedback']);
 
     // 3. kb_search — fallback FTS5 (openspg null) z degraded:true
     const search = await mcpRequest(

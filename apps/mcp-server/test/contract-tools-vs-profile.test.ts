@@ -19,6 +19,9 @@ const REQUIRED_INPUT: Record<string, string[]> = {
   kb_get_source: ['id'],
   kb_list_documents: ['namespace'],
   kb_draft_status: [],
+  kb_entity_get: ['id'],
+  kb_graph_neighbors: ['id'],
+  kb_claim_verify: ['claim'],
   kb_submit_draft: ['namespace', 'title', 'content'],
   kb_feedback: ['answerId', 'verdict'],
 };
@@ -30,6 +33,9 @@ const REQUIRED_OUTPUT: Record<string, string[]> = {
   kb_get_source: ['id', 'namespace', 'content', 'truncated'],
   kb_list_documents: ['documents', 'total'],
   kb_draft_status: ['drafts'],
+  kb_entity_get: ['id', 'namespace', 'spgType', 'properties', 'degraded'],
+  kb_graph_neighbors: ['nodes', 'edges'],
+  kb_claim_verify: ['status', 'explanation', 'citations'],
   kb_submit_draft: ['draftId', 'status', 'reviewRequired'],
   kb_feedback: ['ok', 'gapCreated'],
 };
@@ -73,9 +79,11 @@ describe('kontrakt: tools/list == tools_json profilu (dla każdego profilu z DB)
     const row = getProfile(h.db, 'default');
     expect(row).not.toBeNull();
     // 0001 seeduje 4 narzędzia; 0002 dopisuje read-only v2 do profili z kb_search
+    // 0001 seed (4) + 0002 (v2 read) + 0007 (graf/verify)
     expect(JSON.parse(row!.tools_json)).toEqual([
       'kb_search', 'kb_answer', 'kb_list', 'kb_feedback',
       'kb_get_source', 'kb_list_documents', 'kb_draft_status',
+      'kb_entity_get', 'kb_graph_neighbors', 'kb_claim_verify',
     ]);
   });
 
