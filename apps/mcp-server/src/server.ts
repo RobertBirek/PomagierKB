@@ -19,6 +19,9 @@ import {
   JSONRPC_RATE_LIMITED,
   JSONRPC_UNAUTHORIZED,
   createMcpPair,
+  createModernHandler,
+  isLegacyRequest,
+  toNodeHandler,
 } from './mcp.js';
 import { allTools } from './tools/index.js';
 import type { KbTool, ToolCtx, ToolLlm } from './tools/types.js';
@@ -187,26 +190,67 @@ export function buildServer(opts: BuildServerOptions): McpServerBundle {
       log: req.log as unknown as Logger,
     };
     const keyId = authResult.keyRow.id;
-    const { server, transport } = createMcpPair({
+    const pairOpts = {
       ctx,
       tools,
-      checkToolRateLimit: (toolName) =>
+      checkToolRateLimit: (toolName: string) =>
         toolName === 'kb_answer'
           ? rateLimiter.check(`answer:${keyId}`, RATE_LIMIT_KB_ANSWER_PER_MIN)
           : { ok: true, retryAfter: 0 },
-      onUsage: (event) => usage.append({ at: new Date(now()).toISOString(), keyId, ...event }),
+      onUsage: (event: Parameters<NonNullable<Parameters<typeof createMcpPair>[0]['onUsage']>>[0]) =>
+        usage.append({ at: new Date(now()).toISOString(), keyId, ...event }),
+    };
+
+    // ── Routing er protokołu (wzorzec z dokumentacji SDK v2): ruch 2025 (bez
+    // envelope _meta) → sprawdzona ścieżka v1 — BAJTOWO identyczna z dotychczasową
+    // (Claude Code/Cursor bez zmian); ruch 2026-07-28 → handler v2 (server/discover,
+    // resultType, cache hints, walidacja Mcp-Method/Mcp-Name z -32020). ─────────
+    const probe = new Request(`http://mcp.local${req.url}`, {
+      method: 'POST',
+      headers: Object.fromEntries(
+        Object.entries(req.headers).filter(([, v]) => typeof v === 'string') as [string, string][],
+      ),
     });
+    const legacy = await isLegacyRequest(probe, req.body);
 
     // transport pisze bezpośrednio do surowej odpowiedzi — Fastify oddaje kontrolę
     reply.hijack();
+    if (legacy) {
+      const { server, transport } = createMcpPair(pairOpts);
+      try {
+        // cast: exactOptionalPropertyTypes vs interfejs Transport SDK (onclose?: () => void)
+        await server.connect(transport as unknown as Parameters<typeof server.connect>[0]);
+        await transport.handleRequest(req.raw, reply.raw, req.body);
+      } catch (err) {
+        req.log.error(
+          { err: err instanceof Error ? err.message : String(err) },
+          'mcp: błąd obsługi żądania',
+        );
+        if (!reply.raw.headersSent) {
+          reply.raw.statusCode = 500;
+          reply.raw.setHeader('content-type', 'application/json');
+          reply.raw.end(JSON.stringify(rpcError(-32603, 'internal error')));
+        } else {
+          reply.raw.end();
+        }
+      } finally {
+        void server.close().catch(() => undefined);
+      }
+      return;
+    }
+
+    const handler = createModernHandler(pairOpts);
     try {
-      // cast: exactOptionalPropertyTypes vs interfejs Transport SDK (onclose?: () => void)
-      await server.connect(transport as unknown as Parameters<typeof server.connect>[0]);
-      await transport.handleRequest(req.raw, reply.raw, req.body);
+      // cast: exactOptionalPropertyTypes vs NodeIncomingMessageLike (method?: string)
+      await toNodeHandler(handler)(
+        req.raw as unknown as Parameters<ReturnType<typeof toNodeHandler>>[0],
+        reply.raw,
+        req.body,
+      );
     } catch (err) {
       req.log.error(
         { err: err instanceof Error ? err.message : String(err) },
-        'mcp: błąd obsługi żądania',
+        'mcp(v2): błąd obsługi żądania',
       );
       if (!reply.raw.headersSent) {
         reply.raw.statusCode = 500;
@@ -216,7 +260,7 @@ export function buildServer(opts: BuildServerOptions): McpServerBundle {
         reply.raw.end();
       }
     } finally {
-      void server.close().catch(() => undefined);
+      void handler.close().catch(() => undefined);
     }
   });
 

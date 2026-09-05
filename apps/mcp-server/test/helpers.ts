@@ -145,3 +145,39 @@ export async function mcpRequest(
     payload: body,
   } satisfies InjectOptions);
 }
+
+
+// ── Era 2026-07-28: envelope _meta + wymagane nagłówki Mcp-* ─────────────────
+
+export const MODERN_META: Record<string, unknown> = {
+  'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+  'io.modelcontextprotocol/clientInfo': { name: 'vitest-modern', version: '0.0.0' },
+  'io.modelcontextprotocol/clientCapabilities': {},
+};
+
+export function modernBody(method: string, params: object = {}, id = 10): object {
+  return { jsonrpc: '2.0', id, method, params: { ...params, _meta: MODERN_META } };
+}
+
+export async function mcpModernRequest(
+  app: FastifyInstance,
+  profileId: string,
+  key: string | null,
+  method: string,
+  params: object = {},
+  opts: { mcpMethodHeader?: string; mcpName?: string; id?: number } = {},
+): Promise<LightMyRequestResponse> {
+  const headers: Record<string, string> = {
+    'content-type': 'application/json',
+    accept: 'application/json',
+    'mcp-method': opts.mcpMethodHeader ?? method,
+    ...(opts.mcpName !== undefined ? { 'mcp-name': opts.mcpName } : {}),
+  };
+  if (key !== null) headers.authorization = `Bearer ${key}`;
+  return app.inject({
+    method: 'POST',
+    url: `/mcp/${profileId}`,
+    headers,
+    payload: modernBody(method, params, opts.id ?? 10),
+  } satisfies InjectOptions);
+}

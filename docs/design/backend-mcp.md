@@ -517,3 +517,35 @@ data: {"status":"success","exitCode":0,"finishedAt":"2026-09-01T12:03:44Z"}
 - Klucze MCP ze scope write: proponuję, że tworzy je wyłącznie admin (operator może tworzyć tylko własne klucze read). Potwierdzić, czy operatorzy mają móc samodzielnie wystawiać klucze write dla swoich agentów.
 - Sesja panelu: proponuję absolutny TTL 12 h + idle 60 min z cichym odświeżaniem przez refresh token (wymaga offline_access w providerze Authentika). Alternatywa bez offline_access: twarde wylogowanie po wygaśnięciu — którą wersję przyjąć?
 - Czy odpowiedzi kb_answer (pytanie+odpowiedź) mają być w całości zapisywane w usage-logu (przydatne do oceny jakości, ale wrażliwe treściowo), czy tylko metadane + preview 500 znaków jak zaproponowano?
+## Aneks (2026-09-05): modernizacja wg raportu „Nowoczesny MCP i integracja z OpenSPG/KAG"
+
+**Wdrożone:**
+- **Dwie ery protokołu na jednym endpoincie** `POST /mcp/:profileId`: ruch 2025
+  (initialize, bez envelope) → dotychczasowa ścieżka SDK v1 — bajtowo bez zmian
+  (Claude Code/Cursor); ruch 2026-07-28 (envelope `_meta`) → SDK v2
+  (`createModernHandler`: server/discover, resultType, serverInfo w `_meta`,
+  walidacja `Mcp-Method`/`Mcp-Name` z -32020, `ttlMs:60000`+`cacheScope:private`
+  na tools/list — spójnie z TTL cache profili). Routing user-land przez
+  `isLegacyRequest` (wzorzec z dokumentacji SDK). Wspólna logika narzędzi:
+  `executeToolCall`/`toolsListPayload` w mcp.ts.
+- Narzędzia grafowe (`kb_entity_get`, `kb_graph_neighbors`) na tabeli
+  `graph_edges` w SQLite — Neo4j NIE MA krawędzi (relacje *RefId to stringi;
+  empirycznie 0 relacji), `query/spgType` jako autorytatywny stan encji
+  z sanitizacją (wektory, literalne cudzysłowy).
+- `kb_claim_verify` (supported/contradicted/insufficient + cytowania; bramka
+  bez-dowodów bez kosztu LLM, insufficient → luka wiedzy), `claims[]`
+  w kb_answer (zdanie→[n], zero dodatkowego LLM), `idempotencyKey`
+  w kb_submit_draft, prompt `grounded-analysis`.
+
+**Świadomie pominięte (z uzasadnieniem):**
+- **Tasks extension** — MCP nie ma operacji długotrwałych (buildy human-only
+  przez panel); wrócić, gdyby MCP dostał operacje >30 s.
+- **MCP Apps** — panel WWW pełni tę rolę (Evidence Explorer = /kb + kb_get_source).
+- **OTel w _meta** — audyt hash-chain + usage-JSONL + quality_answers wystarczają
+  na tę skalę; OTel dopiero przy >1 instancji.
+- **OAuth/OIDC 2026 (PRM, RFC 8707, Enterprise-Managed Auth)** — klucze `sk-*`
+  (sha256, TTL, profile) pozostają naszym modelem enterprise-managed auth;
+  SDK nie waliduje tokenów, więc nic tego nie wymusza. Brak token passthrough
+  (klient→MCP token nigdy nie idzie do OpenSPG/LLM) — zgodnie ze spec.
+- **`reason/run` przez MCP — ZAKAZ** (odpowiedź zawiera hasło Neo4j
+  w `graphStoreUrl`); wyłącznie admin-diagnostyka z redakcją.
