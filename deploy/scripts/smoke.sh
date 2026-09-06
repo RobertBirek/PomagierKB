@@ -195,9 +195,18 @@ check_spa_fallback() {
     res FAIL "spa trasa /inbox/" "brak odpowiedzi: ${body:0:120}"
   fi
   # (b) nieistniejący artefakt builda → 404, NIE 200 z HTML-em.
-  code=$(docker exec kag-panel wget -S -qO /dev/null \
-    'http://127.0.0.1:8080/assets/nie-ma-takiego-pliku.js' 2>&1 \
-    | awk '/HTTP\// {c=$2} END {print c+0}')
+  #     Świadomie przez node, a nie `wget -S`: busyboxowy wget przy -q tłumi nagłówki -S,
+  #     a przy 404 kończy się kodem != 0, co pod `set -e` ubijało CAŁY smoke bez jednej linii
+  #     wyjścia — skrypt, który ma wykrywać ciche awarie, sam padał po cichu.
+  code=$(docker exec kag-panel node -e '
+const http = require("http");
+http
+  .get("http://127.0.0.1:8080/assets/nie-ma-takiego-pliku.js", (r) => {
+    console.log(r.statusCode);
+    r.resume();
+  })
+  .on("error", () => console.log("000"));
+' 2>/dev/null || echo "000")
   if [[ "${code}" == "404" ]]; then
     res PASS "spa brakujący asset" "404 zgodnie z oczekiwaniem"
   else
