@@ -15,10 +15,14 @@ echo "${REPORT}"
 UPDATES=$(printf '%s\n' "${REPORT}" | sed -n 's/.*aktualizacje dostępne=\([0-9]\+\).*/\1/p' | tail -1)
 if [[ -n "${UPDATES:-}" && "${UPDATES}" -gt 0 && -n "${ALERT_WEBHOOK_URL:-}" ]]; then
   SUMMARY=$(printf '%s\n' "${REPORT}" | grep -E "NOWY|NIEPRZYPIĘTY|Podsumowanie" | head -20)
-  curl -fsS -m 15 \
-    -d "Aktualizacje obrazów PomagierKB (${UPDATES}) — $(hostname), $(date -Is):
+  # URL idzie przez plik konfiguracyjny na stdin (`-K -`), a nie jako argument: dla publicznego
+  # ntfy.sh nazwa tematu w URL-u JEST jedynym sekretem kanału, a argumenty procesu są widoczne
+  # w `ps` dla każdego użytkownika hosta (zasada projektu: sekrety nigdy w argv).
+  printf 'url = "%s"\n' "${ALERT_WEBHOOK_URL}" \
+    | curl -fsS -m 15 -o /dev/null -K - \
+        -d "Aktualizacje obrazów PomagierKB (${UPDATES}) — $(hostname), $(date -Is):
 ${SUMMARY}
 Procedura: docs/deployment.md §aktualizacje (OpenSPG ZAMROŻONY — pomiń)." \
-    "${ALERT_WEBHOOK_URL}" >/dev/null || echo "[update-notify] webhook nie odpowiedział" >&2
+    || echo "[update-notify] webhook nie odpowiedział (curl rc=$?)" >&2
 fi
 exit 0

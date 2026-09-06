@@ -1,0 +1,90 @@
+name: Supply chain scan (obrazy firm trzecich)
+
+# D11-08 — rejestr ryzyka dla obrazów, których NIE budujemy i których nie kontrolujemy.
+# WAŻNE: ten workflow jest RAPORTUJĄCY, nie blokujący. Powód: upstream OpenSPG jest
+# zamrożony (docs/runbooks/openspg-frozen.md), a audyt naliczył w jego czterech obrazach
+# 653 podatności HIGH/CRITICAL (68 CRITICAL). Bramka na tych obrazach byłaby permanentnie
+# czerwona i nic by nie zmieniła — sens ma natomiast (a) znany, datowany stan wyjściowy
+# i (b) wykrycie ZMIANY względem poprzedniego tygodnia.
+# Bramka blokująca dotyczy wyłącznie obrazów budowanych u nas — patrz ci.yml, job image-build.
+#
+# Źródłem listy obrazów są deploy/*/.env.example (jedyne miejsce z literalnymi digestami;
+# żywe .env jest nieśledzone i zawiera sekrety — nie dotykamy go).
+
+on:
+  schedule:
+    # poniedziałek 05:23 UTC
+    - cron: '23 5 * * 1'
+  workflow_dispatch:
+  push:
+    # zmiana przypiętych digestów = natychmiastowy ponowny skan
+    paths:
+      - 'deploy/*/.env.example'
+      - '.github/workflows/supply-chain-scan.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    outputs:
+      images: ${{ steps.list.outputs.images }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Zbierz przypięte referencje obrazów z deploy/*/.env.example
+        id: list
+        run: |
+          set -euo pipefail
+          images=$(grep -hE '^[A-Z0-9_]+_IMAGE=[^[:space:]#]+@sha256:[0-9a-f]{64}' deploy/*/.env.example \
+            | sed -E 's/^([A-Z0-9_]+)_IMAGE=([^[:space:]#]+).*/\1 \2/' \
+            | jq -R -s -c 'split("\n") | map(select(length > 0)) | map(split(" ") | {name: (.[0] | ascii_downcase), ref: .[1]})')
+          echo "images=$images" >> "$GITHUB_OUTPUT"
+          echo "$images" | jq .
+
+  scan:
+    needs: discover
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ${{ fromJSON(needs.discover.outputs.images) }}
+    steps:
+      - name: Trivy — ${{ matrix.image.name }} (raportująco)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        # obrazy z rejestrów firm trzecich (m.in. aliyuncs) bywają niedostępne —
+        # nieudany pull nie może przewracać raportu
+        continue-on-error: true
+        with:
+          image-ref: ${{ matrix.image.ref }}
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          format: json
+          output: trivy-${{ matrix.image.name }}.json
+          exit-code: '0'
+
+      - name: Podsumowanie
+        if: always()
+        env:
+          IMAGE_NAME: ${{ matrix.image.name }}
+          IMAGE_REF: ${{ matrix.image.ref }}
+        run: |
+          report="trivy-${IMAGE_NAME}.json"
+          if [ ! -s "$report" ]; then
+            printf '### %s\n\nSkan NIEUDANY (obraz niedostępny lub błąd skanera).\n\n' "$IMAGE_NAME" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          counts=$(jq -r '[.Results[]?.Vulnerabilities[]?] | group_by(.Severity) | map("\(.[0].Severity)=\(length)") | join(" ")' "$report")
+          total=$(jq -r '[.Results[]?.Vulnerabilities[]?] | length' "$report")
+          printf '### %s\n\n- ref: `%s`\n- HIGH/CRITICAL razem: **%s**\n- rozkład: `%s`\n\n' \
+            "$IMAGE_NAME" "$IMAGE_REF" "$total" "${counts:-brak}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload raportu
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: trivy-third-party-${{ matrix.image.name }}
+          path: trivy-${{ matrix.image.name }}.json
+          if-no-files-found: warn
+          # rok retencji: raporty służą porównaniu „co się zmieniło od poprzedniego skanu"
+          retention-days: 365

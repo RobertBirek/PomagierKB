@@ -1,6 +1,10 @@
 # Stack EDGE (PomagierKB): Caddy (TLS/ingress) + Authentik (SSO) + Postgres + Redis.
 # Jedyne porty na hoście: 80/tcp, 443/tcp, 443/udp (Caddy, HTTP/3).
 # Sieć edge-net tworzona raz, poza compose: docker network create edge-net
+#
+# Limity `pids_limit` i `cpus` = twarde bezpieczniki (audyt D1-08): żaden kontener nie może
+# wysycić tablicy procesów ani wszystkich 8 vCPU hosta i zdusić logowania (SSO) całej
+# platformy. Wartości = zmierzony baseline `docker stats` (PIDs) razy ~5-10 zapasu.
 
 name: edge
 
@@ -48,6 +52,8 @@ services:
     container_name: edge-caddy
     restart: always
     mem_limit: 256m
+    pids_limit: 256     # baseline 13 (Go: wątki skalują się z GOMAXPROCS)
+    cpus: 2             # TLS/HTTP3 dla całego ingressu — zapas na szczyt handshake'ów
     cap_add:
       - NET_BIND_SERVICE   # bind 80/443 przy cap_drop ALL
     ports:
@@ -82,6 +88,8 @@ services:
     restart: always
     command: server
     mem_limit: 1g
+    pids_limit: 1024    # baseline 31; gunicorn + embedded outpost pod obciążeniem rosną
+    cpus: 2
     environment: *authentik_env
     # BEZ docker.sock — używamy wyłącznie embedded outpostu (nic nie zarządza kontenerami).
     volumes:
@@ -110,6 +118,8 @@ services:
     restart: always
     command: worker
     mem_limit: 1g
+    pids_limit: 1024    # baseline 15; worker forkuje zadania (migracje, wysyłki, backupy)
+    cpus: 2
     environment: *authentik_env
     # BEZ docker.sock — embedded outpost żyje w procesie authentik-server.
     volumes:
@@ -137,6 +147,8 @@ services:
     container_name: edge-postgres
     restart: always
     mem_limit: 512m
+    pids_limit: 512     # baseline 17 (proces na połączenie)
+    cpus: 2
     cap_add:
       # minimalny zestaw: entrypoint startuje jako root, chown-uje wolumen danych
       # przy pierwszej inicjalizacji i zrzuca uprawnienia do usera postgres
@@ -167,6 +179,8 @@ services:
     container_name: edge-redis
     restart: always
     mem_limit: 256m
+    pids_limit: 256     # baseline 6 (Redis jednowątkowy + wątki I/O)
+    cpus: 1
     cap_add:
       # entrypoint zrzuca uprawnienia do usera redis (su-exec)
       - SETGID
@@ -197,6 +211,8 @@ services:
     cap_add: [SETUID, SETGID, CHOWN]
     restart: unless-stopped
     mem_limit: 384m
+    pids_limit: 256     # baseline 19 (Node + wbudowany sqlite)
+    cpus: 1             # monitoring nie ma prawa konkurować z ingressem i SSO
     environment:
       TZ: ${TZ:-Europe/Warsaw}
     volumes:

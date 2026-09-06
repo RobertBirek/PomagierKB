@@ -1,0 +1,79 @@
+name: CI alert
+
+# Druga połowa D11-01. Sama naprawa kolejności kroków sprawia, że CI JEST zielone —
+# ale nie sprawia, że ktokolwiek zauważy, gdy znów się zepsuje. Poprzednim razem czerwone
+# CI przetrwało 42 commity i 4 dni, bo jedynym sygnałem był kolor ikonki na liście przebiegów.
+#
+# Ten workflow zamienia porażkę CI na main w OTWARTE ZGŁOSZENIE (powiadomienie e-mail
+# z GitHuba, widoczne na liście issues), a powrót do zieleni — w jego zamknięcie.
+# Zero sekretów i zero usług zewnętrznych: wystarczy GITHUB_TOKEN przebiegu.
+# Jedno zgłoszenie na serię awarii — kolejne porażki dopisują komentarz, nie nowe issue.
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  alert:
+    # PR-y pomijamy: interesuje nas wyłącznie stan gałęzi main
+    if: github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      # wyłącznie pola kontrolowane przez GitHub (sha/url/status) — żadnych tytułów,
+      # opisów ani komunikatów commitów, które mogłyby wstrzyknąć kod do shella
+      CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+      RUN_URL: ${{ github.event.workflow_run.html_url }}
+      HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      - name: Otwórz lub zamknij zgłoszenie o czerwonym CI
+        run: |
+          set -euo pipefail
+          label=ci-failure
+          title="CI na main jest czerwone"
+
+          # etykieta musi istnieć, zanim jej użyjemy (idempotentnie)
+          gh label create "$label" --color B60205 --description "Automat: nieudany przebieg CI na main" 2>/dev/null || true
+
+          existing=$(gh issue list --state open --label "$label" --limit 1 --json number --jq '.[0].number // empty')
+
+          if [ "$CONCLUSION" = "success" ]; then
+            if [ -n "$existing" ]; then
+              gh issue close "$existing" --comment "CI na main znów zielone: ${RUN_URL} (commit ${HEAD_SHA})."
+              echo "Zamknięto zgłoszenie #$existing."
+            else
+              echo "CI zielone, brak otwartego zgłoszenia — nic do zrobienia."
+            fi
+            exit 0
+          fi
+
+          # cancelled/skipped to nie awaria kodu — nie alarmujemy
+          case "$CONCLUSION" in
+            failure|timed_out) ;;
+            *) echo "Wynik '$CONCLUSION' nie wymaga alertu."; exit 0 ;;
+          esac
+
+          body=$(printf '%s\n' \
+            "Przebieg CI na gałęzi main zakończył się wynikiem: **${CONCLUSION}**." \
+            "" \
+            "- przebieg: ${RUN_URL}" \
+            "- commit: ${HEAD_SHA}" \
+            "" \
+            "To zgłoszenie zamknie się samo, gdy CI na main znów będzie zielone." \
+            "Czerwone CI = brak sygnału: dopóki trwa, żadna regresja nie zostanie wykryta.")
+
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$body"
+            echo "Dopisano komentarz do zgłoszenia #$existing."
+          else
+            gh issue create --title "$title" --label "$label" --body "$body"
+          fi

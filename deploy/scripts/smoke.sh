@@ -4,7 +4,8 @@
 # SPA publiczna + API chronione (401), MCP initialize+tools/list (klucz z env SMOKE_MCP_KEY — brak = SKIP),
 # sonda search OpenSPG na namespace stagingowym (env SMOKE_STAGING_NS — brak = SKIP).
 # Env dodatkowe: SMOKE_MCP_URL (nadpisuje URL MCP, np. z profilem /mcp/<profil>),
-#                SMOKE_INSECURE=1 (curl -k, TYLKO na czas staging CA).
+#                SMOKE_INSECURE=1 (curl -k, TYLKO na czas staging CA),
+#                PANEL_DB_IN_CONTAINER (ścieżka SQLite w kontenerze, domyślnie /data/db/kag.db).
 # Raport PASS/FAIL/SKIP per check; exit != 0 gdy jakikolwiek FAIL.
 set -euo pipefail
 
@@ -19,6 +20,8 @@ PANEL_OIDC_ISSUER="$(env_get "${KAG_ENV}" PANEL_OIDC_ISSUER "https://auth.ilovel
 MCP_PUBLIC_URL="$(env_get "${KAG_ENV}" MCP_PUBLIC_URL "${PANEL_PUBLIC_URL}/mcp")"
 MCP_URL="${SMOKE_MCP_URL:-${MCP_PUBLIC_URL%/}/default}"   # domyślnie profil "default"
 DISCOVERY_URL="${PANEL_OIDC_ISSUER%/}/.well-known/openid-configuration"
+# Ścieżka bazy SQLite WEWNĄTRZ kontenera panelu (jak w backup.sh) — rejestr KB.
+PANEL_DB_IN_CONTAINER="${PANEL_DB_IN_CONTAINER:-/data/db/kag.db}"
 
 CURL=(curl -sS --max-time 20)
 if [[ "${SMOKE_INSECURE:-0}" == "1" ]]; then
@@ -120,24 +123,53 @@ else
 fi
 
 # --- 6. Sonda search OpenSPG na namespace stagingowym (przez docker exec — zero portów na hoście).
-#        Payload /public/v1/search/text wg skilla openspg-api (sonda zgodności, niezweryfikowany w boju):
-#        PASS = endpoint odpowiada poprawnym JSON-em, nie oceniamy trafień.
-check_staging_search() {
+#        Payload /public/v1/search/text wg skilla openspg-api (TextSearchRequest, zweryfikowany
+#        na żywym serwerze 2026-09-02 i 2026-09-06): {projectId, queryString, labelConstraints,
+#        page, topk}. Wariantu bez projectId (ze `size`) NIE używać — serwer zwraca HTTP 400
+#        („There is no such fulltext schema index"), czyli sonda kłamałaby na zielono/czerwono.
+#        projectId bierzemy z rejestru KB w SQLite (kb_registry = jedyne źródło prawdy o bazach),
+#        czytanego przez kontener panelu (better-sqlite3) — na hoście nie ma sqlite3.
+#        PASS = HTTP 200 i poprawny JSON, nie oceniamy trafień.
+
+# Wypisuje project_id namespace'u z kb_registry albo nic (gdy brak bazy/kontenera).
+kb_project_id() {
   local ns=$1 out
+  [[ "$(docker inspect -f '{{.State.Running}}' kag-panel 2>/dev/null)" == "true" ]] || return 0
+  out=$(docker exec kag-panel node -e '
+const db = require("better-sqlite3")(process.argv[1], { readonly: true, fileMustExist: true });
+const r = db.prepare("SELECT project_id FROM kb_registry WHERE namespace = ?").get(process.argv[2]);
+process.stdout.write(r && r.project_id != null ? String(r.project_id) : "");
+' "${PANEL_DB_IN_CONTAINER}" "${ns}" 2>/dev/null) || return 0
+  [[ "${out}" =~ ^[0-9]+$ ]] && printf '%s' "${out}"
+}
+
+check_staging_search() {
+  local ns=$1 out code body project_id
   if [[ "$(docker inspect -f '{{.State.Running}}' release-openspg-server 2>/dev/null)" != "true" ]]; then
     res FAIL "search staging (${ns})" "kontener release-openspg-server nie działa"
     return
   fi
-  if ! out=$(docker exec release-openspg-server curl -sS -m 15 -X POST \
+  project_id=$(kb_project_id "${ns}")
+  if [[ -z "${project_id}" ]]; then
+    res FAIL "search staging (${ns})" \
+      "brak project_id w kb_registry (kontener kag-panel nie działa albo baza ${ns} nie jest sprowizjonowana)"
+    return
+  fi
+  if ! out=$(docker exec release-openspg-server curl -sS -m 15 -w $'\n%{http_code}' -X POST \
       "http://127.0.0.1:8887/public/v1/search/text" \
       -H "Content-Type: application/json" \
-      -d "{\"queryString\":\"smoke\",\"labelConstraints\":[\"${ns}.Chunk\"],\"page\":1,\"size\":1}" 2>&1); then
+      -d "{\"projectId\":${project_id},\"queryString\":\"smoke\",\"labelConstraints\":[\"${ns}.Chunk\"],\"page\":1,\"topk\":1}" 2>&1); then
     res FAIL "search staging (${ns})" "curl w kontenerze: ${out:0:120}"
     return
   fi
-  case "${out}" in
-    \{*|\[*) res PASS "search staging (${ns})" "endpoint search odpowiada JSON-em";;
-    *)       res FAIL "search staging (${ns})" "nieoczekiwana odpowiedź: ${out:0:120}";;
+  code="${out##*$'\n'}"; body="${out%$'\n'*}"
+  if [[ "${code}" != "200" ]]; then
+    res FAIL "search staging (${ns})" "HTTP ${code} (projectId=${project_id}): ${body:0:120}"
+    return
+  fi
+  case "${body}" in
+    \{*|\[*) res PASS "search staging (${ns})" "HTTP 200, projectId=${project_id}, odpowiedź JSON";;
+    *)       res FAIL "search staging (${ns})" "nieoczekiwana odpowiedź: ${body:0:120}";;
   esac
 }
 if [[ -n "${SMOKE_STAGING_NS:-}" ]]; then
@@ -145,6 +177,34 @@ if [[ -n "${SMOKE_STAGING_NS:-}" ]]; then
 else
   res SKIP "search staging" "brak SMOKE_STAGING_NS — ustaw namespace stagingowy aby przetestować search"
 fi
+
+# --- Fallback SPA: trasa dostaje HTML, brakujący plik dostaje 404 (D13-01) ---
+# Przed audytem KAŻDA nieznana ścieżka dostawała index.html z kodem 200 — literówka w nazwie
+# chunku albo niekompletne wdrożenie objawiały się białą stroną, a monitoring widział dwusetki.
+check_spa_fallback() {
+  local body code
+  # (a) trasa SPA z końcowym ukośnikiem → HTML z BEZWZGLĘDNYMI ścieżkami assetów.
+  #     Ścieżki względne („./assets/…") dawały białą stronę właśnie na trasach zagnieżdżonych.
+  if body=$(docker exec kag-panel wget -qO- 'http://127.0.0.1:8080/inbox/' 2>&1); then
+    if printf '%s' "${body}" | grep -q 'src="/assets/'; then
+      res PASS "spa trasa /inbox/" "HTML z bezwzględnymi ścieżkami assetów"
+    else
+      res FAIL "spa trasa /inbox/" "HTML bez src=\"/assets/ — sprawdź base w vite.config.ts"
+    fi
+  else
+    res FAIL "spa trasa /inbox/" "brak odpowiedzi: ${body:0:120}"
+  fi
+  # (b) nieistniejący artefakt builda → 404, NIE 200 z HTML-em.
+  code=$(docker exec kag-panel wget -S -qO /dev/null \
+    'http://127.0.0.1:8080/assets/nie-ma-takiego-pliku.js' 2>&1 \
+    | awk '/HTTP\// {c=$2} END {print c+0}')
+  if [[ "${code}" == "404" ]]; then
+    res PASS "spa brakujący asset" "404 zgodnie z oczekiwaniem"
+  else
+    res FAIL "spa brakujący asset" "HTTP ${code} zamiast 404 — fallback maskuje błąd wdrożenia"
+  fi
+}
+check_spa_fallback
 
 # --- Raport ---
 echo

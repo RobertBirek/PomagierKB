@@ -13,8 +13,13 @@ set -eu
 
 echo "[mysql-init] tworzę użytkownika aplikacyjnego '${MYSQL_APP_USER}' dla bazy '${MYSQL_DATABASE}'"
 
-# połączenie lokalne (socket) — serwer w fazie initdb nie nasłuchuje jeszcze po TCP
-mysql -uroot -p"${MYSQL_ROOT_PASSWORD}" <<SQL
+# Połączenie lokalne (socket) — serwer w fazie initdb nie nasłuchuje jeszcze po TCP.
+# Hasło przez MYSQL_PWD, NIGDY w argv (twarda zasada CLAUDE.md: sekrety nie trafiają do
+# tablicy procesów ani do logów; klient wypisywał wtedy na stderr "Using a password on the
+# command line interface can be insecure", co entrypoint kierował do json-file kontenera).
+# Ten sam wzorzec: deploy/scripts/backup.sh, deploy/scripts/verify_backup.sh.
+# Hasła w treści SQL idą przez stdin (heredoc), więc nie są widoczne w /proc/*/cmdline.
+MYSQL_PWD="${MYSQL_ROOT_PASSWORD}" mysql --protocol=socket -uroot <<SQL
 CREATE USER IF NOT EXISTS '${MYSQL_APP_USER}'@'%' IDENTIFIED BY '${MYSQL_APP_PASSWORD}';
 GRANT ALL PRIVILEGES ON \`${MYSQL_DATABASE}\`.* TO '${MYSQL_APP_USER}'@'%';
 FLUSH PRIVILEGES;

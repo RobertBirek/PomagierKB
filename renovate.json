@@ -3,9 +3,34 @@
   "extends": ["config:recommended", ":semanticCommits", ":timezone(Europe/Warsaw)"],
   "labels": ["dependencies"],
   "prConcurrentLimit": 5,
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "docker: obrazy przypięte digestem w deploy/*/.env.example. Żaden wbudowany manager ich nie widzi — w compose.yaml są wyłącznie interpolacje ${..._IMAGE}, a literalne referencje repo@sha256:... leżą w plikach .env (nieśledzone, z sekretami) i .env.example. Czytamy WYŁĄCZNIE .env.example. Tag linii wydań bierzemy z sąsiadującej zmiennej <NAZWA>_IMAGE_CHECK_TAG (ta sama konwencja, z której korzysta deploy/scripts/update_check.sh) — dzięki temu Renovate nie zgaduje 'latest'. Obrazy BEZ CHECK_TAG (cztery OpenSPG, upstream zamrożony) świadomie nie pasują do wzorca i nie są śledzone.",
+      "managerFilePatterns": ["deploy/*/.env.example"],
+      "matchStringsStrategy": "recursive",
+      "matchStrings": [
+        "[A-Z0-9_]+_IMAGE=[^\\n]*\\n(?:[ \\t]*#[^\\n]*\\n|[ \\t]*\\n)*[A-Z0-9_]+_IMAGE_CHECK_TAG=[^\\n]*",
+        "_IMAGE=(?<packageName>[^@\\s]+)@(?<currentDigest>sha256:[0-9a-f]{64})[\\s\\S]*?_IMAGE_CHECK_TAG=(?<currentValue>[^\\s#]+)"
+      ],
+      "datasourceTemplate": "docker",
+      "versioningTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "docker: obraz bazowy Node oraz frontend BuildKit w services/*/Dockerfile. FROM to ${NODE_IMAGE}, więc wbudowany manager dockerfile nic tu nie zobaczy — trzeba celować w ARG i w dyrektywę syntax.",
+      "managerFilePatterns": ["services/*/Dockerfile"],
+      "matchStrings": [
+        "ARG NODE_IMAGE=(?<depName>[^:@\\s]+):(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[0-9a-f]{64})",
+        "#\\s*syntax=(?<depName>docker/dockerfile):(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[0-9a-f]{64})"
+      ],
+      "datasourceTemplate": "docker",
+      "versioningTemplate": "docker"
+    }
+  ],
   "packageRules": [
     {
-      "description": "Obrazy spg-registry (OpenSPG) ZAMROŻONE — upstream martwy; aktualizacja tylko świadoma, ręczna, po restore-drillu",
+      "description": "Obrazy spg-registry (OpenSPG) ZAMROŻONE — upstream martwy; aktualizacja tylko świadoma, ręczna, po restore-drillu. Redundancja wobec braku CHECK_TAG w .env.example (customManager i tak ich nie złapie) — zostawione jako bezpiecznik.",
       "matchDatasources": ["docker"],
       "matchPackageNames": ["/spg-registry\\.us-west-1\\.cr\\.aliyuncs\\.com\\/.*/"],
       "enabled": false
@@ -13,11 +38,17 @@
     {
       "description": "Obrazy edge/narzędziowe: PR z podbiciem digestu; automerge tylko patch",
       "matchDatasources": ["docker"],
-      "matchPackageNames": ["caddy", "ghcr.io/goauthentik/server", "postgres", "redis", "apache/tika", "stirlingtools/stirling-pdf", "node", "louislam/uptime-kuma"],
+      "matchPackageNames": ["caddy", "ghcr.io/goauthentik/server", "postgres", "redis", "apache/tika", "docker.io/stirlingtools/stirling-pdf", "node", "docker/dockerfile", "louislam/uptime-kuma"],
       "automerge": false
     },
     {
-      "description": "npm: minor+patch grupowane tygodniowo; major osobno",
+      "description": "Obraz bazowy panelu i MCP: digest zmienia się w OBU plikach services/*/Dockerfile naraz — jeden PR, nie dwa",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["node", "docker/dockerfile"],
+      "groupName": "obraz bazowy obrazów budowanych u nas"
+    },
+    {
+      "description": "npm: minor+patch grupowane tygodniowo; major osobno. UWAGA: dopóki Renovate nie jest zainstalowany, npm obsługuje Dependabot (.github/dependabot.yml) — po instalacji Renovate usuń stamtąd wpis npm, żeby nie dublować PR-ów.",
       "matchManagers": ["npm"],
       "matchUpdateTypes": ["minor", "patch"],
       "groupName": "npm minor/patch",

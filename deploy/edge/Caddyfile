@@ -5,6 +5,30 @@
 	# acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
 }
 
+# Log dostępu z redakcją sekretów w query stringu. Argument = sufiks pliku.
+# Caddy redaguje nagłówki Cookie/Authorization sam, ale query string logował w całości —
+# a /auth/callback niesie jednorazowy kod autoryzacyjny OIDC i state. Filtr `query`
+# podmienia oba na REDACTED, zanim wpis trafi do pliku (a więc i do backupu).
+(access_log) {
+	log {
+		output file /data/access-{args[0]}.log {
+			roll_size 20mb
+			roll_keep 5
+		}
+		format filter {
+			wrap json
+			fields {
+				request>uri query {
+					replace code REDACTED
+					replace state REDACTED
+					replace session_state REDACTED
+					replace id_token_hint REDACTED
+				}
+			}
+		}
+	}
+}
+
 # Wspólne nagłówki bezpieczeństwa; CSP jako argument importu (per vhost —
 # panel SPA dostaje pełną politykę, Authentik/status tylko frame-ancestors).
 (security_headers) {
@@ -22,6 +46,12 @@
 # SSO — Authentik
 auth.ilovelighting.sanok.pl {
 	import security_headers "frame-ancestors 'self'"
+	import access_log auth
+	# Authentik nie przyjmuje uploadów — bez limitu Caddy strumieniował dowolnie duże
+	# ciało do upstreamu (65 MB dochodziło do 35 MB, zanim Authentik zerwał połączenie).
+	request_body {
+		max_size 4MB
+	}
 	reverse_proxy edge-authentik-server:9000
 }
 
@@ -31,13 +61,7 @@ kag.ilovelighting.sanok.pl {
 	# 'unsafe-inline' konieczne dla atrybutów style React/Radix, data: dla obrazków.
 	import security_headers "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'"
 	encode zstd gzip
-	log {
-		output file /data/access-kag.log {
-			roll_size 20mb
-			roll_keep 5
-		}
-		format json
-	}
+	import access_log kag
 
 	# 1) MCP — Streamable HTTP; auth per-user tokenem WEWNĄTRZ serwera MCP.
 	#    ŚWIADOMIE BEZ forward_auth (klienci MCP nie przejdą redirectu OIDC).
@@ -80,6 +104,10 @@ kag.ilovelighting.sanok.pl {
 # "Status Monitor" w Authentiku (docs/authentik-setup.md) — dostęp tylko kag-admin.
 status.ilovelighting.sanok.pl {
 	import security_headers "frame-ancestors 'self'"
+	import access_log status
+	request_body {
+		max_size 4MB
+	}
 	handle /outpost.goauthentik.io/* {
 		reverse_proxy edge-authentik-server:9000 {
 			header_up Host {host}

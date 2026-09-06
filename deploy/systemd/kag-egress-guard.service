@@ -1,0 +1,27 @@
+# kag-egress-guard.service — reguły zapory blokujące pivot z sieci kag-egress do hosta.
+# Instalacja: cp deploy/systemd/kag-egress-guard.service /etc/systemd/system/
+#             systemctl daemon-reload && systemctl enable --now kag-egress-guard.service
+#
+# Reguły iptables nie przeżywają restartu hosta ani `docker compose down/up` sieci — dlatego
+# jednostka jest oneshot z RemainAfterExit i uruchamia się PO dockerze przy każdym boocie.
+# Po odtworzeniu sieci kag-egress (nowa podsieć) wystarczy `systemctl restart kag-egress-guard`;
+# skrypt czyta CIDR z dockera, więc nie ma zaszytych adresów.
+[Unit]
+Description=PomagierKB — blokada pivotu kag-egress → usługi hosta (D6-12)
+Documentation=file:/kag/docs/design/audit-2026-09.md
+After=docker.service
+Requires=docker.service
+PartOf=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=true
+User=root
+Group=root
+WorkingDirectory=/kag
+ExecStart=/kag/deploy/scripts/egress_guard.sh
+ExecStop=/kag/deploy/scripts/egress_guard.sh --remove
+TimeoutStartSec=2min
+
+[Install]
+WantedBy=multi-user.target

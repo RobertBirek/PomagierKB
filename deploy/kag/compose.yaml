@@ -7,6 +7,12 @@
 # - Nazwy kontenerów OpenSPG MUSZĄ być release-openspg-* (hardkod minio, issue #396).
 # - Wartości RAM/heapów z .env — profil 24 GB (PLAN.md); skalowanie bez edycji compose.
 # - Sekrety wymuszane przez ${X:?...} — brak wartości = stack nie wstaje (fail-fast).
+# - Limity `pids_limit` i `cpus` = twarde bezpieczniki (audyt D1-08), NIE knob wydajności:
+#   uszkodzony/złośliwy dokument w parserze niezaufanych uploadów (Stirling: LibreOffice +
+#   unoserver + Xvfb + tesseract; Tika: parsery Javy) albo zapętlony builder nie mogą
+#   zjeść wszystkich 8 vCPU hosta ani wysycić tablicy procesów. Wartości = zmierzony
+#   baseline `docker stats` (PIDs) razy ~5-10 zapasu; zmiana wymaga edycji tego pliku
+#   (świadomie: to kontrola bezpieczeństwa, więc ma być widoczna w gicie).
 
 name: kag
 
@@ -24,6 +30,20 @@ x-logging: &logging
       max-size: "10m"
       max-file: "3"
 
+# Dłuższe okno dla kontenerów, których stdout jest JEDYNYM trwałym śladem zdarzeń
+# bezpieczeństwa. Audyt 2026-09-06 (D6-17): Neo4j deklaruje appendery plikowe
+# (security.log, query.log) i `db.logs.query.enabled=VERBOSE`, ale pliki są puste od startu —
+# zmienne NEO4J_* nadpisują konfigurację log4j z obrazu. Nieudane uwierzytelnienia bolt
+# widać wyłącznie w `docker logs`, a przy 10 MB × 3 okno historyczne kurczy się do godzin.
+# 20 MB × 10 = 200 MB na kontener; przy 391 GB wolnego miejsca to koszt pomijalny wobec
+# możliwości zbadania incydentu po fakcie.
+x-logging-audit: &logging_audit
+  logging:
+    driver: json-file
+    options:
+      max-size: "20m"
+      max-file: "10"
+
 services:
   mysql:
     <<: [*security_defaults, *logging]
@@ -37,6 +57,8 @@ services:
     container_name: release-openspg-mysql
     restart: always
     mem_limit: ${MYSQL_MEM_LIMIT:-2g}
+    pids_limit: 512     # baseline 18 (thread-per-connection: pula OpenSPG + builder)
+    cpus: 2
     command:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_general_ci
@@ -67,7 +89,8 @@ services:
       - kag-datastores
 
   neo4j:
-    <<: [*security_defaults, *logging]
+    # logging_audit, nie logging: stdout to jedyny trwały ślad nieudanych logowań bolt (D6-17)
+    <<: [*security_defaults, *logging_audit]
     # minimalne capabilities: entrypoint obrazu chown-uje /data i zrzuca uprawnienia
     cap_add:
       - CHOWN
@@ -79,6 +102,8 @@ services:
     container_name: release-openspg-neo4j
     restart: always
     mem_limit: ${NEO4J_MEM_LIMIT:-4g}
+    pids_limit: 1024    # baseline 92 wątków JVM (pids_limit liczy też wątki)
+    cpus: 4
     environment:
       TZ: ${TZ:-Europe/Warsaw}
       # osobne zmienne dla healthchecku (cypher-shell)
@@ -86,8 +111,18 @@ services:
       OPENSPG_NEO4J_PASSWORD: ${OPENSPG_NEO4J_PASSWORD:?OPENSPG_NEO4J_PASSWORD is required}
       NEO4J_AUTH: ${OPENSPG_NEO4J_USER:?OPENSPG_NEO4J_USER is required}/${OPENSPG_NEO4J_PASSWORD:?OPENSPG_NEO4J_PASSWORD is required}
       NEO4J_PLUGINS: '["apoc"]'
-      NEO4J_apoc_import_file_enabled: "true"
-      NEO4J_apoc_export_file_enabled: "true"
+      # Audyt 2026-09-06 (D6-09): import/eksport plików przez APOC był WŁĄCZONY. Ktokolwiek ma
+      # poświadczenia bolt — a ma je serwer OpenSPG, którego API /public/** jest bez
+      # uwierzytelnienia (D6-03) — mógł czytać i zapisywać pliki wewnątrz kontenera Neo4j.
+      # Pipeline PomagierKB nigdy nie używa APOC do plików: eksport idzie CSV-em przez builder
+      # OpenSPG, który sam pobiera pliki z MinIO. Wyłączone.
+      NEO4J_apoc_import_file_enabled: "false"
+      NEO4J_apoc_export_file_enabled: "false"
+      # LOAD CSV z adresów URL — nieużywane u nas, a to kolejny wektor SSRF obok D6-12.
+      NEO4J_dbms_security_allow__csv__import__from__file__urls: "false"
+      # UWAGA: `unrestricted`/`allowlist` = apoc.* zostaje świadomie. Zawężenie wymaga
+      # potwierdzenia buildem na StagingSmoke, że builder OpenSPG nie woła żadnej procedury
+      # APOC (przesłanka: zapisuje sterownikiem) — procedura jest w liście zadań operatora.
       NEO4J_dbms_security_procedures_unrestricted: "apoc.*"
       NEO4J_dbms_security_procedures_allowlist: "apoc.*"
       # profil 24 GB: heap 2G / pagecache 1G (PLAN.md)
@@ -117,6 +152,8 @@ services:
     container_name: release-openspg-minio
     restart: always
     mem_limit: ${MINIO_MEM_LIMIT:-768m}
+    pids_limit: 512     # baseline 14 (runtime Go skaluje wątki z GOMAXPROCS)
+    cpus: 2
     command:
       - server
       - --console-address
@@ -145,6 +182,9 @@ services:
     container_name: release-openspg-server
     restart: always
     mem_limit: ${OPENSPG_SERVER_MEM_LIMIT:-4608m}
+    # baseline 95 wątków; builder (BUILDER_MODEL_EXECUTE_NUM=4) zwielokrotnia pule
+    pids_limit: 1024
+    cpus: 4             # builder nie może zagłodzić panelu/MCP/Authentika
     # Patch klienta OpenAI PRZED startem Javy; błąd patcha = kontener nie wstaje (fail-fast)
     entrypoint: ["/bin/sh", "-lc"]
     command:
@@ -164,9 +204,13 @@ services:
       CLOUDEXT_GRAPHSTORE_URL: neo4j://release-openspg-neo4j:7687?user=${OPENSPG_NEO4J_USER:?OPENSPG_NEO4J_USER is required}&password=${OPENSPG_NEO4J_PASSWORD_URLENCODED:?OPENSPG_NEO4J_PASSWORD_URLENCODED is required}&database=neo4j
       CLOUDEXT_SEARCHENGINE_URL: neo4j://release-openspg-neo4j:7687?user=${OPENSPG_NEO4J_USER:?OPENSPG_NEO4J_USER is required}&password=${OPENSPG_NEO4J_PASSWORD_URLENCODED:?OPENSPG_NEO4J_PASSWORD_URLENCODED is required}&database=neo4j
       CLOUDEXT_OBJECTSTORAGE_URL: minio://release-openspg-minio:9000?accessKey=${MINIO_ROOT_USER:?MINIO_ROOT_USER is required}&secretKey=${MINIO_ROOT_PASSWORD_URLENCODED:?MINIO_ROOT_PASSWORD_URLENCODED is required}
-      # Tłumienie logów — PEMJA i AppController na INFO logowały configi modeli Z KLUCZAMI API
+      # Tłumienie logów — PEMJA i AppController na INFO logowały configi modeli Z KLUCZAMI API.
+      # ReasonerServiceImpl doszedł po audycie 2026-09-06 (D6-02): logował na INFO cały obiekt
+      # wejściowy zadania razem z `graphStoreUrl`, a ten niesie hasło Neo4j w postaci
+      # `password=<32 znaki>`. Wyciek trafiał do plików w warstwie zapisywalnej kontenera
+      # i przeżywał 30 dziennych rotacji. WARN zostawia komunikaty o błędach reasonera.
       LOGGING_LEVEL_COM_ANTGROUP_OPENSPG_COMMON_UTIL_PEMJA: "OFF"
-      SPRING_APPLICATION_JSON: '{"logging.level.com.antgroup.openspgapp.api.http.server.app.AppController":"OFF"}'
+      SPRING_APPLICATION_JSON: '{"logging.level.com.antgroup.openspgapp.api.http.server.app.AppController":"OFF","logging.level.com.antgroup.openspg.server.core.reasoner.service.impl.ReasonerServiceImpl":"WARN"}'
       LOGGING_LEVEL_COM_ANTGROUP_OPENSPG_SERVER_ARKS_SOFABOOT: WARN
       LOGGING_LEVEL_COM_ANTGROUP_OPENSPGAPP_ARKS_SOFABOOT: WARN
     healthcheck:
@@ -198,6 +242,9 @@ services:
     container_name: kag-tika
     restart: unless-stopped
     mem_limit: ${TIKA_MEM_LIMIT:-1536m}
+    # GŁÓWNY WEKTOR: parsuje NIEZAUFANE uploady (parsery Javy). Baseline 40 wątków.
+    pids_limit: 512
+    cpus: 2
     environment:
       TZ: ${TZ:-Europe/Warsaw}
     healthcheck:
@@ -222,6 +269,10 @@ services:
       - SETUID
       - SETGID
     mem_limit: ${STIRLING_MEM_LIMIT:-2g}
+    # GŁÓWNY WEKTOR: OCR/konwersja NIEZAUFANYCH plików uruchamia LibreOffice, unoserver,
+    # Xvfb i tesseract — najłatwiejsze miejsce na lawinę procesów. Baseline 67.
+    pids_limit: 1024
+    cpus: 3             # OCR dużego skanu ma być szybki, ale nie kosztem reszty hosta
     environment:
       TZ: ${TZ:-Europe/Warsaw}
       # usługa żyje tylko w kag-internal (bez ingressu z internetu i bez egresu) —
@@ -249,9 +300,18 @@ services:
       # kontekst = korzeń monorepo (npm workspaces)
       context: ../..
       dockerfile: services/panel/Dockerfile
+      # Tożsamość wydania (D12-14). Bez tych argumentów Dockerfile wstawia do etykiet OCI
+      # wartość "unknown" — czyli po deployu nie da się ustalić, z jakiego commitu działa
+      # produkcja. Wartości podaje procedura deployu:
+      #   GIT_SHA=$(git -C /kag rev-parse --short HEAD) BUILT_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+      args:
+        GIT_SHA: ${GIT_SHA:-unknown}
+        BUILT_AT: ${BUILT_AT:-unknown}
     container_name: kag-panel
     restart: unless-stopped
     mem_limit: ${PANEL_MEM_LIMIT:-512m}
+    pids_limit: 512     # baseline 11; jobs/ spawnuje procesy potomne (ekstrakcja, eksport)
+    cpus: 2
     user: "10001:10001"
     read_only: true
     tmpfs:
@@ -302,9 +362,15 @@ services:
     build:
       context: ../..
       dockerfile: services/mcp/Dockerfile
+      # jak wyżej — patrz komentarz przy usłudze panel (D12-14)
+      args:
+        GIT_SHA: ${GIT_SHA:-unknown}
+        BUILT_AT: ${BUILT_AT:-unknown}
     container_name: kag-mcp
     restart: unless-stopped
     mem_limit: ${MCP_MEM_LIMIT:-384m}
+    pids_limit: 256     # baseline 11 (Node bez procesów potomnych)
+    cpus: 2
     user: "10001:10001"
     read_only: true
     tmpfs:

@@ -1,0 +1,52 @@
+name: CodeQL
+
+# SAST (D11-08). Repo jest publiczne, więc CodeQL i code scanning są bezpłatne.
+# Świadomie "advanced setup" (ten plik), a NIE "default setup" z ustawień repo —
+# obie ścieżki się wykluczają, a plik w repo jest przeglądalny w PR i wersjonowany.
+# Analizowany jest też język `actions` — wyłapuje wstrzyknięcia w samych workflow'ach.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # poniedziałek 04:17 UTC — łapie nowe reguły CodeQL na niezmienionym kodzie
+    - cron: '17 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analiza (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [javascript-typescript, actions]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Init CodeQL
+        uses: github/codeql-action/init@6f5948dfacef28e207b48d0905cf90c03365536d # v3.37.9
+        with:
+          languages: ${{ matrix.language }}
+          # TS nie wymaga kompilacji do analizy — nie budujemy niczego w tym workflow
+          build-mode: none
+          queries: security-extended
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@6f5948dfacef28e207b48d0905cf90c03365536d # v3.37.9
+        with:
+          category: /language:${{ matrix.language }}

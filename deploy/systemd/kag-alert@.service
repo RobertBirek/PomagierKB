@@ -3,7 +3,19 @@
 # Instalacja: cp deploy/systemd/kag-alert@.service /etc/systemd/system/ && systemctl daemon-reload
 #             printf 'ALERT_WEBHOOK_URL=https://ntfy.sh/<twoj-temat>\n' > /etc/kag/alerts.env
 #             chmod 600 /etc/kag/alerts.env
-# Brak pliku/URL = jednostka kończy się cicho (alert to best-effort, nie może psuć backupu).
+# Brak pliku/URL = jednostka kończy się cicho (alert to best-effort, nie może psuć backupu),
+# ale ZAPISUJE to w journalu — do 2026-09-03 zmienna była pusta i trzy awarie weryfikacji
+# backupu przeszły zupełnie bez śladu (ustalenie D5-09).
+#
+# `-o /dev/null` jest tu istotne: ntfy odpowiada JSON-em zawierającym nazwę tematu, a dla
+# publicznego ntfy.sh nazwa tematu JEST jedynym sekretem kanału — kto ją zna, czyta i publikuje
+# alerty. Bez tego trafiała do journala, czytelnego dla grupy `adm`/`systemd-journal`.
+#
+# Wszystkie odwołania do zmiennych powłoki są pisane jako `$$`, żeby rozwinął je /bin/sh,
+# a NIE systemd. Gdyby rozwijał systemd, URL webhooka (razem z nazwą tematu) wylądowałby
+# w linii poleceń procesu — widocznej w `ps` dla każdego użytkownika hosta. To ta sama zasada,
+# co „sekrety nigdy w argv” w regułach projektu. `%%{http_code}` to z kolei escape dla systemd
+# (pojedynczy `%` jest u niego specyfikatorem jednostki).
 [Unit]
 Description=PomagierKB — alert o awarii jednostki %i
 
@@ -11,7 +23,7 @@ Description=PomagierKB — alert o awarii jednostki %i
 Type=oneshot
 User=root
 EnvironmentFile=-/etc/kag/alerts.env
-ExecStart=/bin/sh -c '[ -n "${ALERT_WEBHOOK_URL:-}" ] && curl -fsS -m 10 -d "AWARIA jednostki %i na $(hostname) — $(date -Is). Sprawdz: journalctl -u %i" "${ALERT_WEBHOOK_URL}" || true'
+ExecStart=/bin/sh -c 'if [ -z "$${ALERT_WEBHOOK_URL:-}" ]; then echo "ALERT NIEWYSLANY: brak ALERT_WEBHOOK_URL w /etc/kag/alerts.env (awaria %i)" >&2; exit 0; fi; code=$$(curl -fsS -m 10 -o /dev/null -w "%%{http_code}" -d "AWARIA jednostki %i na $$(hostname) — $$(date -Is). Sprawdz: journalctl -u %i" "$${ALERT_WEBHOOK_URL}") && echo "alert %i dostarczony (HTTP $${code})" || echo "ALERT NIEDOSTARCZONY dla %i (curl rc=$$?)" >&2; exit 0'
 
 NoNewPrivileges=true
 ProtectSystem=strict

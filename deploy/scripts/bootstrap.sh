@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # bootstrap.sh — przygotowanie hosta pod stacki edge+kag (PomagierKB).
 # Wg docs/design/infra.md §7 pkt 2 + PLAN.md Faza 1.1. Idempotentny — można uruchamiać wielokrotnie.
-# Robi: sieć edge-net, katalogi /srv/kag-data/* z uprawnieniami, swap 8G + vm.swappiness=10,
+# Robi: kontrola zależności hosta (docs/deployment.md §0, BEZ instalowania), sieć edge-net,
+# katalogi /srv/kag-data/* z uprawnieniami, swap 8G + vm.swappiness=10,
 # tessdata (pol/eng/osd) dla Stirling OCR, kopie .env.example -> .env.
 # Użycie: sudo ./bootstrap.sh   (env: DATA_ROOT, SWAPFILE — opcjonalne nadpisania)
 set -euo pipefail
@@ -18,9 +19,48 @@ warn() { echo "[bootstrap][UWAGA] $*" >&2; }
 die()  { echo "[bootstrap][BŁĄD] $*" >&2; exit 1; }
 
 [[ ${EUID} -eq 0 ]] || die "uruchom jako root (sudo $0)"
-command -v docker >/dev/null || die "brak dockera w PATH"
-command -v curl   >/dev/null || die "brak curl (apt install curl)"
-command -v zstd   >/dev/null || warn "brak zstd — wymagany przez backup.sh (apt install zstd)"
+
+# --- 0. Zależności hosta (docs/deployment.md §0) — sprawdzenie BEZ instalowania -----
+# Świadomie nic nie instalujemy: bootstrap ma być przewidywalny na cudzym hoście,
+# a nazwy pakietów różnią się między dystrybucjami. Brak WYMAGANEGO = błąd (stack
+# nie wstanie albo backup nie zadziała), brak WARUNKOWEGO = ostrzeżenie z informacją,
+# co dokładnie przestanie działać.
+REQUIRED_TOOLS=(
+  "docker|oba stacki (docker compose ≥2.x)"
+  "git|klon repo i aktualizacje panelu"
+  "curl|smoke test, weryfikacja vhostów, pobranie tessdata poniżej"
+  "zstd|backup.sh, verify_backup.sh, save_images.sh"
+  "jq|backup.sh i odczyt manifestów"
+  "openssl|generowanie sekretów do .env"
+  "python3|URL-encode haseł do URI OpenSPG (CLOUDEXT_*_URLENCODED)"
+)
+OPTIONAL_TOOLS=(
+  "skopeo|update_check.sh (miesięczny raport aktualizacji) — raport nie powstanie"
+  "sqlite3|hostowy wariant restore-single-kb.md §B i fallback kopii SQLite w backup.sh — zostaje wyłącznie ścieżka przez kontener (docker exec kag-panel node -e …)"
+  "rclone|off-site backupu przy BACKUP_OFFSITE_TARGET=rclone://… — off-site przez rclone niemożliwy (alternatywa: cel rsync)"
+  "rsync|off-site backupu na ścieżkę/host — zostaje wyłącznie cel rclone"
+)
+
+missing_required=()
+for entry in "${REQUIRED_TOOLS[@]}"; do
+  tool=${entry%%|*}; purpose=${entry#*|}
+  if ! command -v "${tool}" >/dev/null; then
+    missing_required+=("${tool} (${purpose})")
+  fi
+done
+for entry in "${OPTIONAL_TOOLS[@]}"; do
+  tool=${entry%%|*}; purpose=${entry#*|}
+  command -v "${tool}" >/dev/null || warn "brak WARUNKOWEGO ${tool}: ${purpose}"
+done
+# Plugin compose to osobny byt niż samo `docker` — sprawdzamy jawnie.
+if command -v docker >/dev/null && ! docker compose version >/dev/null 2>&1; then
+  missing_required+=("docker compose (plugin compose v2 — oba stacki)")
+fi
+if [[ ${#missing_required[@]} -gt 0 ]]; then
+  for m in "${missing_required[@]}"; do echo "[bootstrap][BŁĄD] brak WYMAGANEGO: ${m}" >&2; done
+  die "zainstaluj brakujące zależności hosta i uruchom ponownie (lista: docs/deployment.md §0). Bootstrap NIE instaluje pakietów."
+fi
+log "zależności hosta: wymagane obecne"
 
 # --- 1. Sieć edge-net (external; wspólna dla Caddy, panelu, mcp i przyszłych appek) ---
 if docker network inspect edge-net >/dev/null 2>&1; then

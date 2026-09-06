@@ -13,18 +13,37 @@ env_get() { local v; v=$(grep -E "^$2=" "$1" 2>/dev/null | tail -n1 | cut -d= -f
 DATA_ROOT="${DATA_ROOT:-$(env_get "${REPO_ROOT}/deploy/kag/.env" DATA_ROOT /srv/kag-data)}"
 OUT="${DATA_ROOT}/backups/images"
 
-log() { echo "[save-images] $*"; }
-die() { echo "[save-images][BŁĄD] $*" >&2; exit 1; }
+log()  { echo "[save-images] $*"; }
+warn() { echo "[save-images][UWAGA] $*" >&2; }
+die()  { echo "[save-images][BŁĄD] $*" >&2; exit 1; }
 [[ ${EUID} -eq 0 ]] || die "uruchom jako root"
 command -v docker >/dev/null || die "brak dockera"
 command -v zstd >/dev/null || die "brak zstd"
 mkdir -p "${OUT}"
+
+# Obrazy pomocnicze spoza compose, których wymaga DIAGNOSTYKA w czasie awarii.
+# curlimages/curl jest wariantem zapasowym w runbookach (docs/runbooks/typowe-awarie.md,
+# break-glass-authentik.md) — bez cache'u `docker run` w momencie awarii wymaga egressu,
+# którego w awarii sieci/DNS może nie być. Pobieramy go, jeśli go nie ma lokalnie.
+EXTRA_IMAGES=(curlimages/curl:latest)
 
 # Obrazy z obu stacków (compose config rozwiązuje zmienne z .env)
 images=$(for stack in edge kag; do
   docker compose -f "${REPO_ROOT}/deploy/${stack}/compose.yaml" config --images 2>/dev/null
 done | sort -u)
 [[ -n "${images}" ]] || die "compose config --images nie zwrócił obrazów (brak .env?)"
+
+# Obrazy pomocnicze doklejamy PO walidacji listy z compose (żeby nie maskowały braku .env).
+for extra in "${EXTRA_IMAGES[@]}"; do
+  if ! docker image inspect "${extra}" >/dev/null 2>&1; then
+    log "pobieram obraz pomocniczy ${extra} (diagnostyka runbooków)"
+    docker pull -q "${extra}" >/dev/null 2>&1 || warn "nie udało się pobrać ${extra} — pomijam"
+  fi
+  if docker image inspect "${extra}" >/dev/null 2>&1; then
+    images=$(printf '%s\n%s' "${images}" "${extra}")
+  fi
+done
+images=$(printf '%s\n' "${images}" | sort -u)
 
 failed=0
 while IFS= read -r img; do

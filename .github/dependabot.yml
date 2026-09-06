@@ -1,0 +1,49 @@
+version: 2
+
+# Dlaczego Dependabot skoro w repo jest renovate.json?
+# Bo Renovate NIE JEST zainstalowany (0 PR-ów od powstania repo — D11-02), a jego instalacja
+# to krok operatora poza repozytorium. Dependabot włącza się samym istnieniem tego pliku,
+# więc do czasu instalacji Renovate to on utrzymuje łańcuch dostaw.
+# Podział jest rozłączny, żeby nie generować podwójnych PR-ów:
+#   - Dependabot: github-actions (przypięte SHA w .github/workflows/*) + npm,
+#   - Renovate:   obrazy Docker (customManagers na deploy/*/.env.example i services/*/Dockerfile),
+#                 czego Dependabot nie umie — jego ekosystem `docker` czyta wyłącznie
+#                 literalne FROM, a u nas FROM to ${NODE_IMAGE}.
+# PO INSTALACJI RENOVATE: usuń z tego pliku wpis `npm` (Renovate ma własną regułę
+# "npm minor/patch" w renovate.json); wpis `github-actions` można zostawić Dependabotowi.
+
+updates:
+  # SHA akcji GitHuba — pilnuje, żeby przypięcie po digeście nie oznaczało wiecznie starych akcji
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '05:00'
+      timezone: Europe/Warsaw
+    labels: [dependencies, ci]
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      github-actions:
+        patterns: ['*']
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '05:30'
+      timezone: Europe/Warsaw
+    open-pull-requests-limit: 5
+    labels: [dependencies]
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      npm-minor-patch:
+        patterns: ['*']
+        update-types: [minor, patch]
+    # majory osobno i świadomie — łapiemy je w oddzielnych PR-ach
+    ignore: []

@@ -20,6 +20,10 @@ coverage/
 *.db-wal
 *.db-shm
 
+# raporty sędziego LLM (tools/eval/judge.mjs) — zawierają pytania użytkowników;
+# domyślnie lądują w $DATA_DIR/exports, wpis chroni przed ręcznym JUDGE_OUT w repo
+tools/eval/judge-report-*.json
+
 # różne
 .DS_Store
 *.log

@@ -1,37 +1,237 @@
 name: CI
 
+# Wszystkie akcje przypięte po SHA commitu (nie po ruchomym tagu) — tag można przesunąć
+# na dowolny kod, digest/SHA nie. Komentarz `# vX.Y.Z` obok SHA jest formatem, który
+# rozumieją i Dependabot (.github/dependabot.yml), i Renovate — podbiją SHA + komentarz.
+
 on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+
+# Domyślnie tylko odczyt; pojedyncze joby podnoszą uprawnienia jawnie.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  # W PR-ach anulujemy nieaktualne przebiegi; na main NIE — każdy commit na main ma mieć
+  # własny, kompletny wynik (to on jest podstawą ochrony gałęzi — D11-07).
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   lint-test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: npm
       - run: npm ci
+
+      # KOLEJNOŚĆ MA ZNACZENIE — nie przestawiaj build za typecheck/test (D11-01).
+      # Dwie NIEZALEŻNE zależności od artefaktów builda, obie zweryfikowane w czystym
+      # checkoutcie (git worktree + npm ci, 2026-09-06):
+      #  1) `exports` pakietu @pomagierkb/shared wskazują wyłącznie na ./dist, więc bez
+      #     builda `tsc --noEmit` w apps/* daje 157 błędów TS2307 "Cannot find module
+      #     '@pomagierkb/shared/*'" — to zabijało CI od 2026-09-01, a kroki `npm test`
+      #     i `npm run build` w ogóle się nie wykonywały (skipped przez 42 przebiegi).
+      #  2) apps/panel-api/test/{actions-runner,e2e-smoke}.test.ts oczekują pliku
+      #     apps/panel-api/dist/jobs/run-job.js; ich własne `npx tsc` emituje go — przy
+      #     pustym dist — pod dist/jobs/jobs/ (tsc zmienia wnioskowany rootDir), więc
+      #     testy przechodzą tylko wtedy, gdy pełny build już się odbył.
+      # Root `npm run build` sam zaczyna od `npm run build -w packages/shared`, więc jeden
+      # krok domyka oba przypadki. Stan po tej kolejności: 103/103 plików testowych zbierane,
+      # 830 testów uruchamianych (wcześniej: 0).
+      - run: npm run build
+
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
-      - run: npm run build
 
+      # Kontrola licencji zależności PRODUKCYJNYCH (D11-08). Bez nowej zależności w repo
+      # i bez `npx` z sieci — czytamy drzewo, które npm już zainstalował.
+      - name: License check (zależności produkcyjne)
+        run: |
+          npm ls --all --omit=dev --long --json > /tmp/npm-ls-prod.json || true
+          cat > /tmp/license-check.mjs <<'CHECK_EOF'
+          import { readFileSync } from 'node:fs';
+
+          // Lista dozwolonych licencji = stan faktyczny drzewa produkcyjnego (2026-09-06),
+          // ograniczony do permisywnych i słabego copyleftu na poziomie pliku (MPL-2.0:
+          // lightningcss — używamy bez modyfikacji, więc obowiązek udostępniania nie powstaje).
+          // Silny copyleft (GPL/AGPL/SSPL/BUSL) świadomie POZA listą — nowa taka zależność
+          // ma zatrzymać CI i wymusić decyzję człowieka.
+          const ALLOWED = new Set([
+            '0BSD', 'Apache-2.0', 'BSD-2-Clause', 'BSD-3-Clause', 'BlueOak-1.0.0',
+            'CC0-1.0', 'ISC', 'MIT', 'MIT-0', 'MPL-2.0', 'Python-2.0', 'Unlicense',
+          ]);
+          // Nasze workspace'y (private, bez pola license) — nie podlegają kontroli.
+          const OURS = /^@pomagierkb\//;
+
+          const tree = JSON.parse(readFileSync(process.argv[2], 'utf8'));
+          const seen = new Map();
+          (function walk(node) {
+            for (const [name, dep] of Object.entries(node.dependencies ?? {})) {
+              if (dep.version) seen.set(`${name}@${dep.version}`, { name, license: dep.license });
+              walk(dep);
+            }
+          })(tree);
+
+          const bad = [];
+          for (const [id, { name, license }] of seen) {
+            if (OURS.test(name)) continue;
+            const raw = typeof license === 'string' ? license : license?.type;
+            // "(MIT OR Apache-2.0)" — wystarczy, że jeden wariant jest dozwolony.
+            const ok = raw
+              ? raw.replace(/[()]/g, '').split(/\s+(?:OR|AND)\s+/).some((l) => ALLOWED.has(l.trim()))
+              : false;
+            if (!ok) bad.push(`${id} → ${raw ?? 'BRAK POLA license'}`);
+          }
+
+          console.log(`Sprawdzono ${seen.size} pakietów produkcyjnych.`);
+          if (bad.length) {
+            console.error('Licencje spoza listy dozwolonych:\n  ' + bad.join('\n  '));
+            console.error('\nDecyzja należy do człowieka: albo usuń zależność, albo dopisz');
+            console.error('licencję do ALLOWED w .github/workflows/ci.yml wraz z uzasadnieniem.');
+            process.exit(1);
+          }
+          console.log('OK — wszystkie licencje na liście dozwolonych.');
+          CHECK_EOF
+          node /tmp/license-check.mjs /tmp/npm-ls-prod.json
+
+  # Build obrazów budowanych U NAS + skan CVE (D11-08). Bez push (brak rejestru — D11-06),
+  # więc zamiast atestacji in-toto zapisujemy SBOM i manifest wydania jako artefakty.
   image-build:
-    # Build-only (bez push) — łapie regresje Dockerfile'i zanim dotkną deployu.
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write # upload SARIF do code scanning (repo publiczne = bezpłatne)
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: panel
+            dockerfile: services/panel/Dockerfile
+          - name: mcp
+            dockerfile: services/mcp/Dockerfile
+    env:
+      IMAGE: kag-${{ matrix.name }}:ci
+      TRIVY_CACHE_DIR: ${{ github.workspace }}/.trivycache
     steps:
-      - uses: actions/checkout@v4
-      - run: docker build -f services/panel/Dockerfile -t kag-panel:ci .
-      - run: docker build -f services/mcp/Dockerfile -t kag-mcp:ci .
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Metadane wydania
+        id: meta
+        run: |
+          echo "built_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
+      - name: Build ${{ env.IMAGE }}
+        env:
+          DOCKERFILE: ${{ matrix.dockerfile }}
+          GIT_SHA: ${{ github.sha }}
+          BUILT_AT: ${{ steps.meta.outputs.built_at }}
+          SOURCE_URL: ${{ github.server_url }}/${{ github.repository }}
+        run: |
+          docker build -f "$DOCKERFILE" \
+            --build-arg "GIT_SHA=$GIT_SHA" \
+            --build-arg "BUILT_AT=$BUILT_AT" \
+            --build-arg "SOURCE_URL=$SOURCE_URL" \
+            -t "$IMAGE" .
+
+      # Etykiety OCI muszą realnie wylądować w obrazie — inaczej D12-14 wraca cichaczem.
+      - name: Weryfikacja etykiet OCI
+        env:
+          GIT_SHA: ${{ github.sha }}
+        run: |
+          rev=$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$IMAGE")
+          base=$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.base.name" }}' "$IMAGE")
+          echo "revision=$rev base=$base"
+          test "$rev" = "$GIT_SHA" || { echo "BŁĄD: etykieta revision != github.sha"; exit 1; }
+          case "$base" in *@sha256:*) ;; *) echo "BŁĄD: baza nieprzypięta digestem: $base"; exit 1 ;; esac
+
+      # 1/3 — raport pełny (HIGH+CRITICAL) do code scanning: rejestr ryzyka, bez blokady.
+      - name: Trivy — SARIF (HIGH+CRITICAL, raportująco)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE }}
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          format: sarif
+          output: trivy-${{ matrix.name }}.sarif
+          exit-code: '0'
+
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@6f5948dfacef28e207b48d0905cf90c03365536d # v3.37.9
+        # Jeśli repo kiedyś stanie się prywatne bez GHAS, upload przestanie działać —
+        # to nie może przewracać builda (blokadą jest krok 3/3 poniżej).
+        continue-on-error: true
+        with:
+          sarif_file: trivy-${{ matrix.name }}.sarif
+          category: trivy-image-${{ matrix.name }}
+
+      # 2/3 — SBOM (CycloneDX) jako artefakt przebiegu: inwentarz warstwy OS + npm.
+      - name: Trivy — SBOM (CycloneDX)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE }}
+          format: cyclonedx
+          output: sbom-${{ matrix.name }}.cdx.json
+          exit-code: '0'
+
+      # 3/3 — BRAMKA. Blokujemy na CRITICAL z dostępną poprawką.
+      # Dlaczego nie HIGH? Dominujący HIGH obrazu (CVE-2026-14456, libssl3/libcrypto3)
+      # jest naprawialny wyłącznie przez przebudowę node:22-alpine po stronie upstreamu —
+      # bramka na HIGH oznaczałaby CI czerwone w nieskończoność z powodu, na który nie mamy
+      # wpływu, czyli powrót dokładnie do patologii D11-01. HIGH trafia do code scanning
+      # (krok 1/3) i do podsumowania — jest widoczny, tylko nie blokuje.
+      # Po podniesieniu bazy do wersji z openssl >= 3.5.8-r0 zaostrz do `CRITICAL,HIGH`.
+      - name: Trivy — bramka (CRITICAL, blokująco)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE }}
+          scanners: vuln
+          severity: CRITICAL
+          ignore-unfixed: true
+          format: table
+          exit-code: '1'
+
+      # Namiastka provenance: co zbudowano, z czego i kiedy. Wchodzi do artefaktów przebiegu,
+      # a docelowo (D12-14 pkt 3) do release.json zapisywanego przy deployu.
+      - name: Manifest wydania
+        if: always()
+        env:
+          GIT_SHA: ${{ github.sha }}
+          BUILT_AT: ${{ steps.meta.outputs.built_at }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          docker image inspect "$IMAGE" \
+            --format '{{ json .Config.Labels }}' > /tmp/labels.json 2>/dev/null || echo '{}' > /tmp/labels.json
+          image_id=$(docker image inspect --format '{{ .Id }}' "$IMAGE" 2>/dev/null || echo unknown)
+          printf '{"image":"%s","imageId":"%s","gitSha":"%s","builtAt":"%s","runUrl":"%s","labels":%s}\n' \
+            "$IMAGE" "$image_id" "$GIT_SHA" "$BUILT_AT" "$RUN_URL" "$(cat /tmp/labels.json)" \
+            > release-${{ matrix.name }}.json
+          cat release-${{ matrix.name }}.json
+
+      - name: Upload SBOM + manifest
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: supply-chain-${{ matrix.name }}
+          path: |
+            sbom-${{ matrix.name }}.cdx.json
+            release-${{ matrix.name }}.json
+            trivy-${{ matrix.name }}.sarif
+          if-no-files-found: warn
+          retention-days: 90
 
   compose-validate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       # walidacja interpolacji obu stacków na .env.example (sekrety przykładowe)
       - run: |
           for STACK in edge kag; do
@@ -44,11 +244,14 @@ jobs:
 
   gitleaks:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write # gitleaks-action komentuje wycieki w PR
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
-      - uses: gitleaks/gitleaks-action@v2
+      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_CONFIG: .gitleaks.toml
