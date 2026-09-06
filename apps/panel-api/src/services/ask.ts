@@ -9,7 +9,12 @@ import {
   type RecordFeedbackResult,
 } from '@pomagierkb/shared/db';
 import { unseal as unsealAesGcm } from '@pomagierkb/shared/crypto';
-import { createLlmClient, withBreaker } from '@pomagierkb/shared/llm';
+import {
+  createLlmClient,
+  recordLlmUsage,
+  withBreaker,
+  type BreakerTransition,
+} from '@pomagierkb/shared/llm';
 import { OpenSpgClient } from '@pomagierkb/shared/openspg';
 import type { AnswerLlm } from '@pomagierkb/shared/answer';
 import { AppError } from '@pomagierkb/shared/errors';
@@ -109,11 +114,22 @@ function llmFingerprint(db: Db): string {
   }
 }
 
+/** Minimalny logger (pino/fastify) — przejścia breakerów i diagnostyka klienta LLM. */
+export interface AskLogger {
+  info(obj: Record<string, unknown>, msg?: string): void;
+  warn(obj: Record<string, unknown>, msg?: string): void;
+}
+
 export interface AskServiceDeps {
   db: Db;
   config: AppConfig;
-  /** Fabryka klienta LLM — wstrzykiwana w testach (default: shared/llm). */
-  makeLlmClient?: (cfg: LlmSettingsShape) => AnswerLlm;
+  /** Log przejść breakerów llm.* (D8-10) — dotąd żyły wyłącznie w audycie. */
+  logger?: AskLogger;
+  /**
+   * Fabryka klienta LLM — wstrzykiwana w testach (default: shared/llm).
+   * `purpose` to etykieta rejestru kosztu ('panel.ask.chat'/'panel.ask.embed').
+   */
+  makeLlmClient?: (cfg: LlmSettingsShape, purpose: string) => AnswerLlm;
   /** Fabryka klienta OpenSPG — wstrzykiwana w testach (null = niedostępny). */
   makeOpenspg?: () => OpenSpgClient | null;
 }
@@ -130,8 +146,46 @@ export interface AskService {
 export function createAskService(deps: AskServiceDeps): AskService {
   const { db, config } = deps;
   const tokenEncKeyB64 = config.tokenEncKey.toString('base64');
+  const log = deps.logger;
+
+  /**
+   * GAP-05: telemetria kosztu wpięta W KLIENCIE, nie tylko w withBreaker.
+   * withBreaker widzi wyłącznie wyniki niosące `usage` (czat), więc embeddingi
+   * zapytań — a to one lecą przy KAŻDYM wyszukiwaniu wektorowym — nie trafiały
+   * do rejestru wcale. `usageReported` z openai-client chroni czat przed
+   * podwójnym policzeniem (klient zgłasza, withBreaker pomija).
+   */
+  const onUsage = (purpose: string) =>
+    (event: {
+      endpoint: 'chat' | 'embeddings';
+      model: string;
+      promptTokens: number | null;
+      completionTokens: number | null;
+    }): void => {
+      recordLlmUsage(db, { ...event, purpose });
+    };
+
+  /** Przejścia breakerów llm.* do pino (audyt zapisuje je niezależnie). */
+  const breakerLogger = (event: BreakerTransition): void => {
+    log?.warn(
+      {
+        breaker: event.name,
+        from: event.from,
+        to: event.to,
+        failureCount: event.failureCount,
+        ...(event.cooldownMs !== undefined ? { cooldownMs: event.cooldownMs } : {}),
+        ...(event.durationMs !== undefined && event.durationMs !== null
+          ? { durationMs: event.durationMs }
+          : {}),
+      },
+      'breaker: zmiana stanu',
+    );
+  };
+
   const makeLlmClient =
-    deps.makeLlmClient ?? ((cfg: LlmSettingsShape) => createLlmClient(cfg));
+    deps.makeLlmClient ??
+    ((cfg: LlmSettingsShape, purpose: string) =>
+      createLlmClient({ ...cfg, ...(log ? { logger: log } : {}), onUsage: onUsage(purpose) }));
   const limiter = new AskRateLimiter();
 
   let llmCache: { fingerprint: string; value: AnswerLlm | null } | null = null;
@@ -150,12 +204,15 @@ export function createAskService(deps: AskServiceDeps): AskService {
     if (chatCfg === null) return null;
     // Brak llm.embeddings → embed na konfiguracji chatu (jak buildToolLlm w mcp).
     const embedCfg = readLlmSetting(db, 'llm.embeddings', tokenEncKeyB64) ?? chatCfg;
-    const chatClient = makeLlmClient(chatCfg);
-    const embedClient = embedCfg === chatCfg ? chatClient : makeLlmClient(embedCfg);
+    const chatClient = makeLlmClient(chatCfg, 'panel.ask.chat');
+    // Ta sama konfiguracja co chat → osobny klient TYLKO po to, żeby embeddingi
+    // miały własną etykietę kosztu (współdzielony klient raportowałby je jako chat).
+    const embedClient = makeLlmClient(embedCfg, 'panel.ask.embed');
     // Breaker jak w buildToolLlm mcp-servera — kokpit widzi realny stan llm.* z ruchu.
+    const breakerOpts = { ...(deps.logger ? { logger: breakerLogger } : {}) };
     return {
-      chat: (req) => withBreaker(db, 'llm.chat', () => chatClient.chat(req)),
-      embed: (texts) => withBreaker(db, 'llm.embeddings', () => embedClient.embed(texts)),
+      chat: (req) => withBreaker(db, 'llm.chat', () => chatClient.chat(req), breakerOpts),
+      embed: (texts) => withBreaker(db, 'llm.embeddings', () => embedClient.embed(texts), breakerOpts),
     };
   }
 

@@ -33,6 +33,8 @@ interface SettingRow {
   is_secret: number;
   updated_at: string;
   updated_by: string | null;
+  /** Jawna nazwa modelu (kolumna z migracji 0060) — patrz extractModelName. */
+  model_name?: string | null;
 }
 
 function assertKnownKey(key: string): asserts key is SettingsKey {
@@ -80,6 +82,18 @@ export interface SetSettingOpts {
   updatedBy?: string | null;
 }
 
+/**
+ * Nazwa modelu z wartości ustawienia (GAP-05). Sekretem w konfiguracji llm.* jest
+ * `apiKey`, a NIE nazwa modelu — ta jest metadaną potrzebną do rozliczenia kosztu
+ * per model i do kolumny answers.model. Trzymamy ją obok, jawnie, żeby dało się ją
+ * odczytać BEZ klucza AES-GCM (dotąd `llm.chat` sealed ⇒ model NULL w 100 % wierszy).
+ */
+export function extractModelName(value: unknown): string | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const model = (value as Record<string, unknown>)['model'];
+  return typeof model === 'string' && model.trim() !== '' ? model.trim() : null;
+}
+
 /** Upsert ustawienia; sekret jest sealowany PRZED zapisem (nigdy plaintext w DB). */
 export function setSetting(db: Db, key: string, value: unknown, opts: SetSettingOpts = {}): void {
   assertKnownKey(key);
@@ -92,11 +106,35 @@ export function setSetting(db: Db, key: string, value: unknown, opts: SetSetting
     valueJson = JSON.stringify(value);
   }
   db.prepare(
-    `INSERT INTO settings (key, value_json, is_secret, updated_at, updated_by)
-     VALUES (?, ?, ?, ?, ?)
+    `INSERT INTO settings (key, value_json, is_secret, updated_at, updated_by, model_name)
+     VALUES (?, ?, ?, ?, ?, ?)
      ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, is_secret = excluded.is_secret,
-       updated_at = excluded.updated_at, updated_by = excluded.updated_by`,
-  ).run(key, valueJson, isSecret ? 1 : 0, nowIso(), opts.updatedBy ?? null);
+       updated_at = excluded.updated_at, updated_by = excluded.updated_by,
+       model_name = excluded.model_name`,
+  ).run(
+    key,
+    valueJson,
+    isSecret ? 1 : 0,
+    nowIso(),
+    opts.updatedBy ?? null,
+    extractModelName(value),
+  );
+}
+
+/**
+ * Nazwa modelu ustawienia BEZ odszyfrowywania sekretu (GAP-05). Zwraca null, gdy
+ * kolumna jeszcze nie istnieje (starsza baza) albo wiersz zapisano przed migracją
+ * 0060 — wtedy uzupełni ją najbliższy PUT /settings/:key.
+ */
+export function getSettingModelName(db: Db, key: string): string | null {
+  try {
+    const row = db.prepare('SELECT model_name FROM settings WHERE key = ?').get(key) as
+      | { model_name: string | null }
+      | undefined;
+    return row?.model_name ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /** Podgląd sekretu bez ujawnienia: 'ab***yz' (za krótkie → '***'). */
@@ -111,6 +149,11 @@ export interface MaskedSetting {
   preview?: string;
   /** Tylko dla ustawień jawnych: pełna wartość. */
   value?: unknown;
+  /**
+   * Nazwa modelu — jawna także dla sekretów (GAP-05): panel i raport kosztu
+   * muszą ją widzieć bez odszyfrowywania klucza API, który zostaje zapieczętowany.
+   */
+  modelName?: string;
   updatedAt?: string;
   updatedBy?: string | null;
 }
@@ -132,8 +175,10 @@ export function maskForApi(db: Db, key: string, opts: { unseal?: UnsealFn } = {}
   assertKnownKey(key);
   const row = db.prepare('SELECT * FROM settings WHERE key = ?').get(key) as SettingRow | undefined;
   if (!row) return { configured: false };
+  const modelName = row.model_name ?? null;
   const base: MaskedSetting = {
     configured: true,
+    ...(modelName !== null ? { modelName } : {}),
     updatedAt: row.updated_at,
     updatedBy: row.updated_by,
   };

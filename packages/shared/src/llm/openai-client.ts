@@ -26,6 +26,18 @@ export interface LlmClientConfig {
   fetch?: typeof globalThis.fetch;
   /** Odstęp między próbami — wstrzykiwane w testach, by nie czekać naprawdę. */
   sleep?: (ms: number) => Promise<void>;
+  /**
+   * Telemetria kosztu (GAP-05): wywoływane po KAŻDYM udanym żądaniu z tokenami.
+   * Gdy podane, chat oznacza wynik `usageReported = true`, żeby withBreaker nie
+   * policzył tego samego wywołania drugi raz. Bez tego callbacku zużycie chatu
+   * i tak trafia do rejestru przez withBreaker (embeddings — tylko tędy).
+   */
+  onUsage?: (event: {
+    endpoint: 'chat' | 'embeddings';
+    model: string;
+    promptTokens: number | null;
+    completionTokens: number | null;
+  }) => void;
 }
 
 export interface ChatRequest {
@@ -40,6 +52,10 @@ export interface ChatResult {
   /** Obiekt sparsowany z odpowiedzi — tylko gdy podano jsonSchema i parse się powiódł. */
   parsed?: Record<string, unknown>;
   usage?: { promptTokens: number; completionTokens: number };
+  /** Model, który wygenerował odpowiedź — do rejestru kosztu i answers.model. */
+  model?: string;
+  /** true = zużycie zapisał już callback onUsage (withBreaker ma je pominąć). */
+  usageReported?: boolean;
 }
 
 export interface LlmClient {
@@ -84,6 +100,24 @@ export function createLlmClient(cfg: LlmClientConfig): LlmClient {
     maxRetries: 0, // retry robimy sami: dokładnie 1 ponowienie, kontrolowany odstęp
     ...(cfg.fetch ? { fetch: cfg.fetch } : {}),
   });
+
+  /** Telemetria kosztu — nigdy nie może wywrócić wywołania LLM. */
+  function reportUsage(
+    endpoint: 'chat' | 'embeddings',
+    promptTokens: number | null | undefined,
+    completionTokens: number | null | undefined,
+  ): void {
+    try {
+      cfg.onUsage?.({
+        endpoint,
+        model,
+        promptTokens: promptTokens ?? null,
+        completionTokens: completionTokens ?? null,
+      });
+    } catch {
+      /* best-effort */
+    }
+  }
 
   /** Jedno ponowienie na błąd przejściowy, z odstępem 500 ms + jitter. */
   async function withRetry<T>(endpoint: string, fn: () => Promise<T>): Promise<T> {
@@ -137,7 +171,7 @@ export function createLlmClient(cfg: LlmClientConfig): LlmClient {
     }
 
     const text = completion.choices[0]?.message?.content ?? '';
-    const result: ChatResult = { text };
+    const result: ChatResult = { text, model };
     if (schema) {
       const parsed = parseJsonLenient(text);
       if (parsed !== undefined) result.parsed = parsed;
@@ -145,6 +179,10 @@ export function createLlmClient(cfg: LlmClientConfig): LlmClient {
     const usage = completion.usage;
     if (usage) {
       result.usage = { promptTokens: usage.prompt_tokens, completionTokens: usage.completion_tokens };
+      if (cfg.onUsage) {
+        reportUsage('chat', usage.prompt_tokens, usage.completion_tokens);
+        result.usageReported = true;
+      }
     }
     logger?.info(
       {
@@ -176,6 +214,7 @@ export function createLlmClient(cfg: LlmClientConfig): LlmClient {
       if (!v) throw new UpstreamError('llm', 'embeddings', undefined, `brak wektora dla elementu ${i}`);
       return v;
     });
+    reportUsage('embeddings', res.usage?.prompt_tokens ?? null, null);
     logger?.info(
       { model, ms: Date.now() - startedAt, promptTokens: res.usage?.prompt_tokens ?? null, count: vectors.length },
       'llm: embed zakończony',

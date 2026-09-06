@@ -70,7 +70,7 @@ describe('status cockpit', () => {
 
     const ids = (data.components as { id: string }[]).map((c) => c.id);
     expect(ids.sort()).toEqual(
-      ['actions', 'backup', 'breakers', 'cert', 'db', 'disk', 'gaps', 'inbox', 'llm', 'mcp', 'openspg', 'stirling', 'tika'].sort(),
+      ['actions', 'backup', 'backup-verify', 'breakers', 'cert', 'db', 'disk', 'gaps', 'inbox', 'llm', 'mcp', 'openspg', 'stirling', 'tika'].sort(),
     );
     for (const c of data.components as { label: string; status: string; latencyMs: number; detail: string }[]) {
       expect(c.label.length).toBeGreaterThan(0);
@@ -144,5 +144,62 @@ describe('status cockpit', () => {
     expect(byId['llm']).toBe('ok');
     expect(byId['breakers']).toBe('ok');
     expect(status.json().data.overall).toBe('ok');
+  });
+
+  it('D10-07: kolejka pracy (inbox/luki/akcje w toku) NIE obniża overall', async () => {
+    ctx.db
+      .prepare(
+        `INSERT INTO drafts (id, namespace, status, title, content_md, content_hash, content_length,
+           source_type, created_at, updated_at)
+         VALUES ('draft_test_1', NULL, 'pending', 'T', 'treść', 'h1', 5, 'text', ?, ?)`,
+      )
+      .run(nowIso(), nowIso());
+    ctx.db
+      .prepare(
+        `INSERT INTO learning_gaps (id, question, normalized_question, source, status, created_at)
+         VALUES ('gap_test_1', 'pytanie?', 'pytanie', 'panel', 'open', ?)`,
+      )
+      .run(nowIso());
+    ctx.db
+      .prepare(
+        `INSERT INTO actions (id, type, resource, status, log_path, started_at)
+         VALUES ('act_test_1', 'noop', 'test:1', 'running', '/dev/null', ?)`,
+      )
+      .run(nowIso());
+
+    // Cockpit ma cache 10 s — reset breakera unieważnia go (jedyna ścieżka w API).
+    await ctx.app.inject({ method: 'POST', url: '/api/v1/status/breakers/llm.chat/reset', headers: as('admin') });
+    const res = await ctx.app.inject({ method: 'GET', url: '/api/v1/status', headers: as('viewer') });
+    const data = res.json().data as {
+      overall: string;
+      workload: string;
+      components: { id: string; status: string; kind?: string; pendingDrafts?: number; openGaps?: number }[];
+    };
+    const byId = Object.fromEntries(data.components.map((c) => [c.id, c]));
+    expect(byId['inbox']?.kind).toBe('work');
+    expect(byId['gaps']?.kind).toBe('work');
+    expect(byId['inbox']?.pendingDrafts).toBe(1);
+    expect(byId['gaps']?.openGaps).toBe(1);
+    // Szkic do recenzji i otwarta luka to normalna praca — nie ostrzeżenie techniczne.
+    expect(byId['inbox']?.status).toBe('ok');
+    expect(byId['gaps']?.status).toBe('ok');
+    // Akcja w toku też nie żółci kokpitu (build KB trwa kwadranse).
+    expect(byId['actions']?.status).toBe('ok');
+    expect(data.overall).toBe('ok');
+    expect(data.workload).toBe('ok');
+  });
+
+  it('D10-07: akcja zakończona błędem JEST ostrzeżeniem zdrowia', async () => {
+    ctx.db
+      .prepare(
+        `INSERT INTO actions (id, type, resource, status, log_path, started_at, finished_at, exit_code)
+         VALUES ('act_test_2', 'noop', 'test:2', 'error', '/dev/null', ?, ?, 1)`,
+      )
+      .run(nowIso(), nowIso());
+    await ctx.app.inject({ method: 'POST', url: '/api/v1/status/breakers/llm.chat/reset', headers: as('admin') });
+    const res = await ctx.app.inject({ method: 'GET', url: '/api/v1/status', headers: as('viewer') });
+    const data = res.json().data as { overall: string; components: { id: string; status: string }[] };
+    expect(data.components.find((c) => c.id === 'actions')?.status).toBe('warn');
+    expect(data.overall).toBe('warn');
   });
 });

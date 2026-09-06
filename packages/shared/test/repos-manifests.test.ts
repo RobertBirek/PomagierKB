@@ -91,4 +91,28 @@ describe('repos/manifests', () => {
     expect(latest?.verdict).toBe('OK');
     expect(JSON.parse(latest?.checks_json ?? '[]')[0].ok).toBe(true);
   });
+
+  // ── D10-09: raport jakości odpowiedzi nie może przesłonić quality gate ────
+  it('quality_reports: rodzaj raportu rozdziela strumienie gate i answers', () => {
+    const db = testDb();
+    saveQualityReport(db, 'Ns', 1, 'OK', [{ id: 'export_integrity', ok: true }], 'gate');
+    // Nowszy raport jakości ODPOWIEDZI dla tej samej przestrzeni (run_id NULL).
+    saveQualityReport(db, 'Ns', null, 'WARN', [{ id: 'answer_quality_week' }], 'answers');
+
+    const gate = latestQualityReport(db, 'Ns');
+    expect(gate?.verdict).toBe('OK'); // domyślnie 'gate' — werdykt builda
+    expect(gate?.kind).toBe('gate');
+    expect(latestQualityReport(db, 'Ns', 'answers')?.verdict).toBe('WARN');
+
+    // '__all__' należy wyłącznie do raportów odpowiedzi — domyślny rodzaj też.
+    saveQualityReport(db, '__all__', null, 'OK', [{ id: 'answer_quality_week' }], 'answers');
+    expect(latestQualityReport(db, '__all__')?.kind).toBe('answers');
+  });
+
+  it('quality_reports: domyślny rodzaj zapisu to gate (stare wywołania bez zmian)', () => {
+    const db = testDb();
+    saveQualityReport(db, 'Ns', 7, 'FAIL', []);
+    expect(latestQualityReport(db, 'Ns')?.kind).toBe('gate');
+    expect(latestQualityReport(db, 'Ns', 'answers')).toBeNull();
+  });
 });

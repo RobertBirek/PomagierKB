@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { execSync } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -21,8 +21,15 @@ import { startMockOidc, performLogin, type MockOidc } from './helpers/oidc-mock.
  */
 
 const panelApiDir = dirname(dirname(fileURLToPath(import.meta.url)));
-const jobEntry = join(panelApiDir, 'dist', 'jobs', 'run-job.js');
 
+// Joby kompilowane do WŁASNEGO katalogu (mkdtemp pod apps/panel-api/dist/,
+// gitignore) zamiast do wspólnego dist/jobs: run-job.ts wciąga przez dynamiczne
+// importy moduły spoza src/jobs, więc bez jawnego --rootDir tsc emitował
+// <outDir>/jobs/... i test przechodził tylko dzięki artefaktom z wcześniejszego
+// builda. Katalog musi zostać w drzewie repo — dziecko rozwiązuje
+// `@pomagierkb/shared` przez node_modules w górę od swojego pliku.
+let buildDir: string;
+let jobEntry: string;
 let mock: MockOidc;
 let app: FastifyInstance;
 let db: Db;
@@ -63,13 +70,16 @@ async function readSseUntilEnd(url: string, timeoutMs = 8_000): Promise<string> 
 }
 
 beforeAll(async () => {
-  // Joby jak w produkcji: skompilowane dziecko node dist/jobs/run-job.js.
+  // Joby jak w produkcji: skompilowane dziecko node <build>/jobs/run-job.js.
+  mkdirSync(join(panelApiDir, 'dist'), { recursive: true });
+  buildDir = mkdtempSync(join(panelApiDir, 'dist', 'test-jobs-'));
   execSync(
     'npx tsc src/jobs/job-types.ts src/jobs/noop.ts src/jobs/run-job.ts ' +
-      '--outDir dist/jobs --module nodenext --moduleResolution nodenext ' +
+      `--rootDir src --outDir "${buildDir}" --module nodenext --moduleResolution nodenext ` +
       '--target es2023 --skipLibCheck --noCheck',
     { cwd: panelApiDir, stdio: 'pipe' },
   );
+  jobEntry = join(buildDir, 'jobs', 'run-job.js');
   expect(existsSync(jobEntry)).toBe(true);
 
   mock = await startMockOidc();
@@ -96,6 +106,7 @@ afterAll(async () => {
   db.close();
   await mock.close();
   rmSync(dataDir, { recursive: true, force: true });
+  rmSync(buildDir, { recursive: true, force: true });
 });
 
 describe('smoke E2E: pełny przepływ panelu', () => {

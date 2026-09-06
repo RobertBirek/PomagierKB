@@ -132,4 +132,61 @@ describe('withBreaker', () => {
   it('resetBreaker zwraca false dla nieznanej nazwy', () => {
     expect(resetBreaker(db, 'nie.istnieje')).toBe(false);
   });
+
+  // ── D10-05: ślad incydentu przeżywa auto-recovery ────────────────────────
+  describe('audyt i log przejść stanu', () => {
+    function auditRows(): { action: string; resource_id: string | null; metadata_json: string | null }[] {
+      return db
+        .prepare("SELECT action, resource_id, metadata_json FROM audit WHERE action LIKE 'breaker.%' ORDER BY seq")
+        .all() as { action: string; resource_id: string | null; metadata_json: string | null }[];
+    }
+
+    it('cykl closed→open→half_open→closed zostawia komplet wpisów audytu', async () => {
+      await openBreaker();
+      advanceTo(60_001);
+      await withBreaker(db, NAME, () => Promise.resolve('ok'), opts);
+      expect(state().state).toBe('closed');
+
+      const actions = auditRows().map((r) => r.action);
+      expect(actions).toEqual(['breaker.open', 'breaker.half_open', 'breaker.close']);
+      expect(auditRows().every((r) => r.resource_id === NAME)).toBe(true);
+
+      const open = JSON.parse(auditRows()[0]!.metadata_json ?? '{}') as Record<string, unknown>;
+      expect(open['reason']).toBe('upstream padł');
+      expect(open['failureCount']).toBe(3);
+      expect(open['cooldownMs']).toBe(60_000);
+      const close = JSON.parse(auditRows()[2]!.metadata_json ?? '{}') as Record<string, unknown>;
+      expect(close['durationMs']).toBe(60_001); // incydent trwał tyle, ile cooldown
+    });
+
+    it('zwykły sukces przy zamkniętym breakerze NIE generuje zdarzeń', async () => {
+      await withBreaker(db, NAME, () => Promise.resolve('ok'), opts);
+      await withBreaker(db, NAME, () => Promise.resolve('ok'), opts);
+      expect(auditRows()).toEqual([]);
+    });
+
+    it('porażki poniżej progu nie generują zdarzeń (dopiero otwarcie)', async () => {
+      await expect(withBreaker(db, NAME, failing, opts)).rejects.toThrow();
+      await expect(withBreaker(db, NAME, failing, opts)).rejects.toThrow();
+      expect(auditRows()).toEqual([]);
+    });
+
+    it('logger dostaje każde przejście, a jego wyjątek nie psuje auto-recovery', async () => {
+      const seen: string[] = [];
+      const noisy = {
+        ...opts,
+        logger: (e: { from: string; to: string }) => {
+          seen.push(`${e.from}->${e.to}`);
+          throw new Error('logger padł');
+        },
+      };
+      for (let i = 0; i < 3; i++) {
+        await expect(withBreaker(db, NAME, failing, noisy)).rejects.toThrow('upstream padł');
+      }
+      advanceTo(60_001);
+      await expect(withBreaker(db, NAME, () => Promise.resolve('ok'), noisy)).resolves.toBe('ok');
+      expect(seen).toEqual(['closed->open', 'open->half_open', 'half_open->closed']);
+      expect(state().state).toBe('closed');
+    });
+  });
 });

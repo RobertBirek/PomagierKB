@@ -23,6 +23,13 @@ export interface AnswerRow {
   user_id: string | null;
   took_ms: number | null;
   created_at: string;
+  /**
+   * Treść odpowiedzi przycięta do ANSWER_TEXT_MAX (D8-08). NULL dla odmów
+   * (no_answer) i dla wierszy zanonimizowanych przez retencję.
+   */
+  answer_text: string | null;
+  /** 1 = odpowiedź wydana z cache (bez wywołania chat_llm) — D8-11. */
+  from_cache: number;
 }
 
 export interface FeedbackRow {
@@ -46,14 +53,36 @@ export interface AnswerInput {
   apiKeyId?: string | null;
   userId?: string | null;
   tookMs?: number | null;
+  /** Treść odpowiedzi (D8-08) — przycinana do ANSWER_TEXT_MAX przed zapisem. */
+  answerText?: string | null;
+  /** true = odpowiedź wydana z cache, bez wywołania chat_llm (D8-11). */
+  fromCache?: boolean;
+}
+
+/**
+ * Górny limit zapisywanej treści odpowiedzi. Kompromis: sędzia LLM
+ * (tools/eval/judge.mjs) potrzebuje CAŁEJ odpowiedzi, żeby ocenić groundedness,
+ * a tabela `answers` nie może rosnąć bez ograniczeń w bazie współdzielonej
+ * z gorącą ścieżką (jeden plik SQLite, WAL). 4000 znaków ≈ 1000 tokenów —
+ * mieści typową odpowiedź z cytowaniami w całości.
+ */
+export const ANSWER_TEXT_MAX = 4000;
+
+/** Przycięcie treści do limitu; pusty string traktujemy jak brak treści. */
+function clipAnswerText(text: string | null | undefined): string | null {
+  if (typeof text !== 'string') return null;
+  const trimmed = text.trim();
+  if (trimmed === '') return null;
+  return trimmed.length > ANSWER_TEXT_MAX ? `${trimmed.slice(0, ANSWER_TEXT_MAX)}…` : trimmed;
 }
 
 export function recordAnswer(db: Db, input: AnswerInput): AnswerRow {
   const id = `ans_${ymd()}_${hex8()}`;
   db.prepare(
     `INSERT INTO answers (id, question, namespaces_json, citations_json, confidence, model,
-       degraded, no_answer, source, api_key_id, user_id, took_ms, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       degraded, no_answer, source, api_key_id, user_id, took_ms, created_at,
+       answer_text, from_cache)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id,
     input.question,
@@ -68,6 +97,8 @@ export function recordAnswer(db: Db, input: AnswerInput): AnswerRow {
     input.userId ?? null,
     input.tookMs ?? null,
     nowIso(),
+    clipAnswerText(input.answerText),
+    input.fromCache === true ? 1 : 0,
   );
   return getAnswerOrThrow(db, id);
 }

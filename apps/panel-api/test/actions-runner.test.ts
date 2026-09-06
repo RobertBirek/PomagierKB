@@ -1,5 +1,5 @@
 import { execSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,14 +11,25 @@ import { sharedMigrationsDir } from '../src/lib/migrations.js';
 
 /**
  * Testy E2E runnera akcji na jobie noop: prawdziwy spawn procesu potomnego
- * (node dist/jobs/run-job.js), wspólny plik SQLite w katalogu tymczasowym.
- * Dist jobów kompilowany w beforeAll bezpośrednio z src/jobs (tsc --noCheck,
+ * (node <build>/jobs/run-job.js), wspólny plik SQLite w katalogu tymczasowym.
+ * Joby kompilowane w beforeAll bezpośrednio z src/jobs (tsc --noCheck,
  * niezależnie od stanu reszty workspace'u).
+ *
+ * Kompilacja idzie do WŁASNEGO katalogu (mkdtemp pod apps/panel-api/dist/,
+ * gitignore), nie do współdzielonego dist/jobs: run-job.ts wciąga przez
+ * dynamiczne importy jobów moduły z src/services i src/pipeline, więc tsc
+ * wnioskuje rootDir=src i emituje <outDir>/jobs/run-job.js. Przy wspólnym
+ * `dist/jobs` dawało to `dist/jobs/jobs/run-job.js`, a test przechodził
+ * WYŁĄCZNIE dzięki artefaktom z wcześniejszego builda. rootDir podajemy teraz
+ * jawnie, więc układ wyjścia nie zależy od zbioru plików wejściowych.
+ * Katalog musi leżeć w drzewie repo — inaczej dziecko nie rozwiąże
+ * `@pomagierkb/shared` (node_modules szuka się w górę od pliku).
  */
 
 const panelApiDir = fileURLToPath(new URL('..', import.meta.url));
-const jobEntry = join(panelApiDir, 'dist', 'jobs', 'run-job.js');
 
+let buildDir: string;
+let jobEntry: string;
 let dataDir: string;
 let db: Db;
 
@@ -46,13 +57,15 @@ function pidAlive(pid: number): boolean {
 }
 
 beforeAll(() => {
-  // Kompilacja WYŁĄCZNIE poddrzewa jobs do dist/jobs (układ produkcyjny).
+  mkdirSync(join(panelApiDir, 'dist'), { recursive: true });
+  buildDir = mkdtempSync(join(panelApiDir, 'dist', 'test-jobs-'));
   execSync(
     'npx tsc src/jobs/job-types.ts src/jobs/noop.ts src/jobs/run-job.ts ' +
-      '--outDir dist/jobs --module nodenext --moduleResolution nodenext ' +
+      `--rootDir src --outDir "${buildDir}" --module nodenext --moduleResolution nodenext ` +
       '--target es2023 --skipLibCheck --noCheck',
     { cwd: panelApiDir, stdio: 'pipe' },
   );
+  jobEntry = join(buildDir, 'jobs', 'run-job.js');
   expect(existsSync(jobEntry)).toBe(true);
 
   dataDir = mkdtempSync(join(tmpdir(), 'pomagierkb-runner-'));
@@ -63,6 +76,7 @@ beforeAll(() => {
 afterAll(() => {
   db.close();
   rmSync(dataDir, { recursive: true, force: true });
+  rmSync(buildDir, { recursive: true, force: true });
 });
 
 describe('actions runner + job noop (E2E)', () => {

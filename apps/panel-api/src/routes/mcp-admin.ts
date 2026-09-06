@@ -25,6 +25,10 @@ import {
  * Trasy administracji MCP: profile (mutacje: admin), klucze API (operator/admin,
  * właściciel dla rotate/revoke), snippety konfiguracyjne i health mcp-servera.
  * Logika w services/mcp-admin.ts + repo shared (mcpProfiles/apiKeys).
+ *
+ * KAŻDA mutacja odbierająca lub zawężająca dostęp (rotate/revoke klucza,
+ * update/delete profilu) domyka okno cache'u LRU mcp-servera best-effort przez
+ * invalidateMcpCache — inaczej zmiana obowiązuje dopiero po 60 s (audyt D9-02).
  */
 export default async function mcpAdminRoutes(app: FastifyInstance): Promise<void> {
   const successRef = { $ref: 'https://pomagierkb/schemas/envelope-success.json#' };
@@ -122,6 +126,9 @@ export default async function mcpAdminRoutes(app: FastifyInstance): Promise<void
       const row = updateProfile(app.db, req.params.id, req.body);
       const view = toProfileView(row);
       reply.auditContext = { resourceType: 'mcp_profile', resourceId: row.id, after: view };
+      // Profil siedzi w tym samym cache LRU mcp-servera co klucz: zwężenie
+      // namespace'ów/narzędzi albo enabled=false obowiązywałoby dopiero po 60 s.
+      await invalidateMcpCache(app.config, { logger: req.log });
       return { ok: true as const, data: view };
     },
   );
@@ -135,6 +142,7 @@ export default async function mcpAdminRoutes(app: FastifyInstance): Promise<void
     async (req, reply) => {
       deleteProfile(app.db, req.params.id); // 409 przy aktywnych kluczach (repo)
       reply.auditContext = { resourceType: 'mcp_profile', resourceId: req.params.id };
+      await invalidateMcpCache(app.config, { logger: req.log });
       return { ok: true as const, data: { deleted: true } };
     },
   );

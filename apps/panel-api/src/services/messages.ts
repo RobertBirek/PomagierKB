@@ -46,13 +46,22 @@ export const INTAKE_STAGES = [
   'failed',
 ] as const;
 
-/** Kody błędów intake (przyczyny status='failed') — patrz pipeline/extract.ts. */
+/**
+ * Kody błędów intake (przyczyny status='failed') — patrz pipeline/extract.ts
+ * (ExtractError), pipeline/intake-worker.ts (errorCode: AppError → kod, reszta →
+ * 'internal') oraz services/intakes.ts (requeueStaleIntakes → 'interrupted').
+ */
 export const INTAKE_ERROR_CODES = [
   'extraction_below_quality_threshold',
   'invalid_encoding',
   'fetch_blocked',
   'fetch_failed',
   'fetch_too_large',
+  // Wyjątek spoza ExtractError/AppError (errorCode() → 'internal'); wpis w MESSAGES
+  // jest wspólny z kodem błędu AppError o tej samej nazwie.
+  'internal',
+  // Worker padł/został ubity w trakcie etapu, a próby się wyczerpały.
+  'interrupted',
 ] as const;
 
 /** Statusy draftów w Inboxie (shared repos/drafts.ts — DraftStatus). */
@@ -87,6 +96,9 @@ export const QUALITY_CHECK_CODES = [
   'duplicate_source_urls',
   'live_search_sanity',
   'dirty_flag',
+  'graph_stale_nodes',
+  'no_literal_newlines',
+  'superseded_documents',
 ] as const;
 
 /** Werdykty quality gate (repo quality_reports). */
@@ -155,6 +167,12 @@ export const MESSAGES: Record<string, HumanMessage> = {
     label: 'nieczytelne kodowanie pliku',
     description: 'Plik tekstowy nie jest poprawnym UTF-8 — nie da się bezpiecznie odczytać treści.',
     action: 'Zapisz plik w kodowaniu UTF-8 (bez BOM) i wyślij ponownie albo wklej treść ręcznie.',
+  },
+  interrupted: {
+    label: 'przetwarzanie przerwane',
+    description:
+      'Przetwarzanie zostało przerwane w trakcie (restart panelu albo zabity proces), a limit ponowień się wyczerpał.',
+    action: 'Dodaj treść jeszcze raz — kolejka podejmie ją od nowa.',
   },
 
   // ── statusy draftów (Inbox) ─────────────────────────────────────────────
@@ -293,6 +311,24 @@ export const MESSAGES: Record<string, HumanMessage> = {
     label: 'zmiany po ostatnim buildzie',
     description: 'Po ostatnim buildzie zatwierdzono lub wycofano szkice — graf nie odzwierciedla stanu inboxu.',
     action: 'Uruchom build bazy, aby zsynchronizować graf.',
+  },
+  graph_stale_nodes: {
+    label: 'wycofane węzły wciąż w grafie',
+    description:
+      'W grafie zostały węzły spoza aktualnego stanu bazy (builder umie tylko nadpisywać). Czekają na nadpisanie nagrobkiem przy najbliższym buildzie.',
+    action: 'Uruchom build bazy — nagrobki wyczyszczą treść wycofanych węzłów.',
+  },
+  no_literal_newlines: {
+    label: 'znaki nowej linii w polach indeksowanych',
+    description:
+      'Pole indeksowane zawiera znak nowej linii — builder zapisuje je dosłownie, co rozbija tokenizację indeksu tekstowego i psuje wyszukiwanie.',
+    action: 'Uruchom build ponownie; jeśli problem wraca, zgłoś błąd eksportera.',
+  },
+  superseded_documents: {
+    label: 'dokumenty zastąpione nowszą wersją',
+    description:
+      'Reguła precedencji wycofała starsze wersje dokumentów (jawne „supersedes" albo ten sam adres źródłowy) — nie trafią do grafu.',
+    action: 'Sprawdź listę i odrzuć zbędne szkice w Inboxie, aby nie wracały przy kolejnych buildach.',
   },
 
   // ── werdykty quality gate ───────────────────────────────────────────────

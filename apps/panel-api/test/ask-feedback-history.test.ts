@@ -197,3 +197,61 @@ describe('limit ask 10/min per sesja', () => {
     expect(other.statusCode).toBe(503);
   });
 });
+
+describe('DELETE /api/v1/ask/history — użytkownik kasuje SWOJĄ historię', () => {
+  it('kasuje własne odpowiedzi z feedbackiem i nie rusza cudzych', async () => {
+    const mine = seedAnswer('u-viewer', 'Do skasowania?');
+    const other = seedAnswer('u-operator', 'Cudze zostaje?');
+    await app.inject({
+      method: 'POST',
+      url: `/api/v1/ask/${mine}/feedback`,
+      headers: as('viewer'),
+      payload: { verdict: 'up' },
+    });
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/api/v1/ask/history',
+      headers: as('viewer'),
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.ok).toBe(true);
+    expect(body.data.answers).toBeGreaterThanOrEqual(1);
+    // feedback usuwany razem z odpowiedzią — klucz obcy wymusza kolejność
+    expect(body.data.feedback).toBeGreaterThanOrEqual(1);
+
+    const mineLeft = db
+      .prepare("SELECT COUNT(*) c FROM answers WHERE user_id = 'u-viewer'")
+      .get() as { c: number };
+    expect(mineLeft.c).toBe(0);
+    const otherLeft = db.prepare('SELECT COUNT(*) c FROM answers WHERE id = ?').get(other) as {
+      c: number;
+    };
+    expect(otherLeft.c).toBe(1);
+  });
+
+  it('zapisuje ślad w audycie', async () => {
+    seedAnswer('u-viewer', 'Kolejne do skasowania?');
+    const before = (
+      db.prepare("SELECT COUNT(*) c FROM audit WHERE action = 'retention.purge_user'").get() as {
+        c: number;
+      }
+    ).c;
+
+    await app.inject({ method: 'DELETE', url: '/api/v1/ask/history', headers: as('viewer') });
+
+    const after = (
+      db.prepare("SELECT COUNT(*) c FROM audit WHERE action = 'retention.purge_user'").get() as {
+        c: number;
+      }
+    ).c;
+    expect(after).toBe(before + 1);
+  });
+
+  it('odrzuca żądanie bez sesji', async () => {
+    const res = await app.inject({ method: 'DELETE', url: '/api/v1/ask/history' });
+    expect(res.statusCode).toBe(401);
+  });
+});

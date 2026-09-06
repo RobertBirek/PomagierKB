@@ -1,10 +1,21 @@
 #!/usr/bin/env node
-// E2E smoke nowego UI (produkcja, akadmin). Twarde asercje kluczowych elementów.
+// E2E smoke nowego UI. Twarde asercje kluczowych elementów.
+// Konto: DEDYKOWANE konto testowe (E2E_USER/E2E_PASSWORD albo /etc/kag/e2e.env)
+// — nigdy superuser Authentika; szczegóły i konfiguracja w tools/ux-audit/README.md.
+// Adres: E2E_BASE_URL (domyślnie produkcja).
 import { chromium } from 'playwright';
-import { readFileSync } from 'node:fs';
+import { baseUrl, loadCredentials, login } from './lib/session.mjs';
 
-const BASE = 'https://kag.ilovelighting.sanok.pl';
-const pass = readFileSync('deploy/edge/.env','utf8').match(/^AUTHENTIK_BOOTSTRAP_PASSWORD=(.+)$/m)[1].trim();
+const BASE = baseUrl();
+// Fail-closed PRZED uruchomieniem przeglądarki: brak poświadczeń konta E2E
+// kończy bieg czytelnym komunikatem, nigdy fallbackiem na inne konto.
+let creds;
+try {
+  creds = loadCredentials();
+} catch (err) {
+  console.error(`[konfiguracja] ${err.message}`);
+  process.exit(2);
+}
 const browser = await chromium.launch();
 const page = await (await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: 'pl-PL' })).newPage();
 const results = [];
@@ -13,14 +24,14 @@ const check = async (name, fn) => {
   catch (e) { results.push(['FAIL', `${name}: ${String(e.message).slice(0,120)}`]); }
 };
 
-// login
-await page.goto(`${BASE}/auth/login`, { waitUntil: 'domcontentloaded' });
-await page.waitForURL(/auth\.ilovelighting/, { timeout: 20000 });
-const uid = page.locator('input[name="uidField"]'); await uid.waitFor(); await uid.fill('akadmin');
-await page.locator('button[type="submit"]').first().click();
-const pw = page.locator('input[name="password"]:visible').first(); await pw.waitFor(); await page.waitForTimeout(400);
-await pw.click(); await pw.pressSequentially(pass, { delay: 15 }); await pw.press('Enter');
-await page.waitForURL(`${BASE}/**`, { timeout: 30000 });
+try {
+  await login(page, BASE, creds);
+  console.log(`[login] OK (${creds.user} @ ${BASE})`);
+} catch (err) {
+  await browser.close();
+  console.error(`[login] ${err.message}`);
+  process.exit(2);
+}
 
 await check('redirect roli: / → /overview (admin)', async () => {
   await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });

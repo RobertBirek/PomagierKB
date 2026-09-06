@@ -62,6 +62,7 @@ describe('mcp-admin', () => {
   });
 
   it('PATCH i DELETE profilu (admin); DELETE z aktywnym kluczem → 409', async () => {
+    fetchMock.mockClear();
     const patched = await ctx.app.inject({
       method: 'PATCH',
       url: '/api/v1/mcp/profiles/lighting-read',
@@ -70,6 +71,10 @@ describe('mcp-admin', () => {
     });
     expect(patched.statusCode).toBe(200);
     expect(patched.json().data.name).toBe('Zmieniona nazwa');
+    // Zmiana profilu MUSI domknąć okno cache'u LRU mcp-servera (60 s) — inaczej
+    // zwężenie namespace'ów/narzędzi propaguje z opóźnieniem (audyt D9-02).
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('http://kag-mcp.test:8091/invalidate');
 
     // Klucz aktywny na profilu blokuje usunięcie.
     const key = await ctx.app.inject({
@@ -85,6 +90,26 @@ describe('mcp-admin', () => {
       headers: as('admin'),
     });
     expect(del.statusCode).toBe(409);
+  });
+
+  it('DELETE profilu bez kluczy unieważnia cache mcp-servera', async () => {
+    const created = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/v1/mcp/profiles',
+      headers: as('admin'),
+      payload: { id: 'do-usuniecia', name: 'Do usunięcia', tools: ['kb_search'] },
+    });
+    expect(created.statusCode).toBe(201);
+
+    fetchMock.mockClear();
+    const del = await ctx.app.inject({
+      method: 'DELETE',
+      url: '/api/v1/mcp/profiles/do-usuniecia',
+      headers: as('admin'),
+    });
+    expect(del.statusCode).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('http://kag-mcp.test:8091/invalidate');
   });
 
   // ── Klucze ────────────────────────────────────────────────────────────────

@@ -10,6 +10,7 @@ import {
   submitAskFeedback,
 } from '../services/ask.js';
 import { humanize } from '../services/messages.js';
+import { purgeUserAnswers } from '../services/retention.js';
 
 /**
  * Trasy /api/v1/ask — panelowe pytania do bazy wiedzy (pipeline WSPÓLNY z MCP
@@ -18,6 +19,7 @@ import { humanize } from '../services/messages.js';
  *                                  zapis answers z source 'panel' + user_id;
  *                                  limit 'mutation' + 10/min per sesja (koszt LLM);
  * - GET  /ask/history            — viewer; ostatnie 50 odpowiedzi TEGO użytkownika;
+ * - DELETE /ask/history          — viewer; kasuje SWOJĄ historię (answers + feedback);
  * - POST /ask/:answerId/feedback — viewer; up/down (+komentarz); down → luka wiedzy.
  * Logika w services/ask.ts; ścieżki BEZ prefiksu /api/v1 (dodaje rejestracja).
  */
@@ -38,7 +40,9 @@ interface FeedbackBody {
 }
 
 export default async function askRoutes(app: FastifyInstance): Promise<void> {
-  const service = createAskService({ db: app.db, config: app.config });
+  // logger: przejścia breakerów llm.* i telemetria klienta LLM trafiają do pino
+  // (dotąd ślad żył wyłącznie w tabeli audit) — D8-10.
+  const service = createAskService({ db: app.db, config: app.config, logger: app.log });
 
   // ── POST /ask — SSE (status → result), koperta błędu tylko PRZED hijackiem ─
   app.post<{ Body: AskBody }>(
@@ -98,6 +102,9 @@ export default async function askRoutes(app: FastifyInstance): Promise<void> {
           confidence: result.confidence,
           noAnswer: result.noAnswer,
           degraded: result.degraded,
+          // D8-03/D8-10: sam bool nie mówi, CO jest zdegradowane. Pole DODANE obok
+          // `degraded` — kontrakt boola dla istniejących klientów bez zmian.
+          degradedReasons: result.degradedReasons,
           answerId: result.answerId,
         });
       } catch (err) {
@@ -121,6 +128,33 @@ export default async function askRoutes(app: FastifyInstance): Promise<void> {
     async (req) => {
       const items = listAskHistory(app.db, req.user!.id, 50);
       return { ok: true as const, data: { items } };
+    },
+  );
+
+  // ── DELETE /ask/history — użytkownik kasuje SWOJĄ historię pytań ──────────
+  // Prawo do usunięcia własnych danych bez pośrednictwa administratora (D14-03).
+  // Kasuje `answers` tego użytkownika razem z powiązanym `feedback` (klucz obcy
+  // wymusza kolejność — robi to purgeUserAnswers w jednej transakcji IMMEDIATE).
+  // Luki wiedzy (`learning_gaps`) ZOSTAJĄ: powstały z pytania, ale są wiedzą o brakach
+  // w bazie, nie danymi pytającego — i nie niosą jego identyfikatora.
+  app.delete(
+    '/ask/history',
+    {
+      config: {
+        rbac: 'viewer',
+        audit: 'answer.purge_history',
+        csrf: true,
+        rateLimitGroup: 'mutation',
+      },
+      schema: { response: { 200: successRef, '4xx': errorRef, '5xx': errorRef } },
+    },
+    async (req, reply) => {
+      // purgeUserAnswers sam dopisuje `retention.purge_user`; hook tras dokłada
+      // wpis `answer.purge_history` z perspektywy trasy — oba są zamierzone:
+      // pierwszy opisuje operację na danych, drugi żądanie użytkownika.
+      const counts = purgeUserAnswers(app.db, req.user!.id);
+      reply.auditContext = { resourceType: 'user', resourceId: req.user!.id, after: counts };
+      return { ok: true as const, data: counts };
     },
   );
 

@@ -244,6 +244,18 @@ export function findActiveBuildJobs(db: Db, namespace: string): BuildJobRow[] {
 
 export type QualityVerdict = 'OK' | 'WARN' | 'FAIL';
 
+/**
+ * Rodzaj raportu jakości (migracja 0027, ustalenie D10-09): jedna tabela trzyma
+ * dwa niezależne strumienie — 'gate' to quality gate BUILDA bazy (per przestrzeń,
+ * z run_id eksportu, konsument: /kb), 'answers' to tygodniowy raport jakości
+ * ODPOWIEDZI (job quality_answers, run_id NULL, konsument: /overview). Bez tego
+ * rozróżnienia pierwszy bieg quality_answers przesłaniałby werdykt builda.
+ */
+export type QualityReportKind = 'gate' | 'answers';
+
+/** Pseudo-przestrzeń raportu zbiorczego jakości odpowiedzi (nie jest bazą wiedzy). */
+export const ALL_NAMESPACES = '__all__';
+
 export interface QualityReportRow {
   id: number;
   namespace: string;
@@ -251,6 +263,7 @@ export interface QualityReportRow {
   verdict: QualityVerdict;
   checks_json: string;
   created_at: string;
+  kind: QualityReportKind;
 }
 
 export function saveQualityReport(
@@ -259,20 +272,33 @@ export function saveQualityReport(
   runId: number | null,
   verdict: QualityVerdict,
   checks: unknown[],
+  kind: QualityReportKind = 'gate',
 ): QualityReportRow {
   const res = db
     .prepare(
-      'INSERT INTO quality_reports (namespace, run_id, verdict, checks_json, created_at) VALUES (?, ?, ?, ?, ?)',
+      'INSERT INTO quality_reports (namespace, run_id, verdict, checks_json, created_at, kind) VALUES (?, ?, ?, ?, ?, ?)',
     )
-    .run(namespace, runId, verdict, JSON.stringify(checks), nowIso());
+    .run(namespace, runId, verdict, JSON.stringify(checks), nowIso(), kind);
   return db
     .prepare('SELECT * FROM quality_reports WHERE id = ?')
     .get(Number(res.lastInsertRowid)) as QualityReportRow;
 }
 
-export function latestQualityReport(db: Db, namespace: string): QualityReportRow | null {
+/**
+ * Ostatni raport danego rodzaju dla przestrzeni. Domyślny rodzaj wynika
+ * z przestrzeni: '__all__' należy WYŁĄCZNIE do raportów jakości odpowiedzi
+ * (nazwy baz pasują do ^[A-Z][A-Za-z0-9]{2,29}$, więc kolizja jest niemożliwa),
+ * każda inna przestrzeń domyślnie oznacza raport quality gate. Dzięki temu obie
+ * istniejące trasy (GET /kbs/:ns/quality i GET /learning/quality) dostają
+ * właściwy wiersz; rodzaj można podać jawnie.
+ */
+export function latestQualityReport(
+  db: Db,
+  namespace: string,
+  kind: QualityReportKind = namespace === ALL_NAMESPACES ? 'answers' : 'gate',
+): QualityReportRow | null {
   const row = db
-    .prepare('SELECT * FROM quality_reports WHERE namespace = ? ORDER BY id DESC LIMIT 1')
-    .get(namespace) as QualityReportRow | undefined;
+    .prepare('SELECT * FROM quality_reports WHERE namespace = ? AND kind = ? ORDER BY id DESC LIMIT 1')
+    .get(namespace, kind) as QualityReportRow | undefined;
   return row ?? null;
 }
