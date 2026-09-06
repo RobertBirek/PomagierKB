@@ -79,7 +79,7 @@ export const kbFeedbackTool: KbTool = {
               : 'Dziękuję — zapisałem negatywną ocenę odpowiedzi.';
       return { structured: { ok: true, gapCreated, gapUpdated }, text };
     } catch (err) {
-      const mapped = appErrorToResult(err);
+      const mapped = appErrorToResult(err, ctx.log);
       if (mapped) return mapped;
       throw err;
     }

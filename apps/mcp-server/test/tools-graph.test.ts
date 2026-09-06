@@ -118,6 +118,65 @@ describe('kb_entity_get', () => {
     expect(out.properties['name']).toBe('Karta HighBay');
     expect(out.properties['_content_vector']).toBeUndefined();
   });
+
+  it('jawny namespace NIE omija rejestru: id spoza mirrora/krawędzi → validation, graf nie pytany', async () => {
+    const db = testDb();
+    seedKb(db, 'LightingDocs');
+    seedGraph(db);
+    db.prepare('UPDATE kb_registry SET project_id = 7 WHERE namespace = ?').run('LightingDocs');
+    const ctx = makeCtx(db);
+    let graphCalls = 0;
+    ctx.openspg = {
+      request: async () => {
+        graphCalls += 1;
+        return [
+          {
+            id: 'CHUNK_orphan_001',
+            spgType: 'LightingDocs.Chunk',
+            properties: { name: 'Osierocony węzeł', content: 'Treść wycofana z bazy wiedzy.' },
+          },
+        ];
+      },
+    } as never;
+
+    const orphan = await kbEntityGetTool.handler(ctx, {
+      id: 'CHUNK_orphan_001',
+      namespace: 'LightingDocs',
+    });
+    expect(orphan.isError).toBe(true);
+    expect((orphan.structured as { errorCode: string }).errorCode).toBe('validation');
+    expect(graphCalls).toBe(0);
+
+    // Jawny namespace niezgodny z rejestrem też jest odrzucany (bez wyroczni).
+    const wrongNs = await kbEntityGetTool.handler(ctx, {
+      id: 'CHUNK_g1_001',
+      namespace: 'InnaBaza',
+    });
+    expect(wrongNs.isError).toBe(true);
+    expect(graphCalls).toBe(0);
+  });
+
+  it('nagrobek z grafu (semanticType=tombstone / __WITHDRAWN__) → validation, bez ujawnienia properties', async () => {
+    const db = testDb();
+    seedKb(db, 'LightingDocs');
+    seedGraph(db);
+    db.prepare('UPDATE kb_registry SET project_id = 7 WHERE namespace = ?').run('LightingDocs');
+    const ctx = makeCtx(db);
+    ctx.openspg = {
+      request: async () => [
+        {
+          id: 'CHUNK_g1_001',
+          spgType: 'LightingDocs.Chunk',
+          properties: { name: '', semanticType: 'tombstone', content: '__WITHDRAWN__' },
+        },
+      ],
+    } as never;
+
+    const res = await kbEntityGetTool.handler(ctx, { id: 'CHUNK_g1_001' });
+    expect(res.isError).toBe(true);
+    expect((res.structured as { errorCode: string }).errorCode).toBe('validation');
+    expect(JSON.stringify(res)).not.toContain('__WITHDRAWN__');
+  });
 });
 
 describe('kb_submit_draft idempotencyKey', () => {

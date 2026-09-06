@@ -167,8 +167,76 @@ export function tokenPrefix(token: string | null): string {
   return token === null || token === '' ? '(brak)' : token.slice(0, 6);
 }
 
+/**
+ * Format identyfikatora profilu MCP — TEN SAM regex, co przy tworzeniu profilu
+ * (packages/shared/src/db/repos/mcpProfiles.ts). Segment ścieżki /mcp/<profil>
+ * trafia do łańcucha audytu jako resourceId, więc musi być zwalidowany ZANIM
+ * cokolwiek zapiszemy (inaczej dowolny ciąg z URL ląduje w audycie).
+ */
+const PROFILE_ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
+
+export function isValidProfileId(id: string): boolean {
+  return PROFILE_ID_RE.test(id);
+}
+
+export interface AuthFailureDecision {
+  /** true = zapisz wpis do łańcucha audytu (pierwsze wystąpienie w oknie). */
+  audit: boolean;
+  /** Ile wystąpień pominięto od ostatniego zapisu (do metadanych wpisu). */
+  suppressed: number;
+}
+
+const MAX_FAILURE_KEYS = 5_000;
+
+/**
+ * Agregacja nieudanych uwierzytelnień: JEDEN wpis audytu na (prefix, IP, powód)
+ * na okno. Bez tego każde żądanie z internetu bez tokenu dopisywało wiersz do
+ * hash-chaina (BEGIN IMMEDIATE na SQLite współdzielonym z panel-api) — zalew
+ * audytu i kontencja zapisu. Pełny obraz zostaje w logu pino.
+ */
+export class AuthFailureAggregator {
+  private readonly windows = new Map<string, { start: number; count: number }>();
+
+  constructor(
+    private readonly windowMs = 60_000,
+    private readonly now: () => number = Date.now,
+  ) {}
+
+  record(key: string): AuthFailureDecision {
+    const t = this.now();
+    const entry = this.windows.get(key);
+    if (entry !== undefined && t - entry.start < this.windowMs) {
+      entry.count += 1;
+      return { audit: false, suppressed: 0 };
+    }
+    // nowe okno: pierwszy wpis niesie licznik pominiętych z okna poprzedniego
+    const suppressed = entry === undefined ? 0 : Math.max(0, entry.count - 1);
+    if (entry === undefined && this.windows.size >= MAX_FAILURE_KEYS) this.evict(t);
+    this.windows.set(key, { start: t, count: 1 });
+    return { audit: true, suppressed };
+  }
+
+  /** Usuwa okna przeterminowane; gdy to nie starczy — całość (bezpiecznik pamięci). */
+  private evict(t: number): void {
+    for (const [key, w] of this.windows) {
+      if (t - w.start >= this.windowMs) this.windows.delete(key);
+    }
+    if (this.windows.size >= MAX_FAILURE_KEYS) this.windows.clear();
+  }
+
+  reset(): void {
+    this.windows.clear();
+  }
+}
+
 /** Wpis mcp.auth_failed do łańcucha audytu — z prefiksem tokenu, nigdy całym. */
-export function auditAuthFailure(db: Db, token: string | null, profileId: string, reason: string): void {
+export function auditAuthFailure(
+  db: Db,
+  token: string | null,
+  profileId: string,
+  reason: string,
+  extra: Record<string, unknown> = {},
+): void {
   try {
     appendAudit(db, {
       actor: tokenPrefix(token),
@@ -177,7 +245,7 @@ export function auditAuthFailure(db: Db, token: string | null, profileId: string
       resourceType: 'mcp_profile',
       resourceId: profileId,
       outcome: 'failure',
-      metadata: { reason },
+      metadata: { reason, ...extra },
     });
   } catch {
     // audyt nie może wywrócić odpowiedzi 401 (np. SQLITE_BUSY)

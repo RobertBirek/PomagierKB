@@ -30,7 +30,8 @@ beforeAll(() => {
   raw = createKey(h.db, userId, 'k-modern', ['read'], 'default', 30).raw;
 });
 afterAll(async () => {
-  await h.close();
+  // TestHarness wystawia cleanup() (zamyka bundle + DB + katalog tmp) — nie close()
+  await h.cleanup();
 });
 
 describe('era 2026-07-28', () => {

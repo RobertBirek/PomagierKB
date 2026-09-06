@@ -4,7 +4,13 @@ import { dirname, join } from 'node:path';
 import type { Db } from '@pomagierkb/shared/db';
 import { getSetting } from '@pomagierkb/shared/db';
 import { unseal } from '@pomagierkb/shared/crypto';
-import { createLlmClient, withBreaker, type LlmLogger } from '@pomagierkb/shared/llm';
+import {
+  createLlmClient,
+  recordLlmUsage,
+  withBreaker,
+  type BreakerTransition,
+  type LlmLogger,
+} from '@pomagierkb/shared/llm';
 import type { ToolLlm } from './tools/types.js';
 
 /**
@@ -22,6 +28,19 @@ export interface McpConfig {
   port: number;
   host: string;
   internalPort: number;
+  /**
+   * Adres nasłuchu serwera wewnętrznego (:INTERNAL_PORT z /invalidate). Domyślnie
+   * = host, ale POWINIEN wskazywać adres z sieci kag-control (panel↔mcp): na
+   * 0.0.0.0 endpoint jest widoczny dla wszystkich kontenerów w sieciach kag-mcp,
+   * w tym nie-hardenowanych OpenSPG. Zmiana ENV, bez zmiany kodu.
+   */
+  internalHost: string;
+  /**
+   * Ile warstw proxy stoi przed mcp-serverem. Za Caddy = 1, dzięki czemu req.ip to
+   * adres klienta z X-Forwarded-For — inaczej limiter nieudanych auth widziałby
+   * jeden adres proxy dla całego internetu. 0 = nie ufaj nagłówkom w ogóle.
+   */
+  trustProxyHops: number;
   /** Sekret nagłówka X-Internal-Token dla POST /invalidate; null = endpoint odmawia (503). */
   internalToken: string | null;
   /** Publiczny URL serwera (snippety/diagnostyka); null gdy nieustawiony. */
@@ -63,6 +82,29 @@ function readVersion(): string {
   }
 }
 
+/** TRUST_PROXY: liczba warstw proxy ('false' = 0). Default 1 (Caddy). */
+function trustProxyEnv(env: NodeJS.ProcessEnv): number {
+  const raw = env.TRUST_PROXY;
+  if (raw === undefined || raw === '') return 1;
+  if (raw === 'false') return 0;
+  if (raw === 'true') return 1;
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 0 || n > 16) {
+    throw new Error(`config: TRUST_PROXY musi być liczbą całkowitą 0..16 albo true/false, jest: ${raw}`);
+  }
+  return n;
+}
+
+/**
+ * Opcja `trustProxy` Fastify z liczby przeskoków. Typy Fastify nie przyjmują liczby,
+ * a semantyka liczby w proxy-addr to dokładnie „ufaj `hops` ostatnim przeskokom" —
+ * odtwarzamy ją funkcją. false = req.ip zawsze z gniazda (X-Forwarded-For ignorowany).
+ */
+export function trustProxyOption(hops: number): boolean | ((address: string, hop: number) => boolean) {
+  if (hops <= 0) return false;
+  return (_address: string, hop: number) => hop < hops;
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): McpConfig {
   const dataDir = env.DATA_DIR !== undefined && env.DATA_DIR !== '' ? env.DATA_DIR : '/data';
   const openspgBaseUrl = env.OPENSPG_BASE_URL ?? '';
@@ -72,13 +114,16 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): McpConfig {
     openspgBaseUrl !== '' && openspgAccount !== '' && openspgPassword !== null
       ? { baseUrl: openspgBaseUrl, account: openspgAccount, password: openspgPassword }
       : null;
+  const host = env.HOST !== undefined && env.HOST !== '' ? env.HOST : '0.0.0.0';
   return {
     dataDir,
     dbPath: join(dataDir, 'db', 'kag.db'),  // ta sama ścieżka co panel-api (DATA_DIR/db/kag.db)
     usageDir: join(dataDir, 'mcp-usage'),
     port: intEnv(env, 'PORT', 3001),
-    host: env.HOST !== undefined && env.HOST !== '' ? env.HOST : '0.0.0.0',
+    host,
     internalPort: intEnv(env, 'INTERNAL_PORT', 8091),
+    internalHost: env.INTERNAL_HOST !== undefined && env.INTERNAL_HOST !== '' ? env.INTERNAL_HOST : host,
+    trustProxyHops: trustProxyEnv(env),
     internalToken: readSecret(env, 'INTERNAL_TOKEN'),
     publicUrl: env.PUBLIC_URL !== undefined && env.PUBLIC_URL !== '' ? env.PUBLIC_URL : null,
     openspg,
@@ -143,25 +188,63 @@ export function buildToolLlm(db: Db, config: McpConfig, logger?: LlmLogger): Too
   const chatCfg = readLlmSetting(db, 'llm.chat', config.tokenEncKey);
   if (chatCfg === null) return null;
   const embedCfg = readLlmSetting(db, 'llm.embeddings', config.tokenEncKey) ?? chatCfg;
+
+  /**
+   * GAP-05: rejestr kosztu wpięty W KLIENCIE. `withBreaker` widzi tylko wyniki
+   * niosące `usage` (czat) — embeddingi zapytań kb_search/kb_answer wracają jako
+   * `number[][]` i nie trafiały do rejestru w ogóle. Flaga `usageReported`
+   * (openai-client) pilnuje, żeby czatu nie policzyć dwa razy.
+   */
+  const onUsage = (purpose: string) =>
+    (event: {
+      endpoint: 'chat' | 'embeddings';
+      model: string;
+      promptTokens: number | null;
+      completionTokens: number | null;
+    }): void => {
+      recordLlmUsage(db, { ...event, purpose });
+    };
+
   const chatClient = createLlmClient({
     baseUrl: chatCfg.baseUrl,
     apiKey: chatCfg.apiKey,
     model: chatCfg.model,
     ...(logger !== undefined ? { logger } : {}),
+    onUsage: onUsage('mcp.chat'),
   });
-  const embedClient =
-    embedCfg === chatCfg
-      ? chatClient
-      : createLlmClient({
-          baseUrl: embedCfg.baseUrl,
-          apiKey: embedCfg.apiKey,
-          model: embedCfg.model,
-          ...(logger !== undefined ? { logger } : {}),
-        });
+  // Osobny klient nawet przy tej samej konfiguracji — inaczej embeddingi
+  // raportowałyby się pod etykietą kosztu czatu.
+  const embedClient = createLlmClient({
+    baseUrl: embedCfg.baseUrl,
+    apiKey: embedCfg.apiKey,
+    model: embedCfg.model,
+    ...(logger !== undefined ? { logger } : {}),
+    onUsage: onUsage('mcp.embed'),
+  });
+
+  /** Przejścia breakerów do logu procesu (audyt zapisuje je niezależnie) — D8-10. */
+  const breakerOpts =
+    logger !== undefined
+      ? {
+          logger: (event: BreakerTransition): void => {
+            logger.warn(
+              {
+                breaker: event.name,
+                from: event.from,
+                to: event.to,
+                failureCount: event.failureCount,
+                ...(event.cooldownMs !== undefined ? { cooldownMs: event.cooldownMs } : {}),
+              },
+              'breaker: zmiana stanu',
+            );
+          },
+        }
+      : {};
+
   // Breaker w gorącej ścieżce: awarie LLM otwierają 'llm.chat'/'llm.embeddings'
   // w tabeli breakers (kokpit widzi realny stan; otwarty → not_ready bez wołania API).
   return {
-    chat: (req) => withBreaker(db, 'llm.chat', () => chatClient.chat(req)),
-    embed: (texts) => withBreaker(db, 'llm.embeddings', () => embedClient.embed(texts)),
+    chat: (req) => withBreaker(db, 'llm.chat', () => chatClient.chat(req), breakerOpts),
+    embed: (texts) => withBreaker(db, 'llm.embeddings', () => embedClient.embed(texts), breakerOpts),
   };
 }

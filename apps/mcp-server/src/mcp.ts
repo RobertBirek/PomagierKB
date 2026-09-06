@@ -11,6 +11,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import { AppError } from '@pomagierkb/shared/errors';
 import type { KbTool, ToolCtx, ToolResult } from './tools/types.js';
+import { newErrorId, toolErrorText, type ToolErrorCode } from './tools/messages.js';
 import { hasWriteScope, toolRequiresWrite } from './profiles.js';
 import { validateInput } from './validate.js';
 import { ALL_PROMPTS } from './prompts.js';
@@ -47,8 +48,12 @@ export interface McpPairOptions {
   ctx: ToolCtx;
   /** Pełna lista narzędzi procesu; widoczność przycinana do profilu z ctx. */
   tools: KbTool[];
-  /** Limit per narzędzie (kb_answer 10/min); brak = bez limitu narzędziowego. */
-  checkToolRateLimit?: (toolName: string) => { ok: boolean; retryAfter: number };
+  /**
+   * Limit per narzędzie (kb_answer/kb_claim_verify 10/min, kb_search vector/hybrid
+   * 30/min); brak = bez limitu narzędziowego. Wejście narzędzia jest przekazywane,
+   * bo koszt kb_search zależy od trybu (`mode`).
+   */
+  checkToolRateLimit?: (toolName: string, input: unknown) => { ok: boolean; retryAfter: number };
   /** Wpis do usage-JSONL po każdym tools/call (poza łańcuchem audytu). */
   onUsage?: (event: UsageEvent) => void;
   serverName?: string;
@@ -56,7 +61,7 @@ export interface McpPairOptions {
 }
 
 /** Mapowanie AppError → errorCode wyniku narzędzia (§7.4: błędy jako isError, nie protokół). */
-function toolErrorCode(err: unknown): string {
+function toolErrorCode(err: unknown): ToolErrorCode {
   if (err instanceof AppError) {
     switch (err.code) {
       case 'upstream_error':
@@ -148,7 +153,7 @@ export async function executeToolCall(
       message: `forbidden: narzędzie ${name} wymaga scope write`,
     };
   }
-  const rl = opts.checkToolRateLimit?.(name);
+  const rl = opts.checkToolRateLimit?.(name, input);
   if (rl !== undefined && !rl.ok) {
     return {
       kind: 'protocolError',
@@ -175,14 +180,19 @@ export async function executeToolCall(
   try {
     out = await tool.handler(ctx, input);
   } catch (err) {
-    // §7.4: błędy narzędzi jako isError, nie błędy protokołu
+    // §7.4: błędy narzędzi jako isError, nie błędy protokołu.
+    // Treść wyjątku (nazwa hosta wewnętrznego, odpowiedź serwera Javy OpenSPG,
+    // komunikat dostawcy LLM, SQLITE_BUSY) NIE trafia do klienta — tylko komunikat
+    // ze słownika + identyfikator, po którym operator znajdzie szczegóły w logu.
+    const code = toolErrorCode(err);
+    const errorId = newErrorId();
     ctx.log.error(
-      { tool: name, err: err instanceof Error ? err.message : String(err) },
+      { tool: name, errorId, errorCode: code, err: err instanceof Error ? err.message : String(err) },
       'mcp: narzędzie rzuciło wyjątek',
     );
     out = {
-      structured: { errorCode: toolErrorCode(err) },
-      text: `Błąd narzędzia ${name}: ${err instanceof Error ? err.message : 'nieznany błąd'}`,
+      structured: { errorCode: code, errorId },
+      text: toolErrorText(name, code, errorId),
       isError: true,
     };
   }

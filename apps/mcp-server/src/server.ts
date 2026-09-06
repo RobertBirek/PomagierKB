@@ -8,11 +8,19 @@ import {
   buildToolLlm,
   loadConfig,
   sharedMigrationsDir,
+  trustProxyOption,
   type McpConfig,
 } from './config.js';
-import { AuthService, auditAuthFailure, extractBearer } from './auth.js';
+import {
+  AuthFailureAggregator,
+  AuthService,
+  auditAuthFailure,
+  extractBearer,
+  isValidProfileId,
+  tokenPrefix,
+} from './auth.js';
 import { ProfileCache } from './profiles.js';
-import { RateLimiter } from './rate-limit.js';
+import { RATE_LIMIT_PER_MIN, RateLimiter, requestCost, toolRateRule } from './rate-limit.js';
 import { UsageLog } from './usage-log.js';
 import {
   JSONRPC_FORBIDDEN,
@@ -32,10 +40,22 @@ import type { KbTool, ToolCtx, ToolLlm } from './tools/types.js';
  * /healthz, /readyz; wewnętrzny serwer :INTERNAL_PORT z POST /invalidate.
  */
 
-const RATE_LIMIT_PER_MIN = 60;
-const RATE_LIMIT_KB_ANSWER_PER_MIN = 10;
 const LLM_CACHE_TTL_MS = 60_000;
 const PROBE_INTERVAL_MS = 600_000;
+/**
+ * Limit nieudanych uwierzytelnień per adres źródłowy — przed auth nie ma klucza,
+ * po którym można limitować, a każde 401/403 dotykało łańcucha audytu na SQLite
+ * współdzielonym z panel-api. Ruch legalny nigdy tu nie trafia (401/403 = błąd klienta).
+ */
+const AUTH_FAILURE_PER_IP_PER_MIN = 20;
+/** Limit nieudanych prób na wewnętrznym /invalidate (zgadywanie X-Internal-Token). */
+const INVALIDATE_FAILURE_PER_IP_PER_MIN = 10;
+/**
+ * Największe legalne wejście to kb_submit_draft (content 100 000 znaków — do ~200 KB
+ * w UTF-8 z polskimi znakami). 512 KB daje zapas, a jednocześnie ścina domyślny
+ * 1 MiB Fastify (dwukrotnie mniej wiadomości w jednym batchu JSON-RPC do sparsowania).
+ */
+const MCP_BODY_LIMIT_BYTES = 512 * 1024;
 
 interface ProbeStatus extends SearchProbeResult {
   at: string;
@@ -98,6 +118,7 @@ export function buildServer(opts: BuildServerOptions): McpServerBundle {
   const auth = new AuthService({ db, now });
   const profiles = new ProfileCache(db, 60_000, now);
   const rateLimiter = new RateLimiter(now);
+  const authFailures = new AuthFailureAggregator(60_000, now);
   const usage = new UsageLog(config.usageDir);
 
   // LLM z DB settings — cache 60 s (unseal + konstrukcja klienta nie per żądanie)
@@ -148,23 +169,92 @@ export function buildServer(opts: BuildServerOptions): McpServerBundle {
   }
 
   // ── Główny serwer /mcp ────────────────────────────────────────────────────
-  const app = Fastify({ logger: opts.logger ?? false });
+  const trustProxy = trustProxyOption(config.trustProxyHops);
+  const app = Fastify({
+    logger: opts.logger ?? false,
+    // Za Caddy: req.ip = adres klienta z X-Forwarded-For (limiter per IP przed auth)
+    trustProxy,
+  });
 
-  app.post('/mcp/:profileId', async (req: FastifyRequest, reply: FastifyReply) => {
+  /**
+   * Wspólna ścieżka odmowy przed/na etapie auth (401/403). Kolejność jest istotna:
+   * najpierw limiter per IP (odcina zalew z internetu), dopiero potem — i tylko dla
+   * pierwszego wystąpienia w oknie — wpis do łańcucha audytu.
+   */
+  function denyAuth(
+    req: FastifyRequest,
+    reply: FastifyReply,
+    status: 401 | 403,
+    code: number,
+    message: string,
+    profileId: string,
+    token: string | null,
+    reason: string,
+  ): FastifyReply {
+    const ip = req.ip;
+    const ipLimit = rateLimiter.check(`authfail:${ip}`, AUTH_FAILURE_PER_IP_PER_MIN);
+    if (!ipLimit.ok) {
+      req.log.warn({ ip, profileId, reason }, 'mcp: zalew nieudanych auth z jednego adresu');
+      return reply
+        .code(429)
+        .header('retry-after', String(ipLimit.retryAfter))
+        .send(rpcError(JSONRPC_RATE_LIMITED, 'rate_limited', { retryAfter: ipLimit.retryAfter }));
+    }
+    const prefix = tokenPrefix(token);
+    const decision = authFailures.record(`${prefix}|${ip}|${reason}`);
+    req.log.warn({ ip, profileId, reason, keyPrefix: prefix }, 'mcp: nieudane uwierzytelnienie');
+    if (decision.audit) {
+      auditAuthFailure(db, token, profileId, reason, {
+        ip,
+        ...(decision.suppressed > 0 ? { suppressed: decision.suppressed } : {}),
+      });
+    }
+    return reply.code(status).send(rpcError(code, message));
+  }
+
+  const mcpRouteOptions = { bodyLimit: MCP_BODY_LIMIT_BYTES };
+
+  app.post('/mcp/:profileId', mcpRouteOptions, async (req: FastifyRequest, reply: FastifyReply) => {
     const profileId = (req.params as { profileId: string }).profileId;
+    // Segment z URL trafia do audytu jako resourceId — waliduj PRZED czymkolwiek
+    if (!isValidProfileId(profileId)) {
+      req.log.warn({ ip: req.ip }, 'mcp: żądanie na niepoprawny identyfikator profilu');
+      return reply.code(404).send(rpcError(JSONRPC_FORBIDDEN, 'forbidden: profil niedostępny'));
+    }
     const token = extractBearer(req.headers.authorization);
     const authResult = token !== null ? auth.verify(token) : null;
     if (authResult === null) {
-      auditAuthFailure(db, token, profileId, token === null ? 'missing_token' : 'invalid_token');
-      return reply.code(401).send(rpcError(JSONRPC_UNAUTHORIZED, 'unauthorized'));
+      return denyAuth(
+        req,
+        reply,
+        401,
+        JSONRPC_UNAUTHORIZED,
+        'unauthorized',
+        profileId,
+        token,
+        token === null ? 'missing_token' : 'invalid_token',
+      );
     }
     if (authResult.keyRow.profile_id !== profileId) {
-      auditAuthFailure(db, token, profileId, 'profile_mismatch');
-      return reply
-        .code(403)
-        .send(rpcError(JSONRPC_FORBIDDEN, 'forbidden: klucz nie jest przypisany do tego profilu'));
+      return denyAuth(
+        req,
+        reply,
+        403,
+        JSONRPC_FORBIDDEN,
+        'forbidden: klucz nie jest przypisany do tego profilu',
+        profileId,
+        token,
+        'profile_mismatch',
+      );
     }
-    const rl = rateLimiter.check(`req:${authResult.keyRow.id}`, RATE_LIMIT_PER_MIN);
+    // Batch JSON-RPC (era 2025, SDK v1) wykonuje KAŻDĄ wiadomość tablicy — limiter
+    // musi liczyć wywołania, nie żądania HTTP, inaczej batch omija 60/min N-krotnie.
+    const rl = rateLimiter.check(
+      `req:${authResult.keyRow.id}`,
+      RATE_LIMIT_PER_MIN,
+      60_000,
+      requestCost(req.body),
+    );
     if (!rl.ok) {
       return reply
         .code(429)
@@ -174,8 +264,16 @@ export function buildServer(opts: BuildServerOptions): McpServerBundle {
     const resolved = profiles.get(profileId);
     if (resolved === null) {
       // profil wyłączony/usunięty między weryfikacją klucza a odczytem profilu
-      auditAuthFailure(db, token, profileId, 'profile_disabled');
-      return reply.code(403).send(rpcError(JSONRPC_FORBIDDEN, 'forbidden: profil niedostępny'));
+      return denyAuth(
+        req,
+        reply,
+        403,
+        JSONRPC_FORBIDDEN,
+        'forbidden: profil niedostępny',
+        profileId,
+        token,
+        'profile_disabled',
+      );
     }
 
     const ctx: ToolCtx = {
@@ -193,10 +291,13 @@ export function buildServer(opts: BuildServerOptions): McpServerBundle {
     const pairOpts = {
       ctx,
       tools,
-      checkToolRateLimit: (toolName: string) =>
-        toolName === 'kb_answer'
-          ? rateLimiter.check(`answer:${keyId}`, RATE_LIMIT_KB_ANSWER_PER_MIN)
-          : { ok: true, retryAfter: 0 },
+      // Limity narzędziowe dla wywołań o realnym koszcie zewnętrznym (LLM/OpenSPG):
+      // kb_answer i kb_claim_verify 10/min, kb_search vector/hybrid 30/min.
+      checkToolRateLimit: (toolName: string, input: unknown) => {
+        const rule = toolRateRule(toolName, input);
+        if (rule === null) return { ok: true, retryAfter: 0 };
+        return rateLimiter.check(`${rule.bucket}:${keyId}`, rule.limit);
+      },
       onUsage: (event: Parameters<NonNullable<Parameters<typeof createMcpPair>[0]['onUsage']>>[0]) =>
         usage.append({ at: new Date(now()).toISOString(), keyId, ...event }),
     };
@@ -313,7 +414,7 @@ export function buildServer(opts: BuildServerOptions): McpServerBundle {
   });
 
   // ── Serwer wewnętrzny (cache invalidate z panel-api; sieć wewnętrzna) ─────
-  const internal = Fastify({ logger: opts.logger ?? false });
+  const internal = Fastify({ logger: opts.logger ?? false, trustProxy });
   internal.post('/invalidate', (req, reply) => {
     if (config.internalToken === null) {
       // fail-closed: bez skonfigurowanego sekretu endpoint nie działa w ogóle
@@ -323,6 +424,20 @@ export function buildServer(opts: BuildServerOptions): McpServerBundle {
     }
     const presented = req.headers['x-internal-token'];
     if (typeof presented !== 'string' || !timingSafeEqualStr(presented, config.internalToken)) {
+      // Listener jest widoczny dla wszystkich kontenerów w sieciach kag-mcp (w tym
+      // nie-hardenowanych OpenSPG) — bez limitu zgadywanie sekretu byłoby darmowe.
+      const ipLimit = rateLimiter.check(
+        `invalidate:${req.ip}`,
+        INVALIDATE_FAILURE_PER_IP_PER_MIN,
+      );
+      if (!ipLimit.ok) {
+        req.log.warn({ ip: req.ip }, 'internal: zalew nieudanych prób /invalidate');
+        return reply
+          .code(429)
+          .header('retry-after', String(ipLimit.retryAfter))
+          .send({ ok: false, error: { code: 'rate_limited', message: 'zbyt wiele prób' } });
+      }
+      req.log.warn({ ip: req.ip }, 'internal: zły X-Internal-Token na /invalidate');
       return reply.code(401).send({ ok: false, error: { code: 'unauthorized', message: 'zły token' } });
     }
     invalidateCaches();
@@ -354,9 +469,9 @@ export async function start(): Promise<void> {
   // Fail-closed (checklista pkt 1/4): endpoint wewnętrzny /invalidate bez
   // skonfigurowanego sekretu wolno wystawić TYLKO na loopback — inaczej odmowa startu.
   const loopback = new Set(['127.0.0.1', '::1', 'localhost']);
-  if (config.internalToken === null && !loopback.has(config.host)) {
+  if (config.internalToken === null && !loopback.has(config.internalHost)) {
     throw new Error(
-      `mcp-server: INTERNAL_TOKEN nieskonfigurowany a HOST=${config.host} poza loopback — odmowa startu`,
+      `mcp-server: INTERNAL_TOKEN nieskonfigurowany a INTERNAL_HOST=${config.internalHost} poza loopback — odmowa startu`,
     );
   }
   const db = openDb(config.dbPath);
@@ -372,7 +487,9 @@ export async function start(): Promise<void> {
     },
   });
   await bundle.app.listen({ port: config.port, host: config.host });
-  await bundle.internal.listen({ port: config.internalPort, host: config.host });
+  // Listener wewnętrzny osobno: INTERNAL_HOST pozwala zejść z 0.0.0.0 na adres
+  // sieci kag-control, nie wystawiając /invalidate całej sieci kontenerów.
+  await bundle.internal.listen({ port: config.internalPort, host: config.internalHost });
 
   void bundle.runProbe().catch(() => undefined);
   const probeTimer = setInterval(() => {

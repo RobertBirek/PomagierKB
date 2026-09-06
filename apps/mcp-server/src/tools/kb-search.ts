@@ -78,12 +78,14 @@ export const kbSearchTool: KbTool = {
   },
   outputSchema: {
     type: 'object',
+    additionalProperties: false,
     required: ['results', 'degraded'],
     properties: {
       results: {
         type: 'array',
         items: {
           type: 'object',
+          additionalProperties: false,
           required: ['id', 'namespace', 'score', 'snippet', 'source'],
           properties: {
             id: { type: 'string' },
@@ -100,9 +102,15 @@ export const kbSearchTool: KbTool = {
       },
       tookMs: { type: 'integer' },
       degraded: { type: 'boolean' },
+      // D8-03/D8-10: 'embed_failed' realnie występuje w DegradedReason (padł dostawca
+      // embeddingów przy zdrowym OpenSPG) — bez niego walidacja wyniku wywracała
+      // odpowiedź narzędzia dokładnie wtedy, gdy diagnostyka była najbardziej potrzebna.
       degradedReasons: {
         type: 'array',
-        items: { type: 'string', enum: ['openspg_down', 'openspg_no_hits', 'snippet_only', 'kb_dirty'] },
+        items: {
+          type: 'string',
+          enum: ['openspg_down', 'openspg_no_hits', 'embed_failed', 'snippet_only', 'kb_dirty'],
+        },
       },
       matchedRouting: { type: 'array', items: { type: 'string' } },
     },

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { AppError } from '@pomagierkb/shared/errors';
+import { newErrorId, toolErrorMessage, type ToolErrorCode } from './messages.js';
 import type { ToolCtx } from './types.js';
 
 /** Wspólne pomocniki handlerów narzędzi MCP (walidacja, namespaces, mapowanie błędów). */
@@ -13,14 +14,10 @@ export interface ToolOutcome {
 
 /**
  * Kody błędów narzędzi (§7.4): błąd = wynik z isError:true + structuredContent:{errorCode},
- * nigdy błąd protokołu (ten zarezerwowany dla auth/transportu).
+ * nigdy błąd protokołu (ten zarezerwowany dla auth/transportu). Słownik komunikatów
+ * i generator identyfikatora zdarzenia — w ./messages.ts.
  */
-export type ToolErrorCode =
-  | 'namespace_not_allowed'
-  | 'upstream_unavailable'
-  | 'rate_limited'
-  | 'validation'
-  | 'forbidden';
+export type { ToolErrorCode };
 
 export function errorResult(errorCode: ToolErrorCode, text: string): ToolOutcome {
   return { structured: { errorCode }, text, isError: true };
@@ -64,16 +61,28 @@ export function resolveRequestedNamespaces(
   return { ok: true, namespaces: [...new Set(requested)] };
 }
 
-/** AppError z repozytoriów/klientów → wynik narzędzia; inne błędy → null (rethrow u wołającego). */
-export function appErrorToResult(err: unknown): ToolOutcome | null {
+/**
+ * AppError z repozytoriów/klientów → wynik narzędzia; inne błędy → null (rethrow u wołającego).
+ * Błędy UPSTREAMU (OpenSPG/LLM) nie mogą przenieść `err.message` do klienta MCP —
+ * potrafi zawierać nazwę hosta wewnętrznego, fragment odpowiedzi serwera Javy albo
+ * komunikat dostawcy LLM. Klient dostaje komunikat ze słownika + identyfikator,
+ * szczegóły idą do logu pino pod tym samym identyfikatorem.
+ */
+export function appErrorToResult(err: unknown, log?: ToolCtx['log']): ToolOutcome | null {
   if (!(err instanceof AppError)) return null;
   switch (err.code) {
     case 'rate_limited':
-      return errorResult('rate_limited', `Limit wyczerpany: ${err.message}`);
+      return errorResult('rate_limited', toolErrorMessage('rate_limited'));
     case 'upstream_error':
     case 'upstream_timeout':
-    case 'not_ready':
-      return errorResult('upstream_unavailable', `Usługa zewnętrzna niedostępna: ${err.message}`);
+    case 'not_ready': {
+      const errorId = newErrorId();
+      log?.error({ errorId, code: err.code, err: err.message }, 'mcp: błąd upstreamu w narzędziu');
+      return errorResult(
+        'upstream_unavailable',
+        `${toolErrorMessage('upstream_unavailable')} (id błędu: ${errorId})`,
+      );
+    }
     case 'forbidden':
     case 'unauthorized':
       return errorResult('forbidden', err.message);

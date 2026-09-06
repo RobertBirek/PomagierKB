@@ -129,7 +129,7 @@ export const kbSubmitDraftTool: KbTool = {
           'Treść trafi do bazy wiedzy dopiero po recenzji i promocji przez człowieka.',
       };
     } catch (err) {
-      const mapped = appErrorToResult(err);
+      const mapped = appErrorToResult(err, ctx.log);
       if (mapped) return mapped;
       throw err;
     }

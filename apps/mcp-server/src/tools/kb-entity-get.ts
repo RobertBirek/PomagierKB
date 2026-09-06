@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { getChunk, getKb } from '@pomagierkb/shared/db';
-import { querySpgType } from '@pomagierkb/shared/openspg';
+import { querySpgType, isTombstoneProperties } from '@pomagierkb/shared/openspg';
 import { errorResult, parseInput } from './common.js';
 import type { KbTool, ToolCtx } from './types.js';
 
@@ -9,6 +9,16 @@ import type { KbTool, ToolCtx } from './types.js';
  * w boju) z sanitizacją po stronie shared (bez pól wektorowych, bez literalnych
  * cudzysłowów buildera). Fallback: mirror SQLite z degraded:true (wzorzec retrieval).
  * ACL: namespace spoza profilu → ten sam błąd co nieistniejące id (bez wyroczni).
+ *
+ * DWIE BRAMKI PRZED GRAFEM (audyt: osierocone węzły):
+ *  1) id MUSI istnieć w lokalnym stanie docelowym (chunks_mirror/graph_edges).
+ *     Wcześniej jawny `namespace` w wejściu omijał lookup i narzędzie zwracało
+ *     pełne properties DOWOLNEGO węzła grafu — także wycofanego z bazy wiedzy.
+ *     Mirror pisze eksporter przy każdym buildzie, więc jest odwzorowaniem tego,
+ *     co ma prawo być widoczne.
+ *  2) nagrobki (pipeline/graph-ids.ts): builder jest UPSERT-only, więc wycofany
+ *     węzeł zostaje w grafie jako pusty stub z markerem treści `__WITHDRAWN__`
+ *     i semanticType='tombstone' — traktujemy go jak nieistniejący.
  */
 
 const inputZod = z.strictObject({
@@ -27,17 +37,38 @@ function typeForId(id: string): string | null {
   return null;
 }
 
-/** Namespace encji: parametr, a bez niego lookup w mirrorze/krawędziach. */
+/**
+ * Markery nagrobka pochodzą z `@pomagierkb/shared/openspg` — JEDNO źródło prawdy dzielone
+ * z producentem (`apps/panel-api/src/pipeline/graph-ids.ts`). Wcześniej literały były
+ * zduplikowane w dwóch pakietach; rozjazd oznaczałby ciche wydawanie wycofanej treści,
+ * a żaden test nie porównywał ich między pakietami.
+ */
+export { TOMBSTONE_CONTENT, TOMBSTONE_SEMANTIC_TYPE } from '@pomagierkb/shared/openspg';
+
+/** Czy properties z grafu to nagrobek (wycofany węzeł nadpisany UPSERT-em). */
+export function isTombstone(properties: Record<string, string>): boolean {
+  return isTombstoneProperties(properties);
+}
+
+/**
+ * Namespace encji WYŁĄCZNIE z lokalnego stanu docelowego (mirror + krawędzie).
+ * Jawny `namespace` w wejściu nie jest źródłem prawdy — służy tylko do zawężenia:
+ * musi zgadzać się z tym, co mówi rejestr, inaczej encja jest "nieistniejąca".
+ */
 function resolveNamespace(ctx: ToolCtx, id: string, requested?: string): string | null {
-  if (requested !== undefined) return requested;
   const mirrorRow = ctx.db
     .prepare('SELECT namespace FROM chunks_mirror WHERE id = ? OR doc_id = ? LIMIT 1')
     .get(id, id) as { namespace: string } | undefined;
-  if (mirrorRow !== undefined) return mirrorRow.namespace;
-  const edgeRow = ctx.db
-    .prepare('SELECT namespace FROM graph_edges WHERE src_id = ? OR dst_id = ? LIMIT 1')
-    .get(id, id) as { namespace: string } | undefined;
-  return edgeRow?.namespace ?? null;
+  const edgeRow =
+    mirrorRow === undefined
+      ? (ctx.db
+          .prepare('SELECT namespace FROM graph_edges WHERE src_id = ? OR dst_id = ? LIMIT 1')
+          .get(id, id) as { namespace: string } | undefined)
+      : undefined;
+  const known = mirrorRow?.namespace ?? edgeRow?.namespace ?? null;
+  if (known === null) return null;
+  if (requested !== undefined && requested !== known) return null;
+  return known;
 }
 
 function notFound(id: string): ReturnType<typeof errorResult> {
@@ -92,6 +123,8 @@ export const kbEntityGetTool: KbTool = {
           ids: [id],
         });
         const entity = entities[0];
+        // Nagrobek = węzeł wycofany z bazy wiedzy; nie ujawniamy nawet pustego stuba.
+        if (entity !== undefined && isTombstone(entity.properties)) return notFound(id);
         if (entity !== undefined) {
           const structured = {
             id: entity.id,

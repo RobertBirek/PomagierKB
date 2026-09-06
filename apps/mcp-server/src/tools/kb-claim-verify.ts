@@ -89,7 +89,7 @@ export const kbClaimVerifyTool: KbTool = {
         text: `**Teza ${STATUS_LABEL[result.status]}.**\n${result.explanation}${cites !== '' ? `\nŹródła: ${cites}` : ''}`,
       };
     } catch (err) {
-      const mapped = appErrorToResult(err);
+      const mapped = appErrorToResult(err, ctx.log);
       if (mapped) return mapped;
       throw err;
     }

@@ -48,6 +48,7 @@ export const kbAnswerTool: KbTool = {
   },
   outputSchema: {
     type: 'object',
+    additionalProperties: false,
     required: ['answer', 'citations', 'confidence', 'gapRecorded', 'answerId'],
     properties: {
       answer: { type: 'string', description: 'Markdown z cytowaniami [1],[2]' },
@@ -55,6 +56,7 @@ export const kbAnswerTool: KbTool = {
         type: 'array',
         items: {
           type: 'object',
+          additionalProperties: false,
           required: ['n', 'id', 'namespace'],
           properties: {
             n: { type: 'integer' },
@@ -70,6 +72,7 @@ export const kbAnswerTool: KbTool = {
         type: 'array',
         items: {
           type: 'object',
+          additionalProperties: false,
           required: ['claim', 'evidenceNs'],
           properties: {
             claim: { type: 'string' },
@@ -80,6 +83,16 @@ export const kbAnswerTool: KbTool = {
       confidence: { type: 'number', minimum: 0, maximum: 1 },
       model: { type: 'string' },
       degraded: { type: 'boolean' },
+      // D8-03/D8-10: CO jest zdegradowane — agent bez tego nie wie, czy odpowiedź
+      // powstała na okrojonym kontekście, czy przy padniętym OpenSPG.
+      // Pole DODANE obok boola `degraded`; jego kontrakt zostaje bez zmian.
+      degradedReasons: {
+        type: 'array',
+        items: {
+          type: 'string',
+          enum: ['openspg_down', 'openspg_no_hits', 'embed_failed', 'snippet_only', 'kb_dirty'],
+        },
+      },
       gapRecorded: { type: 'boolean' },
       answerId: { type: 'string' },
       noAnswer: { type: 'boolean' },
@@ -108,7 +121,7 @@ export const kbAnswerTool: KbTool = {
         language: parsed.data.language,
       });
     } catch (err) {
-      const mapped = appErrorToResult(err);
+      const mapped = appErrorToResult(err, ctx.log);
       if (mapped) return mapped;
       throw err;
     }
@@ -120,6 +133,7 @@ export const kbAnswerTool: KbTool = {
         confidence: res.confidence,
         ...(res.model !== null ? { model: res.model } : {}),
         degraded: res.degraded,
+        degradedReasons: res.degradedReasons,
         gapRecorded: res.gapRecorded,
         answerId: res.answerId,
         noAnswer: res.noAnswer,
