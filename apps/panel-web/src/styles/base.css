@@ -29,11 +29,13 @@
 
 .stepper-line { width: 2px; flex: 1; min-height: 18px; background: var(--border); }
 
-.stepper li[data-status='done'] .stepper-dot { background: var(--ok); border-color: var(--ok); color: #fff; }
+/* Napis w kropce = kolor POWIERZCHNI, nie stałe #fff: w motywie ciemnym
+   --ok/--fail są jasne i biały tekst dawał 1.7:1 (D13-02). */
+.stepper li[data-status='done'] .stepper-dot { background: var(--ok); border-color: var(--ok); color: var(--surface); }
 
 .stepper li[data-status='active'] .stepper-dot { border-color: var(--accent); color: var(--accent); }
 
-.stepper li[data-status='failed'] .stepper-dot { background: var(--fail); border-color: var(--fail); color: #fff; }
+.stepper li[data-status='failed'] .stepper-dot { background: var(--fail); border-color: var(--fail); color: var(--surface); }
 
 .stepper-body { padding-bottom: 16px; }
 

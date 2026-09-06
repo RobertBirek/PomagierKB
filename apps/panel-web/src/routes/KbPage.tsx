@@ -12,7 +12,8 @@ import { useMemo, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { Archive, ChartLine, Database, Hammer, Info, MoreHorizontal, Plus, RefreshCw, SearchX } from 'lucide-react';
-import { apiFetch, ApiError } from '@/lib/api';
+import { apiFetch } from '@/lib/api';
+import { errorMessage } from '@/lib/errorMessage';
 import { queryClient } from '@/lib/queryClient';
 import { can } from '@/lib/permissions';
 import { useMe } from '@/hooks/useMe';
@@ -58,10 +59,6 @@ import { KbDetailsSheet } from '@/components/kb/KbDetailsSheet';
 import { QualityCell } from '@/components/kb/QualityCell';
 import { StatusBadgeV2 } from '@/components/kb/StatusBadgeV2';
 import type { KbEntry, LaunchedAction } from '@/components/kb/types';
-
-function errorMessage(err: unknown): string {
-  return err instanceof ApiError ? err.message : t('common.error');
-}
 
 /** Plakietka „wymaga builda" z tooltipem (kolumna dirty + karta mobile). */
 function DirtyBadge() {

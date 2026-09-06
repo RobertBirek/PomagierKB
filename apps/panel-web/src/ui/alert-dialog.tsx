@@ -128,7 +128,7 @@ export function AlertDialog({
         <AlertDialogFooter>
           <RadixAlertDialog.Cancel
             disabled={loading}
-            className="inline-flex h-8 items-center rounded-md border border-border bg-surface px-3 text-sm transition-colors hover:bg-surface-2 disabled:pointer-events-none disabled:opacity-60"
+            className="inline-flex h-8 items-center rounded-md border border-border-strong bg-surface px-3 text-sm transition-colors hover:bg-surface-2 disabled:pointer-events-none disabled:opacity-60"
           >
             {cancelLabel ?? t('ui.cancel')}
           </RadixAlertDialog.Cancel>
@@ -141,7 +141,7 @@ export function AlertDialog({
             className={cn(
               'inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-sm font-medium transition-colors disabled:pointer-events-none disabled:opacity-60',
               destructive
-                ? 'bg-fail text-white hover:opacity-90'
+                ? 'bg-fail text-on-fail hover:opacity-90'
                 : 'bg-accent text-on-accent hover:bg-accent-hover active:bg-accent-active',
             )}
           >

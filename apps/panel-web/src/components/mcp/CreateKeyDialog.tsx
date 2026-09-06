@@ -6,7 +6,8 @@
  */
 import { useEffect, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { apiFetch, ApiError } from '@/lib/api';
+import { apiFetch } from '@/lib/api';
+import { errorMessage } from '@/lib/errorMessage';
 import { t } from '@/i18n/t';
 import type { PlKey } from '@/i18n/pl';
 import { Button } from '@/ui/button';
@@ -38,10 +39,6 @@ interface CreateKeyBody {
   scopes: string[];
   ttlDays: number;
   userId?: string;
-}
-
-function errMsg(err: unknown): string {
-  return err instanceof ApiError ? err.message : t('common.error');
 }
 
 export function CreateKeyDialog({
@@ -110,7 +107,7 @@ export function CreateKeyDialog({
       onClose();
       onRaw(data.raw);
     },
-    onError: (err) => toast.show(errMsg(err), 'fail'),
+    onError: (err) => toast.show(errorMessage(err), 'fail'),
   });
 
   function fieldError(field: CreateKeyErrorField): string | undefined {

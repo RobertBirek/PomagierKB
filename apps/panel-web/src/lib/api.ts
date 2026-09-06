@@ -11,13 +11,26 @@ export class ApiError extends Error {
   readonly code: string;
   readonly status: number;
   readonly details: unknown;
+  /**
+   * requestId z koperty błędu (panel-api loguje go razem z wyjątkiem) — jedyny
+   * sposób, by użytkownik zacytował konkretny wpis w logu serwera. null, gdy
+   * błąd powstał po stronie klienta (sieć, przerwanie) albo serwer go nie podał.
+   */
+  readonly requestId: string | null;
 
-  constructor(code: string, message: string, status: number, details?: unknown) {
+  constructor(
+    code: string,
+    message: string,
+    status: number,
+    details?: unknown,
+    requestId?: string | null,
+  ) {
     super(message);
     this.name = 'ApiError';
     this.code = code;
     this.status = status;
     this.details = details;
+    this.requestId = typeof requestId === 'string' && requestId !== '' ? requestId : null;
   }
 }
 
@@ -25,7 +38,7 @@ interface Envelope<T> {
   ok: boolean;
   data?: T;
   meta?: unknown;
-  error?: { code?: string; message?: string; details?: unknown };
+  error?: { code?: string; message?: string; details?: unknown; requestId?: string };
 }
 
 function redirectToLogin(): void {
@@ -58,6 +71,7 @@ async function parseEnvelopeFull<T>(res: Response): Promise<{ data: T; meta?: Li
       err?.message ?? `Błąd serwera (HTTP ${res.status})`,
       res.status,
       err?.details,
+      err?.requestId,
     );
   }
   const meta = body.meta;

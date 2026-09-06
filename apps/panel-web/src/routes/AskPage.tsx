@@ -9,16 +9,11 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { History, MessageSquare, Plus, Send, Square } from 'lucide-react';
-import { apiSse, ApiError } from '../lib/api';
+import { apiSse } from '../lib/api';
+import { errorMessage } from '../lib/errorMessage';
 import { confidenceBadge } from '../lib/confidence';
-import {
-  ASK_THREAD_STORAGE_KEY,
-  deserializeThread,
-  nextThreadKey,
-  serializeThread,
-  type ThreadCitation,
-  type ThreadEntry,
-} from '../lib/askThread';
+import { nextThreadKey, type ThreadCitation, type ThreadEntry } from '../lib/askThread';
+import { readThread, writeThread } from '../lib/askThreadStorage';
 import type { AskHistoryItem } from '../lib/askHistory';
 import { can } from '../lib/permissions';
 import { useMe } from '../hooks/useMe';
@@ -54,36 +49,34 @@ function parseJsonSafe(data: string): unknown {
   }
 }
 
-function loadThread(): ChatEntry[] {
-  try {
-    return deserializeThread(sessionStorage.getItem(ASK_THREAD_STORAGE_KEY)).map((e) => ({
-      ...e,
-      phase: null,
-    }));
-  } catch {
-    return [];
-  }
-}
-
-function saveThread(entries: readonly ChatEntry[]): void {
-  try {
-    sessionStorage.setItem(ASK_THREAD_STORAGE_KEY, serializeThread(entries));
-  } catch {
-    /* prywatny tryb / brak storage — wątek działa bez trwałości */
-  }
+function loadThread(owner: string | null): ChatEntry[] {
+  return readThread(owner).map((e) => ({ ...e, phase: null }));
 }
 
 const EXAMPLE_KEYS: readonly PlKey[] = ['ask.example.1', 'ask.example.2', 'ask.example.3'];
 
 // ── Strona ───────────────────────────────────────────────────────────────────
 
+/**
+ * Zmiana tożsamości w tej samej karcie (wygasła sesja, inny użytkownik przy
+ * współdzielonym stanowisku) REMONTUJE wątek: stan idzie do kosza, a pierwszy
+ * zapis nadpisuje klucz sessionStorage pustym wątkiem nowego właściciela.
+ * Sama treść poprzednika jest nieczytelna już wcześniej — readThread odrzuca
+ * wątek o innym `owner`.
+ */
 export function AskPage() {
+  const me = useMe();
+  const userId = me.data?.user.id ?? null;
+  return <AskThread key={userId ?? 'anon'} userId={userId} />;
+}
+
+function AskThread({ userId }: { userId: string | null }) {
   const me = useMe();
   const toast = useToast();
   const queryClient = useQueryClient();
   const role = me.data?.user.role;
   const [question, setQuestion] = useState('');
-  const [entries, setEntries] = useState<ChatEntry[]>(loadThread);
+  const [entries, setEntries] = useState<ChatEntry[]>(() => loadThread(userId));
   const [busy, setBusy] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [openCitation, setOpenCitation] = useState<ThreadCitation | null>(null);
@@ -103,8 +96,8 @@ export function AskPage() {
 
   // Trwałość wątku: zapis przy każdej zmianie (defensywnie w try/catch).
   useEffect(() => {
-    saveThread(entries);
-  }, [entries]);
+    writeThread(entries, userId);
+  }, [entries, userId]);
 
   // Autoscroll do końca przy nowym wpisie / zmianie fazy lub wyniku ostatniego
   // wpisu (patch werdyktu feedbacku NIE przewija).
@@ -181,8 +174,7 @@ export function AskPage() {
           patchEntry(key, { phase: null, stopped: true });
           return;
         }
-        const message = err instanceof ApiError ? err.message : t('common.error');
-        patchEntry(key, { phase: null, error: message });
+        patchEntry(key, { phase: null, error: errorMessage(err) });
       } finally {
         setBusy(false);
         abortRef.current = null;

@@ -6,7 +6,8 @@
  */
 import { useQuery } from '@tanstack/react-query';
 import { RefreshCw } from 'lucide-react';
-import { apiFetch, ApiError } from '@/lib/api';
+import { apiFetch } from '@/lib/api';
+import { errorMessage } from '@/lib/errorMessage';
 import { t, formatDateTime, formatNumber } from '@/i18n/t';
 import { Badge } from '@/ui/badge';
 import { DataTable, type Column } from '@/ui/data-table';
@@ -17,10 +18,6 @@ import { groupQualityChecks, qualityCheckLabelKey } from './kb-lib';
 import { StatusBadgeV2 } from './StatusBadgeV2';
 import { useQualityReport, verdictVariant } from './QualityCell';
 import type { BuildJobItem, KbEntry, QualityCheckDto } from './types';
-
-function errorMessage(err: unknown): string {
-  return err instanceof ApiError ? err.message : t('common.error');
-}
 
 function toItems(checks: readonly QualityCheckDto[]): CheckListItem[] {
   return checks.map((check, index) => ({

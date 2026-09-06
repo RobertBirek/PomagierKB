@@ -12,28 +12,32 @@
   --color-surface: #ffffff;
   --color-surface-2: #f1f2f4;
   --color-surface-3: #e8eaee;
+  /* border = dekoracyjny podział sekcji; border-strong = WIDOCZNA granica
+     kontrolki (Input/Checkbox/Radio/Button secondary) — wymóg WCAG 1.4.11 (3:1). */
   --color-border: #e4e5e9;
-  --color-border-strong: #d0d2d8;
+  --color-border-strong: #868c9b;
   --color-text: #1a1c1f;
   --color-text-secondary: #5e6066;
-  --color-text-tertiary: #8b8d94;
+  --color-text-tertiary: #676970;
 
   /* ── AKCENT: indygo (Linear) ── */
-  --color-accent: #5e6ad2;
-  --color-accent-hover: #4f5ac4;
-  --color-accent-active: #4650b2;
+  --color-accent: #4c5acd;
+  --color-accent-hover: #3746c5;
+  --color-accent-active: #313fb0;
   --color-on-accent: #ffffff;
-  --color-accent-tint: color-mix(in srgb, #5e6ad2 10%, transparent);
+  --color-accent-tint: color-mix(in srgb, #4c5acd 10%, transparent);
 
   /* ── STATUSY + tinty ── */
-  --color-ok: #16a34a;
-  --color-ok-tint: color-mix(in srgb, #16a34a 11%, transparent);
-  --color-warn: #d97706;
-  --color-warn-tint: color-mix(in srgb, #d97706 13%, transparent);
-  --color-fail: #dc2626;
-  --color-fail-tint: color-mix(in srgb, #dc2626 11%, transparent);
-  --color-info: #2563eb;
-  --color-info-tint: color-mix(in srgb, #2563eb 10%, transparent);
+  --color-ok: #107435;
+  --color-ok-tint: color-mix(in srgb, #107435 11%, transparent);
+  --color-warn: #955104;
+  --color-warn-tint: color-mix(in srgb, #955104 13%, transparent);
+  --color-fail: #c11f1f;
+  --color-fail-tint: color-mix(in srgb, #c11f1f 11%, transparent);
+  /* Napis na WYPEŁNIENIU kolorem fail (przycisk danger) — jak on-accent. */
+  --color-on-fail: #ffffff;
+  --color-info: #1658ea;
+  --color-info-tint: color-mix(in srgb, #1658ea 10%, transparent);
 
   /* ── TYPOGRAFIA ── */
   --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
@@ -89,21 +93,25 @@
   --color-surface-2: #1e2024;
   --color-surface-3: #26282d;
   --color-border: #26282e;
-  --color-border-strong: #35383f;
+  --color-border-strong: #646a77;
   --color-text: #ededf0;
   --color-text-secondary: #a2a5ad;
-  --color-text-tertiary: #6e7178;
-  --color-accent: #6c79ff;
-  --color-accent-hover: #7d88ff;
-  --color-accent-active: #5a68f0;
-  --color-on-accent: #ffffff;
-  --color-accent-tint: color-mix(in srgb, #6c79ff 14%, transparent);
+  --color-text-tertiary: #8c8e95;
+  --color-accent: #818dff;
+  --color-accent-hover: #929cff;
+  --color-accent-active: #606fff;
+  /* Akcent w dark jest jasny — biały tekst dawał 3.6:1. Napis na wypełnieniu
+     akcentem musi być CIEMNY, inaczej przycisk primary nie spełnia AA. */
+  --color-on-accent: #0b0d18;
+  --color-accent-tint: color-mix(in srgb, #818dff 14%, transparent);
   --color-ok: #4ade80;
   --color-ok-tint: color-mix(in srgb, #4ade80 13%, transparent);
   --color-warn: #fbbf24;
   --color-warn-tint: color-mix(in srgb, #fbbf24 14%, transparent);
   --color-fail: #f87171;
   --color-fail-tint: color-mix(in srgb, #f87171 13%, transparent);
+  /* Jasna czerwień w dark: biały napis dawał 2.8:1 na przycisku danger. */
+  --color-on-fail: #0b0d18;
   --color-info: #60a5fa;
   --color-info-tint: color-mix(in srgb, #60a5fa 13%, transparent);
   --shadow-md: 0 4px 12px rgb(0 0 0 / 0.4), 0 2px 4px rgb(0 0 0 / 0.3);

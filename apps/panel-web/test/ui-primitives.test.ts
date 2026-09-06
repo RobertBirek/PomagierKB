@@ -25,10 +25,13 @@ describe('buttonVariants', () => {
     expect(cls).toContain('hover:bg-accent-hover');
   });
 
-  it('danger = bg-fail text-white', () => {
+  // text-on-fail, NIE text-white: w motywie ciemnym --color-fail jest jasny
+  // i biały napis dawał 2.8:1 (D13-02).
+  it('danger = bg-fail text-on-fail', () => {
     const cls = buttonVariants({ variant: 'danger' });
     expect(cls).toContain('bg-fail');
-    expect(cls).toContain('text-white');
+    expect(cls).toContain('text-on-fail');
+    expect(cls).not.toContain('text-white');
   });
 
   it('rozmiary sm/md/lg = h-7/h-8/h-9', () => {

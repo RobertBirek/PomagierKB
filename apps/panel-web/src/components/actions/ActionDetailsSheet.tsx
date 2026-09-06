@@ -7,7 +7,8 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiFetch, ApiError } from '@/lib/api';
+import { apiFetch } from '@/lib/api';
+import { errorMessage } from '@/lib/errorMessage';
 import { t, formatDateTime } from '@/i18n/t';
 import { cn } from '@/ui/cn';
 import { Alert } from '@/ui/alert';
@@ -27,10 +28,6 @@ import type { ActionDto } from './ActionsTable';
 
 export interface ActionDetailsDto extends ActionDto {
   logTail: string[];
-}
-
-function errMsg(err: unknown): string {
-  return err instanceof ApiError ? err.message : t('common.error');
 }
 
 /** Pasek postępu akcji: percent → szerokość; running bez percent → indeterminate. */
@@ -80,7 +77,7 @@ export function ActionDetailsSheet({ actionId, onClose }: ActionDetailsSheetProp
     },
     onError: (err) => {
       setConfirmCancel(false);
-      toast.show(errMsg(err), 'fail');
+      toast.show(errorMessage(err), 'fail');
     },
   });
 
@@ -111,7 +108,7 @@ export function ActionDetailsSheet({ actionId, onClose }: ActionDetailsSheetProp
         </SheetHeader>
         <SheetBody className="flex flex-col gap-4">
           {details.isPending && <SkeletonText lines={6} />}
-          {details.isError && <Alert variant="fail">{errMsg(details.error)}</Alert>}
+          {details.isError && <Alert variant="fail">{errorMessage(details.error)}</Alert>}
           {data !== undefined && (
             <>
               <div className="flex flex-wrap items-center gap-2">

@@ -9,7 +9,8 @@
 import { useEffect, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { Plus, X } from 'lucide-react';
-import { apiFetch, ApiError } from '@/lib/api';
+import { apiFetch } from '@/lib/api';
+import { errorMessage } from '@/lib/errorMessage';
 import { queryClient } from '@/lib/queryClient';
 import { namespaceProblem, type NamespaceProblem } from '@/lib/namespace';
 import { statusLabel } from '@/lib/status';
@@ -55,10 +56,6 @@ const STEP_META: readonly { label: PlKey; description: PlKey }[] = [
   { label: 'kb.wizard.step2', description: 'kb.wizard.step2Desc' },
   { label: 'kb.wizard.step3', description: 'kb.wizard.step3Desc' },
 ];
-
-function errorMessage(err: unknown): string {
-  return err instanceof ApiError ? err.message : t('common.error');
-}
 
 export function KbCreateWizard({ open, onClose }: { open: boolean; onClose: () => void }) {
   const toast = useToast();
@@ -179,7 +176,7 @@ export function KbCreateWizard({ open, onClose }: { open: boolean; onClose: () =
                         key={example}
                         type="button"
                         aria-label={t('kb.wizard.addExample', { name: example })}
-                        className="inline-flex h-6 items-center gap-1 rounded-full border border-border bg-surface-2 px-2 text-xs text-text-secondary transition-colors hover:border-accent hover:text-accent"
+                        className="inline-flex h-6 items-center gap-1 rounded-full border border-border-strong bg-surface-2 px-2 text-xs text-text-secondary transition-colors hover:border-accent hover:text-accent"
                         onClick={() =>
                           setState((prev) => ({
                             ...prev,

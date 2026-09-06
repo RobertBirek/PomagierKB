@@ -8,7 +8,8 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Lock } from 'lucide-react';
-import { apiFetch, ApiError } from '@/lib/api';
+import { apiFetch } from '@/lib/api';
+import { errorMessage } from '@/lib/errorMessage';
 import { maskSecret } from '@/lib/settingsView';
 import { t, formatDateTime, type PlKey } from '@/i18n/t';
 import { Alert } from '@/ui/alert';
@@ -55,10 +56,6 @@ const TARGETS: { target: LlmTarget; titleKey: PlKey; descKey: PlKey }[] = [
   { target: 'openie', titleKey: 'settings.llm.openieTitle', descKey: 'settings.llm.openieDesc' },
   { target: 'embeddings', titleKey: 'settings.llm.embeddingsTitle', descKey: 'settings.llm.embeddingsDesc' },
 ];
-
-function errMsg(err: unknown): string {
-  return err instanceof ApiError ? err.message : t('common.error');
-}
 
 /** Kliencka walidacja adresu API: http(s):// + poprawny URL. */
 function isHttpUrl(value: string): boolean {
@@ -112,7 +109,7 @@ function LlmEditDialog({
     },
     onError: (err) => {
       setConfirmOverwrite(false);
-      toast.show(errMsg(err), 'fail');
+      toast.show(errorMessage(err), 'fail');
     },
   });
 
@@ -268,7 +265,7 @@ function LlmRow({
         </div>
         {test.isError && (
           <Alert variant="fail" className="w-full">
-            {errMsg(test.error)}
+            {errorMessage(test.error)}
           </Alert>
         )}
         {target === 'embeddings' && !locked && (
@@ -307,7 +304,7 @@ export function LlmSection() {
     return (
       <Alert variant="fail" title={t('common.error')}>
         <div className="flex flex-col items-start gap-2">
-          {errMsg(settings.error)}
+          {errorMessage(settings.error)}
           <Button size="sm" onClick={() => void settings.refetch()}>
             {t('common.retry')}
           </Button>

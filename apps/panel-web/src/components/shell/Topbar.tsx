@@ -19,6 +19,7 @@ import {
 import { Kbd } from '@/ui/kbd';
 import { cn } from '@/ui/cn';
 import { apiFetch } from '@/lib/api';
+import { clearThread } from '@/lib/askThreadStorage';
 import { buildHealthCockpit, type HealthStatus } from '@/lib/health';
 import type { Role } from '@/lib/permissions';
 import { applyTheme, clearStoredTheme, getStoredTheme, setTheme, type Theme } from '@/lib/theme';
@@ -169,7 +170,14 @@ const ROLE_LABEL: Record<Role, PlKey> = {
 
 function UserMenu({ displayName, role }: { displayName: string; role: Role }) {
   const logout = useMutation({
-    mutationFn: () => apiFetch<{ logoutUrl: string }>('/auth/logout', { method: 'POST' }),
+    mutationFn: () => {
+      // Wylogowanie kończy sesję na serwerze, ale sessionStorage należy do KARTY
+      // i przeżywa wyjście na Authentika oraz powrót — wątek /ask (treść bazy
+      // wiedzy) musi zniknąć zanim ktokolwiek zaloguje się przy tym stanowisku.
+      // Czyścimy na INTENCJĘ wylogowania, nie po odpowiedzi serwera.
+      clearThread();
+      return apiFetch<{ logoutUrl: string }>('/auth/logout', { method: 'POST' });
+    },
     onSuccess: (data) => window.location.assign(data.logoutUrl),
   });
   const initial = (displayName.trim()[0] ?? '?').toUpperCase();

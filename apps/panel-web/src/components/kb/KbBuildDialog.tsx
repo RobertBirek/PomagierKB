@@ -6,7 +6,8 @@
  */
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { apiFetch, ApiError } from '@/lib/api';
+import { apiFetch } from '@/lib/api';
+import { errorMessage } from '@/lib/errorMessage';
 import { queryClient } from '@/lib/queryClient';
 import { groupPreflightChecks, preflightCheckLabelKey, type PreflightCheck } from '@/lib/preflight';
 import { statusLabel } from '@/lib/status';
@@ -25,10 +26,6 @@ import type { KbEntry, LaunchedAction } from './types';
 interface PreflightResult {
   ok: boolean;
   checks: PreflightCheck[];
-}
-
-function errorMessage(err: unknown): string {
-  return err instanceof ApiError ? err.message : t('common.error');
 }
 
 const toItems = (checks: readonly PreflightCheck[]) =>

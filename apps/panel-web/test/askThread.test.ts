@@ -126,6 +126,38 @@ describe('serializeThread() / deserializeThread()', () => {
   });
 });
 
+// D13-03: wątek zawiera treść bazy wiedzy, a sessionStorage przeżywa wylogowanie
+// (należy do karty, nie do sesji) — musi być związany z tożsamością.
+describe('deserializeThread() — właściciel wątku', () => {
+  const raw = (owner?: string) => serializeThread([makeEntry()], owner);
+
+  it('ten sam użytkownik odzyskuje wątek', () => {
+    expect(deserializeThread(raw('user-1'), 'user-1')).toHaveLength(1);
+  });
+
+  it('INNY użytkownik nie widzi wątku poprzednika', () => {
+    expect(deserializeThread(raw('user-1'), 'user-2')).toEqual([]);
+  });
+
+  it('brak tożsamości po stronie czytającego (null) → wątek odrzucony', () => {
+    expect(deserializeThread(raw('user-1'), null)).toEqual([]);
+  });
+
+  it('wątek bez właściciela (format sprzed poprawki) jest odrzucany', () => {
+    expect(deserializeThread(raw(), 'user-1')).toEqual([]);
+    expect(deserializeThread('{"v":1,"entries":[{"question":"Q?"}]}', 'user-1')).toEqual([]);
+  });
+
+  it('pominięty argument wyłącza kontrolę (kompatybilność wsteczna)', () => {
+    expect(deserializeThread(raw('user-1'))).toHaveLength(1);
+  });
+
+  it('serializacja zapisuje właściciela tylko gdy jest znany', () => {
+    expect(raw('user-1')).toContain('"owner":"user-1"');
+    expect(raw()).not.toContain('owner');
+  });
+});
+
 describe('nextThreadKey()', () => {
   it('pusty wątek → 1; inaczej max+1', () => {
     expect(nextThreadKey([])).toBe(1);

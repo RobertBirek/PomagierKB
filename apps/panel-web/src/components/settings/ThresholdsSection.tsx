@@ -2,12 +2,14 @@
  * Zakładka Progi (/settings): learning.threshold i answer.minScore — suwak
  * sprzężony z polem liczbowym, zapis z dirty-state i toast z akcją „Cofnij"
  * (PUT poprzedniej wartości — jedyne prawdziwe undo). Oba klucze są na białej
- * liście SETTINGS_KEYS backendu (minScore odblokowany w programie rozbudowy;
- * semantyka: próg na ZNORMALIZOWANYM top score, 1.0 = rank 1 we wszystkich kanałach).
+ * liście SETTINGS_KEYS backendu. Semantyka minScore ZMIENIŁA SIĘ po audycie 2026-09-06:
+ * to minimalny COSINUS TRAFNOŚCI najlepszego wyniku (0.5–0.99), a nie znormalizowany
+ * wynik zgodności kanałów — poprzednia bramka nigdy nie odrzucała (D8-01).
  */
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { apiFetch, ApiError } from '@/lib/api';
+import { apiFetch } from '@/lib/api';
+import { errorMessage } from '@/lib/errorMessage';
 import { coerceNumberSetting } from '@/lib/settingsView';
 import { t } from '@/i18n/t';
 import { Alert } from '@/ui/alert';
@@ -20,11 +22,16 @@ import { useToast } from '@/ui/toast';
 import { useSettings, type MaskedSettingDto } from './LlmSection';
 
 const LEARNING_THRESHOLD_DEFAULT = 0.45;
-const ANSWER_MIN_SCORE_DEFAULT = 0.2;
-
-function errMsg(err: unknown): string {
-  return err instanceof ApiError ? err.message : t('common.error');
-}
+/**
+ * Po audycie 2026-09-06 (D8-01) `answer.minScore` znaczy MINIMALNY COSINUS TRAFNOŚCI
+ * najlepszego wyniku, a nie znormalizowany wynik zgodności kanałów — stara bramka była
+ * matematycznie martwa i nigdy nie odrzucała. Backend (`resolveMinRelevance`) traktuje
+ * wartości poniżej 0.5 jako „brak ustawienia" i używa 0.7, więc suwak nie może ich
+ * oferować: pokazywałby stan, którego system nie honoruje.
+ */
+const ANSWER_MIN_SCORE_DEFAULT = 0.7;
+const ANSWER_MIN_SCORE_RANGE = { min: 0.5, max: 0.99 } as const;
+const LEARNING_THRESHOLD_RANGE = { min: 0, max: 1 } as const;
 
 interface ThresholdCardProps {
   settingKey: 'learning.threshold' | 'answer.minScore';
@@ -32,9 +39,19 @@ interface ThresholdCardProps {
   description: string;
   defaultValue: number;
   stored: number;
+  min: number;
+  max: number;
 }
 
-function ThresholdCard({ settingKey, title, description, defaultValue, stored }: ThresholdCardProps) {
+function ThresholdCard({
+  settingKey,
+  title,
+  description,
+  defaultValue,
+  stored,
+  min,
+  max,
+}: ThresholdCardProps) {
   const queryClient = useQueryClient();
   const toast = useToast();
   const [draft, setDraft] = useState<number | null>(null);
@@ -49,7 +66,7 @@ function ThresholdCard({ settingKey, title, description, defaultValue, stored }:
       setDraft(null);
       toast.show(t('settings.thresholds.undone', { value: previous.toFixed(2) }), 'ok');
     },
-    onError: (err) => toast.show(errMsg(err), 'fail'),
+    onError: (err) => toast.show(errorMessage(err), 'fail'),
   });
 
   const save = useMutation({
@@ -66,16 +83,16 @@ function ThresholdCard({ settingKey, title, description, defaultValue, stored }:
         },
       });
     },
-    onError: (err) => toast.show(errMsg(err), 'fail'),
+    onError: (err) => toast.show(errorMessage(err), 'fail'),
   });
 
   const value = draft ?? stored;
   const dirty = draft !== null && draft !== stored;
-  const inRange = value >= 0 && value <= 1;
+  const inRange = value >= min && value <= max;
 
   function setValue(next: number): void {
     if (!Number.isFinite(next)) return;
-    setDraft(Math.max(0, Math.min(1, next)));
+    setDraft(Math.max(min, Math.min(max, next)));
   }
 
   return (
@@ -89,8 +106,8 @@ function ThresholdCard({ settingKey, title, description, defaultValue, stored }:
           <input
             className="min-w-40 grow accent-accent"
             type="range"
-            min={0}
-            max={1}
+            min={min}
+            max={max}
             step={0.01}
             value={value}
             aria-label={title}
@@ -99,8 +116,8 @@ function ThresholdCard({ settingKey, title, description, defaultValue, stored }:
           <Field label={t('settings.thresholds.valueLabel')} className="w-28">
             <Input
               type="number"
-              min={0}
-              max={1}
+              min={min}
+              max={max}
               step={0.01}
               value={String(value)}
               onChange={(ev) => setValue(Number(ev.target.value))}
@@ -134,7 +151,7 @@ export function ThresholdsSection() {
   if (settings.isError) {
     return (
       <Alert variant="fail" title={t('common.error')}>
-        {errMsg(settings.error)}
+        {errorMessage(settings.error)}
       </Alert>
     );
   }
@@ -156,6 +173,8 @@ export function ThresholdsSection() {
         description={t('settings.thresholds.learningDesc')}
         defaultValue={LEARNING_THRESHOLD_DEFAULT}
         stored={learningStored}
+        min={LEARNING_THRESHOLD_RANGE.min}
+        max={LEARNING_THRESHOLD_RANGE.max}
       />
       <ThresholdCard
         settingKey="answer.minScore"
@@ -163,6 +182,8 @@ export function ThresholdsSection() {
         description={t('settings.thresholds.minScoreDesc')}
         defaultValue={ANSWER_MIN_SCORE_DEFAULT}
         stored={minScoreStored}
+        min={ANSWER_MIN_SCORE_RANGE.min}
+        max={ANSWER_MIN_SCORE_RANGE.max}
       />
     </div>
   );

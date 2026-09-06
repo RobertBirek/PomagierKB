@@ -61,7 +61,7 @@ export function CodeBlock({
       aria-label={t('ui.copyCode')}
       title={failed ? t('ui.copyManually') : t('ui.copyCode')}
       className={cn(
-        'inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-border',
+        'inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-border-strong',
         'bg-surface text-text-secondary hover:bg-surface-2 hover:text-text',
       )}
       onClick={() => void copy()}

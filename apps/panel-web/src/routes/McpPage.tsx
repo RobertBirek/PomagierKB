@@ -10,7 +10,8 @@ import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { Blocks, Bot, KeyRound, MoreHorizontal, Plus, RefreshCw, RotateCw, SearchX, ShieldOff, TriangleAlert } from 'lucide-react';
-import { apiFetch, ApiError } from '@/lib/api';
+import { apiFetch } from '@/lib/api';
+import { errorMessage } from '@/lib/errorMessage';
 import { keyBadgeInfo, daysUntil, KEY_EXPIRY_WARN_DAYS } from '@/lib/mcp';
 import { useMe } from '@/hooks/useMe';
 import { useStatus } from '@/hooks/useStatus';
@@ -54,10 +55,6 @@ import type {
   UserView,
 } from '@/components/mcp/types';
 import type { McpTab } from '../router';
-
-function errMsg(err: unknown): string {
-  return err instanceof ApiError ? err.message : t('common.error');
-}
 
 // ── Współdzielone hooki danych ───────────────────────────────────────────────
 
@@ -122,7 +119,7 @@ function KeysTab({ isAdmin }: { isAdmin: boolean }) {
       setRotateKey(null);
       setRaw(data.raw);
     },
-    onError: (err) => toast.show(errMsg(err), 'fail'),
+    onError: (err) => toast.show(errorMessage(err), 'fail'),
   });
 
   const revoke = useMutation({
@@ -133,7 +130,7 @@ function KeysTab({ isAdmin }: { isAdmin: boolean }) {
       toast.show(t('mcp.toast.keyRevoked'), 'ok');
       setRevokeKey(null);
     },
-    onError: (err) => toast.show(errMsg(err), 'fail'),
+    onError: (err) => toast.show(errorMessage(err), 'fail'),
   });
 
   const nowMs = Date.now();
@@ -254,7 +251,7 @@ function KeysTab({ isAdmin }: { isAdmin: boolean }) {
       <EmptyState
         icon={TriangleAlert}
         title={t('common.error')}
-        description={errMsg(keys.error)}
+        description={errorMessage(keys.error)}
         action={<Button variant="primary" onClick={() => void keys.refetch()}>{t('common.retry')}</Button>}
       />
     );
@@ -360,7 +357,7 @@ function ProfilesTab({ isAdmin }: { isAdmin: boolean }) {
       toast.show(t('mcp.toast.profileDeleted'), 'ok');
       setDeleting(null);
     },
-    onError: (err) => toast.show(errMsg(err), 'fail'),
+    onError: (err) => toast.show(errorMessage(err), 'fail'),
   });
 
   const namespaces = (kbs.data?.items ?? []).map((kb) => kb.namespace);
@@ -414,7 +411,7 @@ function ProfilesTab({ isAdmin }: { isAdmin: boolean }) {
 
   if (profiles.isPending) return <Skeleton className="h-44 w-full" />;
   if (profiles.isError) {
-    return <EmptyState icon={TriangleAlert} title={t('common.error')} description={errMsg(profiles.error)} />;
+    return <EmptyState icon={TriangleAlert} title={t('common.error')} description={errorMessage(profiles.error)} />;
   }
 
   const createButton = isAdmin ? (
@@ -516,7 +513,7 @@ function SnippetsTab() {
         </Select>
       </Field>
       {snippets.isPending && <Skeleton className="h-32 w-full" />}
-      {snippets.isError && <Alert variant="fail">{errMsg(snippets.error)}</Alert>}
+      {snippets.isError && <Alert variant="fail">{errorMessage(snippets.error)}</Alert>}
       {snippets.data !== undefined && (
         <div className="flex flex-col gap-4">
           <p className="text-sm text-text-secondary">{t('mcp.snippets.hint', { placeholder: '<TWÓJ_KLUCZ>' })}</p>
@@ -560,7 +557,7 @@ function ServiceAccountsTab() {
       setCreateOpen(false);
       setNewName('');
     },
-    onError: (err) => toast.show(errMsg(err), 'fail'),
+    onError: (err) => toast.show(errorMessage(err), 'fail'),
   });
 
   const setStatus = useMutation({
@@ -583,7 +580,7 @@ function ServiceAccountsTab() {
         toast.show(t('mcp.service.enabledToast'), 'ok');
       }
     },
-    onError: (err) => toast.show(errMsg(err), 'fail'),
+    onError: (err) => toast.show(errorMessage(err), 'fail'),
   });
 
   const serviceUsers = (users.data?.users ?? []).filter((u) => u.kind === 'service');
@@ -635,7 +632,7 @@ function ServiceAccountsTab() {
 
   if (users.isPending) return <Skeleton className="h-44 w-full" />;
   if (users.isError) {
-    return <EmptyState icon={TriangleAlert} title={t('common.error')} description={errMsg(users.error)} />;
+    return <EmptyState icon={TriangleAlert} title={t('common.error')} description={errorMessage(users.error)} />;
   }
 
   const createButton = (
@@ -748,7 +745,7 @@ function HealthTab() {
           </IconButton>
         </CardHeader>
         <CardBody className="flex flex-col gap-2">
-          {health.isError && <Alert variant="fail">{errMsg(health.error)}</Alert>}
+          {health.isError && <Alert variant="fail">{errorMessage(health.error)}</Alert>}
           {health.data !== undefined && (
             <>
               <p className="text-sm text-text">{health.data.detail}</p>

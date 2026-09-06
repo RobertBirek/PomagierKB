@@ -5,7 +5,8 @@
  */
 import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { apiFetch, ApiError } from '@/lib/api';
+import { apiFetch } from '@/lib/api';
+import { errorMessage } from '@/lib/errorMessage';
 import { t } from '@/i18n/t';
 import { Badge } from '@/ui/badge';
 import { Button } from '@/ui/button';
@@ -40,9 +41,6 @@ export interface BulkBarProps {
 export function BulkBar({ selected, titleById, onClear, onApplied }: BulkBarProps) {
   const toast = useToast();
   const [state, setState] = useState<{ op: 'promote' | 'reject'; report: BulkReport } | null>(null);
-
-  const errorMessage = (err: unknown): string =>
-    err instanceof ApiError ? err.message : t('common.error');
 
   const dryRun = useMutation({
     mutationFn: (op: 'promote' | 'reject') =>

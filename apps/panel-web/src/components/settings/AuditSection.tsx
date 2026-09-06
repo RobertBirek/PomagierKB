@@ -8,7 +8,8 @@
 import { useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { ScrollText } from 'lucide-react';
-import { apiFetch, ApiError } from '@/lib/api';
+import { apiFetch } from '@/lib/api';
+import { errorMessage } from '@/lib/errorMessage';
 import { groupByDay } from '@/lib/settingsView';
 import { t, formatDateTime } from '@/i18n/t';
 import { Alert } from '@/ui/alert';
@@ -57,10 +58,6 @@ export interface AuditFilters {
 }
 
 const AUDIT_PAGE_LIMIT = 50;
-
-function errMsg(err: unknown): string {
-  return err instanceof ApiError ? err.message : t('common.error');
-}
 
 function buildAuditQuery(filters: AuditFilters, beforeSeq: number | null): string {
   const params = new URLSearchParams();
@@ -300,7 +297,7 @@ export function AuditSection({ filters, onFiltersChange }: AuditSectionProps) {
             })}
           </Alert>
         ))}
-      {verify.isError && <Alert variant="fail">{errMsg(verify.error)}</Alert>}
+      {verify.isError && <Alert variant="fail">{errorMessage(verify.error)}</Alert>}
 
       <div className="flex flex-wrap items-end gap-3">
         <Field label={t('system.audit.from')} className="w-36">
@@ -325,7 +322,7 @@ export function AuditSection({ filters, onFiltersChange }: AuditSectionProps) {
       </div>
 
       {audit.isError ? (
-        <Alert variant="fail">{errMsg(audit.error)}</Alert>
+        <Alert variant="fail">{errorMessage(audit.error)}</Alert>
       ) : (
         <Card>
           <CardBody className="p-0 px-1">

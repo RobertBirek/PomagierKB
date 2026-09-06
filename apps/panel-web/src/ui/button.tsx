@@ -9,7 +9,7 @@ const variantClasses = {
   secondary: 'bg-surface text-text border border-border-strong shadow-xs hover:bg-surface-2 active:bg-surface-3',
   ghost: 'text-text hover:bg-surface-2 active:bg-surface-3',
   outline: 'border border-border-strong text-text hover:bg-surface-2 active:bg-surface-3',
-  danger: 'bg-fail text-white hover:opacity-90 active:opacity-80',
+  danger: 'bg-fail text-on-fail hover:opacity-90 active:opacity-80',
 } as const;
 
 export const buttonVariants = cva(

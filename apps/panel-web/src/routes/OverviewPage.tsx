@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { apiFetch, apiFetchWithMeta } from '../lib/api';
+import { errorMessage } from '../lib/errorMessage';
 import { buildHealthCockpit, type HealthSignal } from '../lib/health';
 import { healthVariant, statusLabel, statusVariant } from '../lib/status';
 import {
@@ -64,10 +65,6 @@ interface ActionListItem {
 interface GapStatsDto {
   stats: Record<string, number>;
   total: number;
-}
-
-function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }
 
 // ── Kafel metryki z obsługą błędu źródła (— + Tooltip) ───────────────────────

@@ -8,6 +8,7 @@ import { HeadContent, Outlet, useRouterState } from '@tanstack/react-router';
 import { Lock, Unplug } from 'lucide-react';
 import { TooltipProvider } from '@/ui/tooltip';
 import { useMe } from '@/hooks/useMe';
+import { errorMessage } from '@/lib/errorMessage';
 import { can, PAGE_PERMISSION } from '@/lib/permissions';
 import { t } from '@/i18n/t';
 import { EmptyState } from '@/ui/empty-state';
@@ -63,7 +64,9 @@ export function RootLayout() {
           <EmptyState
             icon={Unplug}
             title={t('common.error')}
-            description={t('error.network')}
+            /* errorMessage dokleja requestId, gdy serwer go podał — użytkownik
+               ma czym zacytować wpis w logu, zgłaszając problem. */
+            description={me.isError ? errorMessage(me.error) : t('error.network')}
             action={
               <button
                 type="button"

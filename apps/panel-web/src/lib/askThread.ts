@@ -98,9 +98,11 @@ function normalizeResult(raw: unknown): ThreadResult | null {
 /**
  * Serializacja wątku do stringa (JSON). Utrwala TYLKO znane pola (pole phase
  * i inne stany przejściowe są pomijane); przycina do ostatnich
- * ASK_THREAD_MAX_ENTRIES wpisów.
+ * ASK_THREAD_MAX_ENTRIES wpisów. `owner` to id użytkownika z /api/v1/me —
+ * wątek jest związany z TOŻSAMOŚCIĄ, nie tylko z kartą przeglądarki
+ * (stanowiska współdzielone: kolejny zalogowany nie może zobaczyć poprzednika).
  */
-export function serializeThread(entries: readonly ThreadEntry[]): string {
+export function serializeThread(entries: readonly ThreadEntry[], owner?: string): string {
   const tail = entries.slice(-ASK_THREAD_MAX_ENTRIES);
   const plain = tail.map((e) => ({
     key: e.key,
@@ -110,15 +112,23 @@ export function serializeThread(entries: readonly ThreadEntry[]): string {
     stopped: e.stopped,
     verdict: e.verdict,
   }));
-  return JSON.stringify({ v: 1, entries: plain });
+  return JSON.stringify({ v: 2, ...(owner === undefined ? {} : { owner }), entries: plain });
 }
 
 /**
  * Odtworzenie wątku z sessionStorage. Defensywne: zepsuty JSON, zły kształt,
  * wpisy bez pytania → pomijane; całość nie-obiekt → []. Klucze wpisów są
  * przenumerowywane rosnąco (1..n), by uniknąć kolizji po odtworzeniu.
+ *
+ * `expectedOwner` (id z /api/v1/me): gdy podane, wątek MUSI być zapisany przez
+ * tego samego użytkownika — inaczej zwracamy [] (odrzucamy też wątki bez
+ * właściciela, czyli zapisane przed wprowadzeniem tego pola). Pominięcie
+ * argumentu wyłącza kontrolę (kompatybilność wsteczna wywołań bez tożsamości).
  */
-export function deserializeThread(raw: string | null | undefined): ThreadEntry[] {
+export function deserializeThread(
+  raw: string | null | undefined,
+  expectedOwner?: string | null,
+): ThreadEntry[] {
   if (typeof raw !== 'string' || raw === '') return [];
   let parsed: unknown;
   try {
@@ -127,6 +137,10 @@ export function deserializeThread(raw: string | null | undefined): ThreadEntry[]
     return [];
   }
   const root = asRecord(parsed);
+  if (expectedOwner !== undefined) {
+    const owner = root === null ? undefined : root['owner'];
+    if (typeof owner !== 'string' || owner === '' || owner !== expectedOwner) return [];
+  }
   const list = root !== null && Array.isArray(root['entries']) ? (root['entries'] as unknown[]) : null;
   if (list === null) return [];
   const out: ThreadEntry[] = [];

@@ -9,6 +9,7 @@ import { useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { Copy, SearchX, ThumbsDown, ThumbsUp } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
+import { errorMessage } from '@/lib/errorMessage';
 import { confidenceBadge } from '@/lib/confidence';
 import { buildAddLinkSearch } from '@/lib/prefill';
 import type { ThreadCitation, ThreadEntry, ThreadResult } from '@/lib/askThread';
@@ -48,7 +49,7 @@ function FeedbackControls({ answerId, verdict, onSaved }: FeedbackControlsProps)
       onSaved(v);
       toast.show(v === 'up' ? t('ask.feedback.thanksUp') : t('ask.feedback.thanksDown'), 'ok');
     } catch (err) {
-      toast.show(t('error.generic', { message: err instanceof Error ? err.message : String(err) }), 'fail');
+      toast.show(errorMessage(err), 'fail');
     } finally {
       setSending(false);
     }

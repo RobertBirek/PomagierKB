@@ -89,6 +89,10 @@ export const pl = {
   'error.forbidden': 'Nie masz uprawnień do tej operacji.',
   'error.sessionExpired': 'Sesja wygasła — zaloguj się ponownie.',
   'error.generic': 'Wystąpił błąd: {message}',
+  // requestId z koperty błędu — pozwala operatorowi znaleźć wpis w logu serwera.
+  'error.requestIdLabel': 'Identyfikator zgłoszenia',
+  'error.requestId': 'Identyfikator zgłoszenia: {id}',
+  'error.withRequestId': '{message} (identyfikator zgłoszenia: {id})',
 
   // ── shell: komponenty ──
   'toast.dismiss': 'Zamknij powiadomienie',
@@ -525,7 +529,7 @@ export const pl = {
     'Odpowiedź z pewnością poniżej progu trafia do rejestru luk wiedzy („Czego baza nie wie”). Wyższy próg = więcej zgłoszeń do uzupełnienia przez kuratora.',
   'settings.thresholds.minScoreTitle': 'Próg odmowy odpowiedzi (answer.minScore)',
   'settings.thresholds.minScoreDesc':
-    'Gdy znormalizowany najlepszy wynik wyszukiwania (1.0 = pierwsze miejsce we wszystkich kanałach) jest poniżej progu, baza uczciwie mówi „nie znalazłem” zamiast zgadywać.',
+    'Minimalne podobieństwo znaczeniowe najlepszego znalezionego fragmentu do pytania (0,5–0,99; domyślnie 0,7). Poniżej progu baza uczciwie mówi „nie znalazłem” zamiast zgadywać — i nie zużywa modelu na odpowiedź. Wyżej = ostrożniej, ale częstsze odmowy przy pytaniach zadanych inaczej niż brzmi dokument.',
   'settings.thresholds.value': 'Wartość: {value}',
   'settings.thresholds.default': 'domyślnie {value}',
   'settings.thresholds.saved': 'Próg zapisany',

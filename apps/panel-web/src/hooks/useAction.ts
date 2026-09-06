@@ -1,14 +1,22 @@
 import { useEffect, useRef, useState } from 'react';
 import { apiFetch, apiSse } from '../lib/api';
+import {
+  asRunStatus,
+  isTerminalActionStatus,
+  shouldFallbackToPolling,
+  type ActionRunStatus,
+} from '../lib/actionTransport';
 
 /**
  * Obserwacja długobieżnej akcji (202+actionId — build KB, create_kb, quality…).
  * Preferuje SSE GET /api/v1/actions/:id/events (eventy: progress / log {lines} /
- * status terminalny kończy strumień); gdy strumień nie wstanie — fallback na
- * polling GET /api/v1/actions/:id co 2 s. Zwraca {status, progress, logTail}.
+ * status terminalny kończy strumień); gdy strumień nie wstanie ALBO urwie się
+ * bez statusu terminalnego — fallback na polling GET /api/v1/actions/:id co 2 s.
+ * Zwraca {status, progress, logTail}.
  */
 
-export type ActionRunStatus = 'running' | 'success' | 'error' | 'cancelled' | 'unknown';
+export type { ActionRunStatus };
+export { isTerminalActionStatus };
 
 export interface ActionState {
   status: ActionRunStatus;
@@ -29,17 +37,6 @@ interface ActionDto {
 }
 
 const LOG_CAP = 500;
-const TERMINAL: readonly ActionRunStatus[] = ['success', 'error', 'cancelled'];
-
-function asRunStatus(raw: unknown): ActionRunStatus {
-  return raw === 'running' || raw === 'success' || raw === 'error' || raw === 'cancelled'
-    ? raw
-    : 'unknown';
-}
-
-export function isTerminalActionStatus(status: ActionRunStatus): boolean {
-  return TERMINAL.includes(status);
-}
 
 const IDLE: ActionState = { status: 'unknown', exitCode: null, progress: null, logTail: [], transport: 'idle' };
 
@@ -58,12 +55,16 @@ export function useAction(actionId: string | null): ActionState {
     const controller = new AbortController();
     let pollTimer: number | undefined;
     let stopped = false;
+    // Status poza stanem: po zamknięciu strumienia musimy znać go SYNCHRONICZNIE
+    // (setState jest asynchroniczne), żeby zdecydować o fallbacku na polling.
+    let lastStatus: ActionRunStatus = 'running';
 
     const applyDto = (dto: ActionDto, transport: 'sse' | 'poll'): void => {
       if (stopped) return;
       if (Array.isArray(dto.logTail)) logRef.current = dto.logTail.slice(-LOG_CAP);
+      lastStatus = asRunStatus(dto.status);
       setState({
-        status: asRunStatus(dto.status),
+        status: lastStatus,
         exitCode: dto.exitCode ?? null,
         progress: dto.progress ?? null,
         logTail: logRef.current,
@@ -84,7 +85,7 @@ export function useAction(actionId: string | null): ActionState {
     };
 
     const startPolling = (): void => {
-      if (stopped) return;
+      if (stopped || pollTimer !== undefined) return;
       setState((prev) => ({ ...prev, transport: 'poll' }));
       void pollOnce();
       pollTimer = window.setInterval(() => void pollOnce(), 2000);
@@ -107,9 +108,10 @@ export function useAction(actionId: string | null): ActionState {
       } else if (ev.event === 'progress') {
         setState((prev) => ({ ...prev, progress: obj }));
       } else if (ev.event === 'status') {
+        lastStatus = asRunStatus(obj['status']);
         setState((prev) => ({
           ...prev,
-          status: asRunStatus(obj['status']),
+          status: lastStatus,
           exitCode: typeof obj['exitCode'] === 'number' ? obj['exitCode'] : prev.exitCode,
         }));
       }
@@ -119,11 +121,18 @@ export function useAction(actionId: string | null): ActionState {
       method: 'GET',
       onEvent: onSseEvent,
       signal: controller.signal,
-    }).catch((err: unknown) => {
-      // Abort = odmontowanie; inne błędy → siatka bezpieczeństwa: polling.
-      if (err instanceof DOMException && err.name === 'AbortError') return;
-      startPolling();
-    });
+    })
+      .then(() => {
+        // Strumień skończył się BEZ błędu. Jeśli nie przyniósł statusu
+        // terminalnego, to znaczy że urwał go pośrednik (timeout, restart,
+        // uśpiona karta) — dokończenie akcji dojdzie do nas przez polling.
+        if (shouldFallbackToPolling({ stopped, status: lastStatus })) startPolling();
+      })
+      .catch((err: unknown) => {
+        // Abort = odmontowanie; inne błędy → siatka bezpieczeństwa: polling.
+        if (err instanceof DOMException && err.name === 'AbortError') return;
+        startPolling();
+      });
 
     return () => {
       stopped = true;

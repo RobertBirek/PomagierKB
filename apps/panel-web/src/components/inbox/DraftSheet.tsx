@@ -7,7 +7,8 @@
  */
 import { Fragment, useEffect, useState, type FormEvent } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { apiFetch, ApiError } from '@/lib/api';
+import { apiFetch } from '@/lib/api';
+import { errorMessage } from '@/lib/errorMessage';
 import { queryClient } from '@/lib/queryClient';
 import { t, formatDateTime, formatNumber } from '@/i18n/t';
 import { Markdown } from '@/components/Markdown';
@@ -35,11 +36,6 @@ import { draftStatusBadge, sourceLabel } from './badges';
 import { metadataEntries } from './detailsList';
 import { REJECT_REASON_MAX, REJECT_REASON_MIN, validateRejectReason } from './rejectReason';
 import type { DraftDetail, DraftListItem, KbItem } from './types';
-
-function errorMessage(err: unknown): string {
-  if (err instanceof ApiError) return err.message;
-  return t('common.error');
-}
 
 export interface DraftSheetProps {
   draftId: string | null;

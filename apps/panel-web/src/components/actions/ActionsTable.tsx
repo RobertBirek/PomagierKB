@@ -7,7 +7,8 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { ListChecks } from 'lucide-react';
-import { apiFetchWithMeta, ApiError } from '@/lib/api';
+import { apiFetchWithMeta } from '@/lib/api';
+import { errorMessage } from '@/lib/errorMessage';
 import { t, formatDateTime, type PlKey } from '@/i18n/t';
 import { Alert } from '@/ui/alert';
 import { Badge } from '@/ui/badge';
@@ -55,10 +56,6 @@ const ACTION_STATUS_OPTIONS: { value: string; labelKey: PlKey }[] = [
 ];
 
 export const ACTIONS_PAGE_LIMIT = 20;
-
-function errMsg(err: unknown): string {
-  return err instanceof ApiError ? err.message : t('common.error');
-}
 
 export interface ActionsTableProps {
   filters: ActionsFilters;
@@ -184,7 +181,7 @@ export function ActionsTable({ filters, onFiltersChange }: ActionsTableProps) {
       </div>
 
       {actions.isError ? (
-        <Alert variant="fail">{errMsg(actions.error)}</Alert>
+        <Alert variant="fail">{errorMessage(actions.error)}</Alert>
       ) : (
         <Card>
           <CardBody className="p-0 px-1">

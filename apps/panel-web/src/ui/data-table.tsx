@@ -77,7 +77,9 @@ const HIDE_BELOW: Record<'sm' | 'md', string> = {
 };
 
 const ICON_BTN =
-  'inline-flex h-7 w-7 items-center justify-center rounded-md border border-border ' +
+  // border-strong: to KONTROLKA (stronicowanie), jej granica musi mieć 3:1
+  // wobec tła — WCAG 1.4.11 (border jest wyłącznie dekoracyjny).
+  'inline-flex h-7 w-7 items-center justify-center rounded-md border border-border-strong ' +
   'bg-surface text-text-secondary hover:bg-surface-2 hover:text-text ' +
   'disabled:pointer-events-none disabled:opacity-40';
 

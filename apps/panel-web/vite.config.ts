@@ -10,7 +10,13 @@ const apiOrigin = process.env['PANEL_API_ORIGIN'] ?? 'http://localhost:8080';
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: { alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) } },
-  base: './',
+  // Panel jest ZAWSZE serwowany z korzenia domeny (kag.…/), a panel-api ma
+  // fallback SPA na dowolną ścieżkę nie-API. Przy relatywnym base wejście pod
+  // adres z końcowym ukośnikiem (np. /inbox/) kazało przeglądarce szukać
+  // assets/index-*.js pod /inbox/assets/… — fallback zwracał index.html
+  // z content-type text/html, moduł leciał na kontroli MIME i renderowała się
+  // BIAŁA STRONA. Bezwzględny base usuwa problem u źródła.
+  base: '/',
   build: { outDir: 'dist' },
   server: {
     proxy: {

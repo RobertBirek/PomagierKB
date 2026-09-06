@@ -7,7 +7,8 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { RefreshCw } from 'lucide-react';
-import { apiFetch, ApiError } from '@/lib/api';
+import { apiFetch } from '@/lib/api';
+import { errorMessage } from '@/lib/errorMessage';
 import { useStatus } from '@/hooks/useStatus';
 import { t, formatDateTime, type PlKey } from '@/i18n/t';
 import { Alert } from '@/ui/alert';
@@ -32,10 +33,6 @@ interface ComponentRow {
   status: 'ok' | 'warn' | 'down' | 'unknown';
   detail: string;
   latencyMs: number;
-}
-
-function errMsg(err: unknown): string {
-  return err instanceof ApiError ? err.message : t('common.error');
 }
 
 const COMPONENT_BADGE: Record<ComponentRow['status'], { variant: 'ok' | 'warn' | 'fail' | 'neutral'; labelKey: PlKey }> = {
@@ -69,13 +66,13 @@ export function HealthSection() {
     },
     onError: (err) => {
       setResetTarget(null);
-      toast.show(errMsg(err), 'fail');
+      toast.show(errorMessage(err), 'fail');
     },
   });
 
   if (status.isPending) return <SkeletonCard />;
   if (status.isError || status.data === undefined) {
-    return <Alert variant="fail">{errMsg(status.error)}</Alert>;
+    return <Alert variant="fail">{errorMessage(status.error)}</Alert>;
   }
 
   const cockpit = status.data;

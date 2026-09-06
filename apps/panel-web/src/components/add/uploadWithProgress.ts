@@ -9,7 +9,7 @@ import { ApiError } from '../../lib/api';
 interface Envelope<T> {
   ok?: boolean;
   data?: T;
-  error?: { code?: string; message?: string; details?: unknown };
+  error?: { code?: string; message?: string; details?: unknown; requestId?: string };
 }
 
 /**
@@ -49,6 +49,7 @@ export function uploadWithProgress<T>(
             err?.message ?? `Błąd serwera (HTTP ${xhr.status})`,
             xhr.status,
             err?.details,
+            err?.requestId,
           ),
         );
         return;

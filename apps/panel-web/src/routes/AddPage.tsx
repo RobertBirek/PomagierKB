@@ -12,7 +12,8 @@ import { useCallback, useReducer, useRef, useState, type DragEvent, type FormEve
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { Paperclip, Puzzle, X } from 'lucide-react';
-import { apiFetch, ApiError } from '@/lib/api';
+import { apiFetch } from '@/lib/api';
+import { errorMessage } from '@/lib/errorMessage';
 import { UPLOAD_ACCEPT, UPLOAD_EXTENSIONS, validateUploadFile } from '@/lib/intake';
 import { can } from '@/lib/permissions';
 import { useMe } from '@/hooks/useMe';
@@ -116,7 +117,7 @@ export function AddPage() {
       void queryClient.invalidateQueries({ queryKey: ['content-list'] });
     },
     onError: (err) => {
-      setTextError(err instanceof ApiError ? err.message : t('common.error'));
+      setTextError(errorMessage(err));
     },
   });
 
@@ -130,7 +131,7 @@ export function AddPage() {
       void queryClient.invalidateQueries({ queryKey: ['content-list'] });
     },
     onError: (err) => {
-      setUrlError(err instanceof ApiError ? err.message : t('common.error'));
+      setUrlError(errorMessage(err));
     },
   });
 
@@ -234,7 +235,7 @@ export function AddPage() {
         dispatchQueue({
           type: 'fail',
           id: item.id,
-          error: err instanceof ApiError ? err.message : t('common.error'),
+          error: errorMessage(err),
         });
       }
     }

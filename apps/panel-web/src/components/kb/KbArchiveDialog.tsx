@@ -6,7 +6,8 @@
  */
 import { useEffect, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { apiFetch, ApiError } from '@/lib/api';
+import { apiFetch } from '@/lib/api';
+import { errorMessage } from '@/lib/errorMessage';
 import { queryClient } from '@/lib/queryClient';
 import { t } from '@/i18n/t';
 import {
@@ -24,10 +25,6 @@ import { Input } from '@/ui/input';
 import { useToast } from '@/ui/toast';
 import { archiveConfirmed } from './kb-lib';
 import type { KbEntry } from './types';
-
-function errorMessage(err: unknown): string {
-  return err instanceof ApiError ? err.message : t('common.error');
-}
 
 export function KbArchiveDialog({ kb, onClose }: { kb: KbEntry | null; onClose: () => void }) {
   const toast = useToast();

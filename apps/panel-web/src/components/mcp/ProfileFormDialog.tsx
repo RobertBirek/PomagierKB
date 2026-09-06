@@ -5,7 +5,8 @@
  */
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { apiFetch, ApiError } from '@/lib/api';
+import { apiFetch } from '@/lib/api';
+import { errorMessage } from '@/lib/errorMessage';
 import { MCP_TOOLS, validateProfileForm, type ProfileFormErrorField } from '@/lib/mcp';
 import { t } from '@/i18n/t';
 import type { PlKey } from '@/i18n/pl';
@@ -26,10 +27,6 @@ const PROFILE_ERROR_KEY: Record<ProfileFormErrorField, PlKey> = {
   tools: 'mcp.profiles.err.tools',
   namespaces: 'mcp.profiles.err.namespaces',
 };
-
-function errMsg(err: unknown): string {
-  return err instanceof ApiError ? err.message : t('common.error');
-}
 
 export function ProfileFormDialog({
   open,
@@ -73,7 +70,7 @@ export function ProfileFormDialog({
       toast.show(t('mcp.toast.profileSaved'), 'ok');
       onClose();
     },
-    onError: (err) => toast.show(errMsg(err), 'fail'),
+    onError: (err) => toast.show(errorMessage(err), 'fail'),
   });
 
   function toggle(list: string[], item: string): string[] {

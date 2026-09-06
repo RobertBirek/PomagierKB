@@ -12,7 +12,8 @@ import { useEffect, useMemo, useReducer, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { Check, FilePlus2, Inbox, MoreHorizontal, SearchX, X, GraduationCap } from 'lucide-react';
-import { apiFetch, apiFetchWithMeta, ApiError } from '@/lib/api';
+import { apiFetch, apiFetchWithMeta } from '@/lib/api';
+import { errorMessage } from '@/lib/errorMessage';
 import { queryClient } from '@/lib/queryClient';
 import { can } from '@/lib/permissions';
 import { bulkSelectionReducer } from '@/lib/bulkSelection';
@@ -75,11 +76,6 @@ function draftStatusFilterLabel(status: string): string {
   if (status === 'all') return t('inbox.filter.all');
   const key = (DRAFT_STATUS_LABEL_KEY as Record<string, PlKey>)[status];
   return key !== undefined ? t(key) : status;
-}
-
-function errorMessage(err: unknown): string {
-  if (err instanceof ApiError) return err.message;
-  return t('common.error');
 }
 
 /**
