@@ -10,6 +10,14 @@ import type { Role } from '../types.js';
  * - BRAK deklaracji → domyślnie rbac:'viewer' (fail-closed: zapomniana
  *   deklaracja wymaga zalogowania, nigdy nie otwiera trasy anonimowo).
  * Hierarchia: admin ⊃ operator ⊃ viewer. Żadnego trybu ALLOW_ANON.
+ *
+ * Hook wisi na preValidation, a NIE na preHandler (audyt D3-01): cykl Fastify to
+ * onRequest → preParsing → parsing → preValidation → WALIDACJA → preHandler, więc
+ * na preHandlerze anonim dostawał 400 z pełnym opisem schematu (enumy, wzorce
+ * identyfikatorów, limity długości) zamiast 401. Na preValidation decyzja
+ * o dostępie zapada PRZED walidacją, a jednocześnie po wszystkich hookach
+ * onRequest — czyli po ustawieniu req.user przez plugins/session.ts.
+ * (preParsing odpada: Fastify pomija tę fazę dla GET/HEAD.)
  */
 
 const ROLE_RANK: Record<Role, number> = { viewer: 1, operator: 2, admin: 3 };
@@ -20,7 +28,7 @@ export function roleAtLeast(actual: Role, required: Role): boolean {
 }
 
 export function registerRbac(app: FastifyInstance): void {
-  app.addHook('preHandler', async (req) => {
+  app.addHook('preValidation', async (req) => {
     // Żądania bez dopasowanej trasy obsługuje notFoundHandler (404/405) —
     // globalne hooki preHandler biegną także dla niego, więc je pomijamy.
     if (req.is404) return;

@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { nowIso, type Db } from '@pomagierkb/shared/db';
 import { AppError } from '@pomagierkb/shared/errors';
 import type { Role } from '../types.js';
@@ -10,7 +10,10 @@ import type { Role } from '../types.js';
  * - createServiceUser: konta serwisowe (kind='service') będące tożsamościami
  *   dla kluczy MCP — nie logują się przez OIDC (sub=NULL);
  * - setUserStatus: enable/disable; disable KASKADOWO unieważnia aktywne klucze
- *   API użytkownika i usuwa jego sesje (jedna transakcja IMMEDIATE).
+ *   API użytkownika i usuwa jego sesje (jedna transakcja IMMEDIATE) — z blokadą
+ *   samowyłączenia i wyłączenia ostatniego administratora (audyt D3-04);
+ * - anonymizeUser: realizacja prawa do usunięcia danych (audyt D14-04) — czyści
+ *   e-mail/nazwę i zastępuje `sub` skrótem, zachowując UUID pod klucze obce.
  */
 
 export type UserKind = 'oidc' | 'service';
@@ -65,6 +68,20 @@ export function getUserById(db: Db, id: string): UserRow | null {
 
 export function listUsers(db: Db): UserRow[] {
   return db.prepare('SELECT * FROM users ORDER BY created_at ASC').all() as UserRow[];
+}
+
+/**
+ * Liczba aktywnych administratorów mogących się zalogować. Konta serwisowe nie
+ * logują się przez OIDC (sub=NULL) i nie mogą mieć roli admin, więc jedynym
+ * zabezpieczeniem przed trwałym lockoutem panelu jest ten licznik.
+ */
+export function countActiveOidcAdmins(db: Db): number {
+  const row = db
+    .prepare(
+      "SELECT COUNT(*) AS c FROM users WHERE kind = 'oidc' AND role = 'admin' AND status = 'active'",
+    )
+    .get() as { c: number };
+  return row.c;
 }
 
 export interface UpsertOidcUserInput {
@@ -130,14 +147,45 @@ export interface SetUserStatusResult {
   deletedSessions: number;
 }
 
+export interface SetUserStatusOptions {
+  /** users.id administratora wykonującego zmianę — blokuje samowyłączenie. */
+  actorId?: string;
+}
+
 /**
  * Enable/disable użytkownika. Disable = natychmiastowa utrata dostępu:
  * aktywne klucze API → revoked, sesje → usunięte (jedna transakcja).
+ *
+ * Dwie blokady 409 (audyt D3-04) sprawdzane WEWNĄTRZ transakcji IMMEDIATE, żeby
+ * dwie równoległe zmiany nie wyłączyły ostatnich dwóch adminów naraz:
+ * - nie można wyłączyć własnego konta (natychmiastowe usunięcie własnej sesji),
+ * - nie można wyłączyć ostatniego aktywnego administratora OIDC — status nie jest
+ *   reaktywowany przy logowaniu, więc byłby to trwały lockout panelu bez ścieżki
+ *   odzyskania inaczej niż ręcznym UPDATE w SQLite.
  */
-export function setUserStatus(db: Db, id: string, status: UserStatus): SetUserStatusResult {
+export function setUserStatus(
+  db: Db,
+  id: string,
+  status: UserStatus,
+  opts: SetUserStatusOptions = {},
+): SetUserStatusResult {
   const tx = db.transaction((): SetUserStatusResult => {
     const row = getUserById(db, id);
     if (row === null) throw new AppError('not_found', `Użytkownik nie istnieje: ${id}`);
+    if (status === 'disabled' && row.status === 'active') {
+      if (opts.actorId !== undefined && opts.actorId === id) {
+        throw new AppError(
+          'conflict',
+          'Nie można wyłączyć własnego konta — poproś innego administratora',
+        );
+      }
+      if (row.kind === 'oidc' && row.role === 'admin' && countActiveOidcAdmins(db) <= 1) {
+        throw new AppError(
+          'conflict',
+          'To ostatni aktywny administrator — wyłączenie zablokowałoby dostęp do panelu',
+        );
+      }
+    }
     const now = nowIso();
     db.prepare('UPDATE users SET status = ?, updated_at = ? WHERE id = ?').run(status, now, id);
     let revokedKeys = 0;
@@ -151,6 +199,69 @@ export function setUserStatus(db: Db, id: string, status: UserStatus): SetUserSt
       deletedSessions = db.prepare('DELETE FROM sessions WHERE user_id = ?').run(id).changes;
     }
     return { user: getUserById(db, id) as UserRow, revokedKeys, deletedSessions };
+  });
+  return tx.immediate();
+}
+
+/** Nazwa zastępcza po anonimizacji (display_name jest NOT NULL). */
+export const ANONYMIZED_DISPLAY_NAME = '[użytkownik usunięty]';
+
+export interface AnonymizeUserResult {
+  user: UserRow;
+  revokedKeys: number;
+  deletedSessions: number;
+  /** Liczba wierszy answers, którym odpięto user_id (pytania bywają osobowe). */
+  detachedAnswers: number;
+}
+
+/**
+ * Anonimizacja konta po offboardingu (audyt D14-04, art. 17 RODO):
+ * e-mail → NULL, nazwa → placeholder, `sub` → sha256 (zachowuje UNIQUE i sprawia,
+ * że ponowne logowanie tej samej osoby w Authentiku utworzy NOWE konto zamiast
+ * wskrzesić stare), sesje usunięte, klucze API unieważnione, answers.user_id
+ * odpięte. users.id (UUID) ZOSTAJE — jest pseudonimem trzymającym klucze obce
+ * audytu, drafts.submitted_by_user/decided_by i intakes.created_by.
+ *
+ * Wymaga wcześniejszego wyłączenia konta (409) — anonimizacja aktywnego konta
+ * wyrzuciłaby zalogowaną osobę bez śladu decyzji administratora.
+ */
+export function anonymizeUser(db: Db, id: string): AnonymizeUserResult {
+  const tx = db.transaction((): AnonymizeUserResult => {
+    const row = getUserById(db, id);
+    if (row === null) throw new AppError('not_found', `Użytkownik nie istnieje: ${id}`);
+    if (row.status !== 'disabled') {
+      throw new AppError(
+        'conflict',
+        'Anonimizacja wymaga wcześniejszego wyłączenia konta (status=disabled)',
+      );
+    }
+    if (row.email === null && row.sub !== null && row.sub.startsWith('anon:')) {
+      throw new AppError('conflict', 'Konto zostało już zanonimizowane');
+    }
+
+    const now = nowIso();
+    const nextSub =
+      row.sub === null ? null : `anon:${createHash('sha256').update(row.sub).digest('hex')}`;
+    db.prepare(
+      'UPDATE users SET sub = ?, email = NULL, display_name = ?, updated_at = ? WHERE id = ?',
+    ).run(nextSub, ANONYMIZED_DISPLAY_NAME, now, id);
+
+    const revokedKeys = db
+      .prepare(
+        "UPDATE api_keys SET status = 'revoked', revoked_at = ? WHERE user_id = ? AND status = 'active'",
+      )
+      .run(now, id).changes;
+    const deletedSessions = db.prepare('DELETE FROM sessions WHERE user_id = ?').run(id).changes;
+    const detachedAnswers = db
+      .prepare('UPDATE answers SET user_id = NULL WHERE user_id = ?')
+      .run(id).changes;
+
+    return {
+      user: getUserById(db, id) as UserRow,
+      revokedKeys,
+      deletedSessions,
+      detachedAnswers,
+    };
   });
   return tx.immediate();
 }

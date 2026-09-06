@@ -1,10 +1,13 @@
 import type { FastifyInstance } from 'fastify';
+import { invalidateMcpCache } from '../services/mcp-admin.js';
 import {
+  anonymizeUser,
   createServiceUser,
   getUserById,
   listUsers,
   setUserStatus,
   toUserView,
+  type UserRow,
   type UserStatus,
 } from '../services/users.js';
 
@@ -14,8 +17,21 @@ import {
  * - POST   /users      → WYŁĄCZNIE kind:'service' (tożsamości pod klucze MCP;
  *   konta OIDC powstają same przy logowaniu przez Authentika);
  * - PATCH  /users/:id  → enable/disable; disable kaskadowo unieważnia klucze
- *   API użytkownika i usuwa jego sesje (services/users.ts).
+ *   API użytkownika i usuwa jego sesje (services/users.ts);
+ * - POST   /users/:id/anonymize → nieodwracalne wyczyszczenie danych osobowych
+ *   wyłączonego konta (offboarding / art. 17 RODO).
+ * Mutacje odbierające dostęp (disable, anonymize) domykają okno cache'u
+ * mcp-servera przez best-effort invalidateMcpCache (audyt D9-02).
  */
+
+/**
+ * Rzut użytkownika do AUDYTU — bez e-maila, nazwy i `sub` (audyt D14-05).
+ * Łańcuch audytu jest niezmienialny i bezterminowy, więc anonimizacja konta
+ * nigdy go nie obejmie; nie może zatem zawierać danych identyfikujących wprost.
+ */
+function toUserAuditView(row: UserRow): Record<string, unknown> {
+  return { id: row.id, kind: row.kind, role: row.role, status: row.status };
+}
 
 /** Wspólny kształt użytkownika w odpowiedziach (camelCase, bez sekretów). */
 const userSchema = {
@@ -117,7 +133,7 @@ export default async function usersRoutes(app: FastifyInstance): Promise<void> {
       reply.auditContext = {
         resourceType: 'user',
         resourceId: user.id,
-        after: toUserView(user),
+        after: toUserAuditView(user),
       };
       return reply.code(201).send({ ok: true as const, data: { user: toUserView(user) } });
     },
@@ -167,20 +183,92 @@ export default async function usersRoutes(app: FastifyInstance): Promise<void> {
       const { id } = req.params as { id: string };
       const { status } = req.body as { status: UserStatus };
       const before = getUserById(app.db, id); // null → setUserStatus rzuci not_found
-      const result = setUserStatus(app.db, id, status);
+      const result = setUserStatus(app.db, id, status, {
+        ...(req.user !== null ? { actorId: req.user.id } : {}),
+      });
       reply.auditContext = {
         resourceType: 'user',
         resourceId: id,
-        before: before !== null ? toUserView(before) : undefined,
-        after: toUserView(result.user),
+        before: before !== null ? toUserAuditView(before) : undefined,
+        after: toUserAuditView(result.user),
         metadata: { revokedKeys: result.revokedKeys, deletedSessions: result.deletedSessions },
       };
+      // Kaskadowe revoke kluczy MCP obowiązywałoby dopiero po wygaśnięciu cache
+      // mcp-servera (60 s) — domykamy okno tak jak rotate/revoke klucza.
+      if (status === 'disabled' && result.revokedKeys > 0) {
+        await invalidateMcpCache(app.config, { logger: req.log });
+      }
       return {
         ok: true as const,
         data: {
           user: toUserView(result.user),
           revokedKeys: result.revokedKeys,
           deletedSessions: result.deletedSessions,
+        },
+      };
+    },
+  );
+
+  // ── POST /users/:id/anonymize (nieodwracalne czyszczenie danych osobowych) ─
+  app.post(
+    '/users/:id/anonymize',
+    {
+      config: { rbac: 'admin', audit: 'user.anonymize', csrf: true, rateLimitGroup: 'mutation' },
+      schema: {
+        params: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['id'],
+          properties: { id: { type: 'string', minLength: 1 } },
+        },
+        response: {
+          200: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['ok', 'data'],
+            properties: {
+              ok: { const: true },
+              data: {
+                type: 'object',
+                additionalProperties: false,
+                required: ['user', 'revokedKeys', 'deletedSessions', 'detachedAnswers'],
+                properties: {
+                  user: userSchema,
+                  revokedKeys: { type: 'integer' },
+                  deletedSessions: { type: 'integer' },
+                  detachedAnswers: { type: 'integer' },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    async (req, reply) => {
+      const { id } = req.params as { id: string };
+      const before = getUserById(app.db, id); // null → anonymizeUser rzuci not_found
+      const result = anonymizeUser(app.db, id);
+      reply.auditContext = {
+        resourceType: 'user',
+        resourceId: id,
+        before: before !== null ? toUserAuditView(before) : undefined,
+        after: toUserAuditView(result.user),
+        metadata: {
+          revokedKeys: result.revokedKeys,
+          deletedSessions: result.deletedSessions,
+          detachedAnswers: result.detachedAnswers,
+        },
+      };
+      if (result.revokedKeys > 0) {
+        await invalidateMcpCache(app.config, { logger: req.log });
+      }
+      return {
+        ok: true as const,
+        data: {
+          user: toUserView(result.user),
+          revokedKeys: result.revokedKeys,
+          deletedSessions: result.deletedSessions,
+          detachedAnswers: result.detachedAnswers,
         },
       };
     },

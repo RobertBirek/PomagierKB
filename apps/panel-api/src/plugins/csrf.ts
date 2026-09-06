@@ -10,6 +10,10 @@ import { AppError } from '@pomagierkb/shared/errors';
  * - naruszenie → 403 csrf_rejected.
  * Wyjątki: /auth/callback jest GET (nie podlega), a trasy z config.csrf=false
  * lub bez deklaracji nie są sprawdzane (przyszłe API tokenowe deklaruje false).
+ *
+ * Hook na onRequest, nie na preHandler (audyt D3-01): kontrola potrzebuje
+ * WYŁĄCZNIE nagłówków i konfiguracji trasy, więc żądanie cross-site odrzucamy
+ * zanim Fastify sparsuje i zwaliduje body.
  */
 
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
@@ -18,7 +22,7 @@ export function registerCsrf(app: FastifyInstance): void {
   // Porównujemy origin-z-originem (URL.origin normalizuje port/wielkość liter).
   const allowedOrigin = new URL(app.config.publicUrl).origin;
 
-  app.addHook('preHandler', async (req) => {
+  app.addHook('onRequest', async (req) => {
     if (req.is404) return; // notFoundHandler — globalne hooki biegną też dla niego
     if (req.routeOptions.config?.csrf !== true) return;
     if (!MUTATING_METHODS.has(req.method.toUpperCase())) return;

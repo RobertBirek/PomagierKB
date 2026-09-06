@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import * as oidc from 'openid-client';
 import { AppError } from '@pomagierkb/shared/errors';
@@ -37,6 +38,15 @@ function sanitizeReturnTo(value: string | undefined): string {
   if (value === undefined) return '/';
   if (!/^\/(?!\/)/.test(value) || /[\r\n\\]/.test(value)) return '/';
   return value;
+}
+
+/**
+ * Pseudonim OIDC `sub` do audytu (audyt D14-05): łańcuch jest niezmienialny
+ * i bezterminowy, więc nie wolno w nim utrwalać identyfikatora konta w Authentiku.
+ * Skrót pozwala skorelować powtarzające się odmowy bez wskazania osoby.
+ */
+function subFingerprint(sub: string): string {
+  return createHash('sha256').update(sub).digest('hex').slice(0, 12);
 }
 
 /** Minimalna strona 403 po polsku (celowo poza kopertą JSON — dla przeglądarki). */
@@ -165,6 +175,9 @@ export default async function authRoutes(app: FastifyInstance): Promise<void> {
         });
       } catch (err) {
         req.log.warn({ err }, 'wymiana kodu OIDC nie powiodła się');
+        // Zdarzenie niosące informację (transakcja istniała, IdP odrzucił kod) —
+        // auditContext wymusza wpis mimo anonimowości żądania (plugins/audit.ts).
+        reply.auditContext = { resourceType: 'user', metadata: { event: 'login_failed' } };
         throw new AppError('unauthorized', 'Logowanie nie powiodło się — spróbuj ponownie');
       }
 
@@ -182,6 +195,10 @@ export default async function authRoutes(app: FastifyInstance): Promise<void> {
       const role = mapGroupsToRole(claims['groups']);
       if (role === null) {
         req.log.warn({ sub: claims.sub }, 'logowanie odrzucone: brak grupy kag-*');
+        reply.auditContext = {
+          resourceType: 'user',
+          metadata: { event: 'login_denied', reason: 'no_group', sub: subFingerprint(claims.sub) },
+        };
         return reply
           .code(403)
           .type('text/html; charset=utf-8')
@@ -197,6 +214,11 @@ export default async function authRoutes(app: FastifyInstance): Promise<void> {
       const user = upsertOidcUser(db, { sub: claims.sub, email, displayName, role });
       if (user.status !== 'active') {
         req.log.warn({ userId: user.id }, 'logowanie odrzucone: konto wyłączone');
+        reply.auditContext = {
+          resourceType: 'user',
+          resourceId: user.id,
+          metadata: { event: 'login_denied', reason: 'account_disabled' },
+        };
         return reply
           .code(403)
           .type('text/html; charset=utf-8')

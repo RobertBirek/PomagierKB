@@ -69,7 +69,7 @@ declare module 'fastify' {
     public?: boolean;
     /** Nazwa akcji audytu (np. 'draft.promote') albo false — hook onResponse pisze do łańcucha. */
     audit?: string | false;
-    /** true = trasa mutująca objęta kontrolą Origin/Sec-Fetch-Site (szkielet: stub przepuszcza). */
+    /** true = trasa mutująca objęta kontrolą Origin/Sec-Fetch-Site (plugins/csrf.ts, fail-closed). */
     csrf?: boolean;
     /** Grupa limitu: 'auth' 10/min/IP, 'mutation' 60/min/sesja. Bez deklaracji: globalny 300/min/IP. */
     rateLimitGroup?: 'auth' | 'mutation';
