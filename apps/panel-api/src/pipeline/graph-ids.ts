@@ -103,6 +103,26 @@ export function pendingTombstones(db: Db, namespace: string): GraphIdRef[] {
   );
 }
 
+/**
+ * Nagrobki POTWIERDZONE — rejestr uważa je za wystawione i zaakceptowane przez build.
+ *
+ * „Potwierdzone" znaczy tylko tyle, że job buildera zakończył się sukcesem. Przebudowa
+ * produkcji 2026-09-06 pokazała, że to za mało: builder OpenSPG przyjął wiersze-nagrobki,
+ * zwrócił sukces i NIE nadpisał węzłów — zostały z pełną treścią. Dlatego bramka jakości
+ * bierze tę listę i pyta o nią GRAF, zamiast wierzyć rejestrowi na słowo.
+ */
+export function confirmedTombstones(db: Db, namespace: string, limit = 20): GraphIdRef[] {
+  return toRefs(
+    db
+      .prepare(
+        `SELECT id, entity FROM graph_ids
+         WHERE namespace = ? AND live = 0 AND tombstoned_at IS NOT NULL
+         ORDER BY tombstoned_at DESC, id LIMIT ?`,
+      )
+      .all(namespace, limit) as GraphIdRow[],
+  );
+}
+
 /** Id żywe w grafie wg rejestru (diagnostyka i testy). */
 export function liveGraphIds(db: Db, namespace: string): GraphIdRef[] {
   return toRefs(

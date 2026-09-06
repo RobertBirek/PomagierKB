@@ -9,9 +9,14 @@ import {
   listExportFiles,
   saveQualityReport,
 } from '@pomagierkb/shared/db';
-import { searchText, type OpenSpgClient } from '@pomagierkb/shared/openspg';
+import { searchText, querySpgType, type OpenSpgClient } from '@pomagierkb/shared/openspg';
 import { applyPrecedence, docIdFor } from './exporter.js';
-import { pendingTombstones, TOMBSTONE_SEMANTIC_TYPE } from './graph-ids.js';
+import {
+  confirmedTombstones,
+  pendingTombstones,
+  TOMBSTONE_CONTENT,
+  TOMBSTONE_SEMANTIC_TYPE,
+} from './graph-ids.js';
 import { readChunkingSettings } from '../services/pipeline-settings.js';
 import { sha256hex } from './chunker.js';
 
@@ -379,10 +384,49 @@ export async function runQualityGate(deps: QualityGateDeps): Promise<QualityGate
   //     dopiero po udanym buildzie.
   {
     const stale = pendingTombstones(db, namespace);
-    add('graph_stale_nodes', 'warn', stale.length === 0,
-      stale.length === 0
-        ? 'graf nie ma węzłów spoza stanu docelowego'
-        : `węzły do wycofania z grafu: ${stale.length} (${limitList(stale.map((s) => s.id))}) — uruchom build`);
+    if (stale.length > 0) {
+      add('graph_stale_nodes', 'warn', false,
+        `węzły do wycofania z grafu: ${stale.length} (${limitList(stale.map((s) => s.id))}) — uruchom build`);
+    } else {
+      // Rejestr mówi „wystawione i potwierdzone", ale to za mało: przebudowa produkcji
+      // 2026-09-06 pokazała, że builder OpenSPG kończy job sukcesem, a węzła NIE nadpisuje —
+      // stary chunk zachował pełną treść i semanticType. Check pytający wyłącznie rejestr
+      // dawał wtedy fałszywą zieleń. Pytamy więc GRAF o próbkę wycofanych id.
+      const withdrawn = confirmedTombstones(db, namespace, 20);
+      if (withdrawn.length === 0) {
+        add('graph_stale_nodes', 'warn', true, 'brak wycofanych id — nie ma czego sprawdzać w grafie');
+      } else if (deps.client === undefined || deps.client === null) {
+        add('graph_stale_nodes', 'warn', true,
+          `rejestr czysty (${withdrawn.length} wycofanych), ale bez klienta OpenSPG nie dało się sprawdzić grafu`);
+      } else {
+        try {
+          const projectId = getKb(db, namespace)?.project_id ?? 0;
+          const byType = new Map<string, string[]>();
+          for (const w of withdrawn) {
+            const spgType = `${namespace}.${w.entity}`;
+            byType.set(spgType, [...(byType.get(spgType) ?? []), w.id]);
+          }
+          const alive: string[] = [];
+          for (const [spgType, ids] of byType) {
+            const found = await querySpgType(deps.client, { projectId, spgType, ids });
+            for (const e of found) {
+              const content = String(e.properties['content'] ?? '');
+              const semantic = String(e.properties['semanticType'] ?? '');
+              const isTombstone = semantic === TOMBSTONE_SEMANTIC_TYPE || content === TOMBSTONE_CONTENT;
+              if (!isTombstone && content !== '') alive.push(e.id);
+            }
+          }
+          add('graph_stale_nodes', 'warn', alive.length === 0,
+            alive.length === 0
+              ? `graf nie ma węzłów spoza stanu docelowego (sprawdzono ${withdrawn.length} wycofanych id)`
+              : `UWAGA: ${alive.length} wycofanych węzłów NADAL ma treść w grafie (${limitList(alive)}) — ` +
+                'builder UPSERT nie nadpisał nagrobka; retrieval je odsiewa po graph_ids, ale graf zachowuje treść');
+        } catch (err) {
+          add('graph_stale_nodes', 'warn', true,
+            `nie udało się odpytać grafu o wycofane id: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+    }
   }
 
   // 12. no_literal_newlines (error) — pola indeksowane bez znaków nowej linii.

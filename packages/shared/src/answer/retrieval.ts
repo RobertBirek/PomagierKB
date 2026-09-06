@@ -268,6 +268,29 @@ function mirrorLookup(db: Db, ids: string[]): Map<string, MirrorRow> {
   return new Map(rows.map((r) => [r.id, r]));
 }
 
+/**
+ * Id WYCOFANE ze stanu docelowego (`graph_ids.live = 0`).
+ *
+ * Builder OpenSPG działa w trybie UPSERT i — co potwierdziła przebudowa produkcji
+ * 2026-09-06 — nie nadpisuje węzła wierszem-nagrobkiem: stary węzeł zachowuje pełną treść
+ * i `semanticType`, mimo że job kończy się sukcesem. Kanały OpenSPG zwracają go wtedy
+ * normalnie, z tym samym score co żywy odpowiednik. Dopóki upstream jest zamrożony,
+ * JEDYNYM skutecznym miejscem egzekwowania wycofania jest ta bramka: hit, o którym rejestr
+ * mówi „to już nie należy do bazy", nie może trafić do odpowiedzi ani do cytowań.
+ *
+ * Świadomie po `graph_ids`, a nie po `chunks_mirror`: kanał tekstowy pyta też o
+ * `Ns.ReferenceDocument`, a dokumentów w mirrorze nie ma — filtr po mirrorze odciąłby
+ * legalne trafienia. Id nieznane rejestrowi zostawiamy (bazy sprzed rejestru).
+ */
+function withdrawnIds(db: Db, ids: string[]): Set<string> {
+  if (ids.length === 0) return new Set();
+  const placeholders = ids.map(() => '?').join(',');
+  const rows = db
+    .prepare(`SELECT id FROM graph_ids WHERE live = 0 AND id IN (${placeholders})`)
+    .all(...ids) as { id: string }[];
+  return new Set(rows.map((r) => r.id));
+}
+
 /** Priorytet oznaczenia źródła: OpenSPG przed fallbackiem lokalnym. */
 function pickSource(sources: string[]): RetrievalSource {
   if (sources.includes('openspg_vector')) return 'openspg_vector';
@@ -488,7 +511,11 @@ export async function hybridSearch(
   if (ftsHits.length > 0) lists.push({ source: 'fallback_fts', items: ftsHits });
   if (vectorHits !== null) lists.push({ source: 'openspg_vector', items: vectorHits });
   if (textHits !== null) lists.push({ source: 'openspg_text', items: textHits });
-  const fused = rrfFuse(lists).slice(0, limit);
+  // Wycofane id odsiewamy PRZED przycięciem do `limit`, żeby martwy węzeł nie zajmował
+  // miejsca żywemu — inaczej wycofanie dokumentu obniżałoby liczbę realnych trafień.
+  const ranked = rrfFuse(lists);
+  const withdrawn = withdrawnIds(ctx.db, ranked.map((f) => f.id));
+  const fused = ranked.filter((f) => !withdrawn.has(f.id)).slice(0, limit);
 
   const ftsMap = new Map(ftsHits.map((h) => [h.id, h]));
   const vectorMap = new Map((vectorHits ?? []).map((h) => [h.id, h]));
