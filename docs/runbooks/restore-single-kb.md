@@ -16,19 +16,32 @@ Kluczowa własność systemu: **SQLite panelu jest źródłem prawdy o treści**
 
 ## B. Rekordy KB skasowane też w SQLite
 
-1. Wyciągnij z ostatniego snapshotu kopię panelu:
-   `zstd -d < …/panel.sqlite` → plik tymczasowy (NIE podmieniaj produkcyjnego!).
+1. Wyciągnij z ostatniego snapshotu kopię panelu — plik `panel.sqlite` **nie jest
+   skompresowany**, więc zwykłe `cp` (NIE podmieniaj produkcyjnego pliku
+   `/srv/kag-data/kag/panel/db/kag.db`!):
+   ```bash
+   SNAP=/srv/kag-data/backups/nightly/$(ls -1 /srv/kag-data/backups/nightly | tail -n1)
+   sudo install -o 10001 -g 10001 -m 600 $SNAP/panel.sqlite \
+     /srv/kag-data/kag/panel/backup-staging/panel-restore.sqlite
+   ```
+   (katalog `backup-staging` jest widoczny w kontenerze panelu jako
+   `/data/backup-staging` — stamtąd zrobisz `ATTACH`.)
 2. Przenieś TYLKO wiersze tej KB (drafts + chunks_mirror + kb_registry) przez
    `sqlite3 ATTACH`:
    ```sql
-   ATTACH '/tmp/panel-restore.sqlite' AS old;
+   ATTACH '/data/backup-staging/panel-restore.sqlite' AS old;
    INSERT OR IGNORE INTO kb_registry SELECT * FROM old.kb_registry WHERE namespace='<Ns>';
    INSERT OR IGNORE INTO drafts       SELECT * FROM old.drafts       WHERE namespace='<Ns>';
    INSERT OR IGNORE INTO chunks_mirror SELECT * FROM old.chunks_mirror WHERE namespace='<Ns>';
    ```
-   (na kopii przez `docker exec kag-panel node -e …` albo host z sqlite3;
-   panel na czas operacji zatrzymany: `docker stop kag-panel kag-mcp`).
+   (przez `docker exec kag-panel node -e …` albo host z sqlite3; panel na czas operacji
+   zatrzymany: `docker stop kag-panel kag-mcp`).
 3. Start paneli, potem **A** (force build).
+4. Posprzątaj kopię roboczą: `sudo rm -f /srv/kag-data/kag/panel/backup-staging/panel-restore.sqlite`
+   (zawiera zapieczętowane klucze LLM i hashe kluczy MCP z dnia snapshotu).
+
+Pełne odtworzenie bazy panelu (nie pojedynczej KB) robi
+`deploy/scripts/restore.sh --snapshot <katalog> --only panel-sqlite,panel-files`.
 
 ## C. Projekt OpenSPG nie istnieje (skasowany w grafie)
 

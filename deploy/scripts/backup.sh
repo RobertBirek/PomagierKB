@@ -2,16 +2,25 @@
 # backup.sh — nocny snapshot stacków edge+kag (PomagierKB), wg docs/design/infra.md §5.
 # Zbiera: dump MySQL OpenSPG (w kontenerze, hasło przez env — nie w argv), tar.zst neo4j/minio,
 # kopię online SQLite panelu (better-sqlite3 backup API, fallback sqlite3 CLI), pg_dump Authentika,
-# certy Caddy, audyt panelu, kopie obu .env (0600), compose config/ps; pisze SHA256SUMS
-# i _manifest.json. Retencja: 14 dni + pierwszy snapshot miesiąca trzymany 6 mies.
+# certy Caddy, audyt panelu, pliki panelu, kopie obu .env (0600), stan repo + compose ps;
+# pisze SHA256SUMS i _manifest.json. Retencja: 14 dni + pierwszy KOMPLETNY snapshot miesiąca
+# trzymany 6 mies.
 # Użycie: backup.sh [--cold-neo4j]   (zimny snapshot neo4j: stop -> tar -> start; comiesięczne okno)
 # Env: DATA_ROOT (domyślnie z deploy/kag/.env lub /srv/kag-data),
 #      BACKUP_OFFSITE_TARGET — puste = warning w manifeście; "rclone://remote:ścieżka" albo cel
 #      rsync (np. user@host:/sciezka), PANEL_DB_IN_CONTAINER (domyślnie /data/db/kag.db),
-#      BACKUP_PING_URL — opcjonalny ping sukcesu (healthchecks/Kuma push), wołany TYLKO przy ok.
+#      BACKUP_PING_URL — opcjonalny ping sukcesu (healthchecks/Kuma push), wołany TYLKO przy ok,
+#      BACKUP_AGE_RECIPIENT / BACKUP_GPG_RECIPIENT — klucz PUBLICZNY odbiorcy kopii off-site;
+#      BACKUP_OFFSITE_ALLOW_PLAINTEXT=true — świadome (odradzane) wyłączenie szyfrowania off-site.
 # Kontrakt: brak KTÓREGOKOLWIEK z artefaktów wymaganych (mysql, neo4j, minio, panel.sqlite,
 # authentik-pg) => ok:false w manifeście i exit 1 (fail-loudly — cichy sukces to incydent
 # z 2026-09-03, gdy literówka nazwy pliku zostawiła panel bez backupu przez dobę).
+#
+# SEKRETY: snapshot zawiera komplet materiału do przejęcia systemu (oba .env, dump MySQL
+# z kluczami LLM, klucze prywatne certów Caddy). Lokalnie chroni go 0700/root + 0600 na plikach;
+# poza host wychodzi WYŁĄCZNIE zaszyfrowany (age/gpg) — patrz sekcja 11. `docker compose config`
+# NIE trafia już do snapshotu (renderował te same sekrety drugi raz i był odtwarzalny z .env
+# + SHA commitu — zapisujemy więc repo-state.txt zamiast niego).
 set -euo pipefail
 umask 077
 
@@ -32,8 +41,15 @@ STAMP="$(date +%Y-%m-%d_%H%M%S)"
 SNAP="${BACKUP_ROOT}/${STAMP}"
 PANEL_DB_IN_CONTAINER="${PANEL_DB_IN_CONTAINER:-/data/db/kag.db}"
 NEO4J_SERVICE="${NEO4J_SERVICE:-neo4j}"
+NEO4J_CONTAINER="${NEO4J_CONTAINER:-release-openspg-neo4j}"
 COLD_NEO4J=0
 [[ "${1:-}" == "--cold-neo4j" ]] && COLD_NEO4J=1
+
+# Artefakty WYMAGANE — bez któregokolwiek snapshot jest niekompletny (ok:false, exit 1).
+# Ta sama lista rządzi promocją snapshotu miesięcznego (sekcja 13) i jest kontraktem dla
+# deploy/scripts/restore.sh oraz docs/runbooks/disaster-recovery.md — nie zmieniaj nazw
+# bez równoczesnej aktualizacji tamtych dwóch miejsc.
+REQUIRED_ARTIFACTS=(mysql.sql.zst neo4j-data.tar.zst minio.tar.zst panel.sqlite authentik-pg.sql.zst)
 
 WARNINGS=()
 CORE_COUNT=0   # liczba kluczowych artefaktów (mysql/neo4j/minio/sqlite/pg)
@@ -74,15 +90,80 @@ fi
 # --- 2. Neo4j (graf wiedzy). Hot-tar może być niespójny (DozerDB) — stąd cotygodniowa weryfikacja
 #        i comiesięczny zimny snapshot przez --cold-neo4j (stop -> tar -> start).
 NEO4J_MODE="hot"
+NEO4J_CHECKPOINT="skipped"
+BUILDS_RUNNING="null"
+
+# 2a. Ile buildów trwa w chwili backupu? Hot-tar zrobiony w trakcie zapisów do store'a
+#     jest najtrudniejszym przypadkiem odtworzenia — zapisujemy to w manifeście, żeby przy
+#     odtwarzaniu było wiadomo, czy sięgać po snapshot zimny.
+count_builds_running() {
+  ctr_running kag-panel || return 0
+  local n
+  n=$(docker exec kag-panel node -e '
+const db = require("better-sqlite3")(process.argv[1], { readonly: true, fileMustExist: true });
+const r = db.prepare("SELECT COUNT(*) AS c FROM build_jobs WHERE status IN (?,?,?)").get("INIT", "WAITING", "RUNNING");
+process.stdout.write(String(r.c));
+' "${PANEL_DB_IN_CONTAINER}" 2>/dev/null) || return 0
+  [[ "${n}" =~ ^[0-9]+$ ]] || return 0
+  BUILDS_RUNNING="${n}"
+  [[ ${n} -eq 0 ]] || warn "w trakcie backupu trwa ${n} build job(ów) — hot-tar grafu jest tym samym mniej pewny"
+}
+count_builds_running
+
+# 2b. Checkpoint przed hot-tarem: Neo4j robi checkpoint co ~15 min, więc tar bez wymuszenia
+#     łapie store files sprzed nawet kwadransa + tx-logi do odtworzenia. `CALL db.checkpoint()`
+#     zrzuciłoby strony na dysk dla KAŻDEJ bazy, ale procedura jest w Neo4j 5 wyłącznie
+#     enterprise'owa i w używanym buildzie DozerDB NIE ISTNIEJE (sprawdzone: `SHOW PROCEDURES`
+#     nie zna żadnej procedury `*checkpoint*`). Dlatego: próbujemy, a gdy procedury nie ma —
+#     zapisujemy to WPROST w manifeście (`neo4jCheckpoint: unavailable`) zamiast udawać, że
+#     hot-tar jest spójny. Gwarancję punktu odtworzenia daje wtedy comiesięczny snapshot
+#     `cold` + cotygodniowy `verify_backup.sh` (check `neo4j_restore` realnie startuje bazę
+#     z archiwum). Best-effort: nic tutaj nie może wywrócić backupu.
+neo4j_checkpoint() {
+  local dbs db rc=0 have
+  ctr_running "${NEO4J_CONTAINER}" || { NEO4J_CHECKPOINT="skipped: kontener ${NEO4J_CONTAINER} nie działa"; return 0; }
+  have=$(docker exec "${NEO4J_CONTAINER}" sh -c \
+    'NEO4J_USERNAME="$OPENSPG_NEO4J_USER" NEO4J_PASSWORD="$OPENSPG_NEO4J_PASSWORD" exec cypher-shell --format plain "SHOW PROCEDURES YIELD name WHERE name = '"'"'db.checkpoint'"'"' RETURN count(*)"' \
+    2>/dev/null | tail -n1 | tr -d '"\r ') || have=""
+  if [[ "${have}" != "1" ]]; then
+    NEO4J_CHECKPOINT="unavailable: brak procedury db.checkpoint w tym buildzie Neo4j"
+    warn "hot-tar grafu bez wymuszonego checkpointu (procedura db.checkpoint niedostępna) — punkt spójności daje snapshot --cold-neo4j"
+    return 0
+  fi
+  dbs=$(docker exec "${NEO4J_CONTAINER}" sh -c \
+    'NEO4J_USERNAME="$OPENSPG_NEO4J_USER" NEO4J_PASSWORD="$OPENSPG_NEO4J_PASSWORD" exec cypher-shell -d system --format plain "SHOW DATABASES YIELD name RETURN DISTINCT name"' \
+    2>/dev/null | tail -n +2 | tr -d '"' | tr -d '\r') || dbs=""
+  if [[ -z "${dbs}" ]]; then
+    NEO4J_CHECKPOINT="failed: nie udało się wylistować baz (cypher-shell)"
+    warn "checkpoint neo4j pominięty — cypher-shell nie zwrócił listy baz"
+    return 0
+  fi
+  while IFS= read -r db; do
+    [[ -n "${db}" ]] || continue
+    docker exec -e CDB="${db}" "${NEO4J_CONTAINER}" sh -c \
+      'NEO4J_USERNAME="$OPENSPG_NEO4J_USER" NEO4J_PASSWORD="$OPENSPG_NEO4J_PASSWORD" exec cypher-shell -d "$CDB" "CALL db.checkpoint()"' \
+      >/dev/null 2>&1 || { rc=1; warn "checkpoint bazy neo4j '${db}' nie powiódł się"; }
+  done <<< "${dbs}"
+  if [[ ${rc} -eq 0 ]]; then
+    NEO4J_CHECKPOINT="ok"
+    log "checkpoint neo4j wykonany dla baz: $(echo "${dbs}" | tr '\n' ' ')"
+  else
+    NEO4J_CHECKPOINT="partial"
+  fi
+}
+
 if [[ -d "${DATA_ROOT}/kag/neo4j/data" ]]; then
   if [[ ${COLD_NEO4J} -eq 1 ]]; then
+    NEO4J_CHECKPOINT="n/a (cold)"
     NEO4J_MODE="cold"
     log "zimny snapshot neo4j: zatrzymuję usługę ${NEO4J_SERVICE}..."
     docker compose -f "${REPO_ROOT}/deploy/kag/compose.yaml" stop "${NEO4J_SERVICE}"
     # gwarancja ponownego startu nawet przy błędzie tar
     trap 'docker compose -f "${REPO_ROOT}/deploy/kag/compose.yaml" start "${NEO4J_SERVICE}" || true' EXIT
+  else
+    neo4j_checkpoint
   fi
-  log "archiwizuję neo4j/data (${NEO4J_MODE})..."
+  log "archiwizuję neo4j/data (${NEO4J_MODE}, checkpoint: ${NEO4J_CHECKPOINT})..."
   if tar --zstd -cf "${SNAP}/neo4j-data.tar.zst" -C "${DATA_ROOT}/kag/neo4j" data; then
     CORE_COUNT=$((CORE_COUNT + 1))
   else
@@ -128,6 +209,10 @@ db.backup(dst).then(() => db.close()).catch((e) => { console.error(String(e)); p
 ' "${PANEL_DB_IN_CONTAINER}" /data/backup-staging/panel.sqlite \
        && [[ -s "${staging_host}/panel.sqlite" ]]; then
       mv "${staging_host}/panel.sqlite" "${SNAP}/panel.sqlite"
+      # kopia powstaje w kontenerze jako 10001:10001 0644 — w snapshocie ma być root:root 0600
+      # (zawiera zapieczętowane klucze LLM, hashe kluczy MCP i cały audyt).
+      chown root:root "${SNAP}/panel.sqlite" 2>/dev/null || true
+      chmod 600 "${SNAP}/panel.sqlite"
       CORE_COUNT=$((CORE_COUNT + 1))
       return 0
     fi
@@ -194,35 +279,120 @@ if [[ ${#PANEL_TREES[@]} -gt 0 ]]; then
     || warn "archiwizacja plików panelu nie powiodła się"
 fi
 
-# --- 9. Stan compose (config zawiera zrenderowane sekrety — snapshot jest 0700/root) ---
+# --- 9. Stan repo i stacków.
+#        `docker compose config` NIE trafia do snapshotu: renderował wszystkie sekrety z .env
+#        po raz drugi (hasła w URL-ach CLOUDEXT_*), a jest w pełni odtwarzalny z pary
+#        (SHA commitu + .env). Zamiast niego: repo-state.txt + surowe compose.yaml (bez
+#        sekretów) + `compose ps` (nazwy/statusy/porty). Odtworzenie: git checkout <sha>,
+#        .env z snapshotu, `docker compose config` na miejscu.
+{
+  printf 'repo=%s\n' "${REPO_ROOT}"
+  printf 'commit=%s\n' "$(git -C "${REPO_ROOT}" rev-parse HEAD 2>/dev/null || echo unknown)"
+  printf 'branch=%s\n' "$(git -C "${REPO_ROOT}" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
+  printf 'describe=%s\n' "$(git -C "${REPO_ROOT}" describe --always --dirty 2>/dev/null || echo unknown)"
+  printf 'dirtyFiles=%s\n' "$(git -C "${REPO_ROOT}" status --porcelain 2>/dev/null | wc -l)"
+  printf 'createdAt=%s\n' "$(date -Is)"
+} > "${SNAP}/repo-state.txt" 2>/dev/null || warn "nie udało się zapisać repo-state.txt"
+
 for stack in edge kag; do
   cf="${REPO_ROOT}/deploy/${stack}/compose.yaml"
   if [[ -f "${cf}" ]]; then
-    docker compose -f "${cf}" config > "${SNAP}/${stack}-compose.config.yaml" 2>/dev/null \
-      || { warn "compose config stacka ${stack} nie powiódł się"; rm -f "${SNAP}/${stack}-compose.config.yaml"; }
+    cp "${cf}" "${SNAP}/${stack}-compose.yaml" || warn "kopia compose.yaml stacka ${stack} nie powiodła się"
     docker compose -f "${cf}" ps > "${SNAP}/${stack}-compose.ps.txt" 2>/dev/null \
       || rm -f "${SNAP}/${stack}-compose.ps.txt"
   else
     warn "brak ${cf}"
   fi
+  # sprzątanie po starszych snapshotach tego samego biegu (gdyby ktoś przywrócił stary skrypt)
+  rm -f "${SNAP}/${stack}-compose.config.yaml"
 done
 
 # --- 10. Sumy kontrolne ---
+# najpierw domykamy tryby: nic w snapshocie nie może być czytelne poza rootem
+find "${SNAP}" -maxdepth 1 -type f -exec chmod 600 {} +
 ( cd "${SNAP}" && find . -maxdepth 1 -type f ! -name SHA256SUMS ! -name _manifest.json -printf '%P\n' \
     | sort | xargs -r sha256sum > SHA256SUMS )
 
-# --- 11. Off-site (BACKUP_OFFSITE_TARGET puste = tylko warning w manifeście) ---
+# --- 11. Off-site.
+#     Snapshot to komplet sekretów (.env obu stacków, dump MySQL z kluczami LLM, klucze
+#     prywatne certów). Lokalnie broni go 0700/root; poza hostem NIE MA takiej ochrony,
+#     więc off-site wychodzi wyłącznie jako JEDEN zaszyfrowany plik: <STAMP>.tar.age
+#     (age -r <klucz publiczny>) albo <STAMP>.tar.gpg (gpg --encrypt -r). Klucz PRYWATNY
+#     nigdy nie mieszka na tym hoście — trzymaj go w menedżerze haseł operatora.
+#     Fail-closed: cel off-site bez skonfigurowanego odbiorcy = BRAK wysyłki
+#     (status blocked_no_encryption), chyba że operator świadomie ustawi
+#     BACKUP_OFFSITE_ALLOW_PLAINTEXT=true (odradzane — zostaje trwałe ostrzeżenie w manifeście).
 OFFSITE_TARGET="${BACKUP_OFFSITE_TARGET:-}"
 OFFSITE_STATUS="not_configured"
+OFFSITE_ENC="none"
+OFFSITE_ARTIFACT=""
+
+encrypt_snapshot() { # encrypt_snapshot <plik-wyjściowy> ; szyfruje CAŁY katalog snapshotu
+  local out=$1 r
+  if [[ -n "${BACKUP_AGE_RECIPIENT:-}" ]]; then
+    command -v age >/dev/null || { warn "BACKUP_AGE_RECIPIENT ustawiony, ale brak binarki age"; return 1; }
+    local args=()
+    for r in ${BACKUP_AGE_RECIPIENT//,/ }; do args+=(-r "${r}"); done
+    tar -C "${BACKUP_ROOT}" -cf - "${STAMP}" | age "${args[@]}" -o "${out}"
+    return $?
+  fi
+  if [[ -n "${BACKUP_GPG_RECIPIENT:-}" ]]; then
+    command -v gpg >/dev/null || { warn "BACKUP_GPG_RECIPIENT ustawiony, ale brak binarki gpg"; return 1; }
+    local gargs=()
+    for r in ${BACKUP_GPG_RECIPIENT//,/ }; do gargs+=(--recipient "${r}"); done
+    tar -C "${BACKUP_ROOT}" -cf - "${STAMP}" \
+      | gpg --batch --yes --trust-model always --encrypt "${gargs[@]}" --output "${out}"
+    return $?
+  fi
+  return 1
+}
+
+offsite_put_file() { # offsite_put_file <plik-lokalny> <nazwa-w-celu>
+  if [[ "${OFFSITE_TARGET}" == rclone://* ]]; then
+    rclone copyto "$1" "${OFFSITE_TARGET#rclone://}/$2"
+  else
+    rsync -a "$1" "${OFFSITE_TARGET}/$2"
+  fi
+}
+
+offsite_put_dir() { # offsite_put_dir <katalog-snapshotu> — tylko tryb plaintext (odradzany)
+  if [[ "${OFFSITE_TARGET}" == rclone://* ]]; then
+    rclone copy "$1" "${OFFSITE_TARGET#rclone://}/${STAMP}"
+  else
+    rsync -a "$1" "${OFFSITE_TARGET}/"
+  fi
+}
+
 if [[ -z "${OFFSITE_TARGET}" ]]; then
   warn "BACKUP_OFFSITE_TARGET pusty — brak kopii off-site (parametr do wypełnienia)"
-else
-  log "wysyłam snapshot off-site: ${OFFSITE_TARGET}"
-  if [[ "${OFFSITE_TARGET}" == rclone://* ]]; then
-    if rclone copy "${SNAP}" "${OFFSITE_TARGET#rclone://}/${STAMP}"; then OFFSITE_STATUS="ok"; else OFFSITE_STATUS="failed"; warn "rclone off-site nie powiódł się"; fi
+elif [[ -z "${BACKUP_AGE_RECIPIENT:-}" && -z "${BACKUP_GPG_RECIPIENT:-}" ]]; then
+  if [[ "${BACKUP_OFFSITE_ALLOW_PLAINTEXT:-}" == "true" ]]; then
+    OFFSITE_ENC="plaintext"
+    warn "off-site BEZ SZYFROWANIA (BACKUP_OFFSITE_ALLOW_PLAINTEXT=true) — sekrety obu stacków opuszczają host jawnym tekstem"
+    log "wysyłam snapshot off-site (jawnie): ${OFFSITE_TARGET}"
+    if offsite_put_dir "${SNAP}"; then OFFSITE_STATUS="ok"; OFFSITE_ARTIFACT="${STAMP}/"; else OFFSITE_STATUS="failed"; warn "wysyłka off-site nie powiodła się"; fi
   else
-    if rsync -a "${SNAP}" "${OFFSITE_TARGET}/"; then OFFSITE_STATUS="ok"; else OFFSITE_STATUS="failed"; warn "rsync off-site nie powiódł się"; fi
+    OFFSITE_STATUS="blocked_no_encryption"
+    warn "off-site ZABLOKOWANY: ustaw BACKUP_AGE_RECIPIENT lub BACKUP_GPG_RECIPIENT (klucz publiczny odbiorcy) — snapshot zawiera komplet sekretów"
   fi
+else
+  if [[ -n "${BACKUP_AGE_RECIPIENT:-}" ]]; then OFFSITE_ENC="age"; else OFFSITE_ENC="gpg"; fi
+  ENC_NAME="${STAMP}.tar.${OFFSITE_ENC}"
+  ENC_FILE="${BACKUP_ROOT}/.offsite-${ENC_NAME}"
+  log "szyfruję snapshot (${OFFSITE_ENC}) do wysyłki off-site..."
+  if encrypt_snapshot "${ENC_FILE}" && [[ -s "${ENC_FILE}" ]]; then
+    chmod 600 "${ENC_FILE}"
+    log "wysyłam snapshot off-site: ${OFFSITE_TARGET}"
+    if offsite_put_file "${ENC_FILE}" "${ENC_NAME}"; then
+      OFFSITE_STATUS="ok"
+      OFFSITE_ARTIFACT="${ENC_NAME}"
+    else
+      OFFSITE_STATUS="failed"; warn "wysyłka off-site nie powiodła się"
+    fi
+  else
+    OFFSITE_STATUS="failed"; warn "szyfrowanie snapshotu do wysyłki off-site nie powiodło się"
+  fi
+  rm -f "${ENC_FILE}"
 fi
 
 # --- 12. Manifest JSON ---
@@ -237,7 +407,17 @@ OK=false
   printf '  "retentionDays": %s,\n' "${RETENTION_DAYS}"
   printf '  "monthlyKeepDays": %s,\n' "${MONTHLY_KEEP_DAYS}"
   printf '  "neo4jMode": "%s",\n' "${NEO4J_MODE}"
+  printf '  "neo4jCheckpoint": "%s",\n' "$(json_escape "${NEO4J_CHECKPOINT}")"
+  printf '  "buildsRunning": %s,\n' "${BUILDS_RUNNING}"
   printf '  "coreArtifacts": %s,\n' "${CORE_COUNT}"
+  printf '  "requiredArtifacts": ['
+  first=1
+  for a in "${REQUIRED_ARTIFACTS[@]}"; do
+    [[ ${first} -eq 1 ]] || printf ', '
+    first=0
+    printf '"%s"' "${a}"
+  done
+  printf '],\n'
   printf '  "missingRequired": ['
   first=1
   for m in "${MISSING_REQUIRED[@]+"${MISSING_REQUIRED[@]}"}"; do
@@ -246,7 +426,8 @@ OK=false
     printf '"%s"' "$(json_escape "${m}")"
   done
   printf '],\n'
-  printf '  "offsite": { "target": "%s", "status": "%s" },\n' "$(json_escape "${OFFSITE_TARGET}")" "${OFFSITE_STATUS}"
+  printf '  "offsite": { "target": "%s", "status": "%s", "encryption": "%s", "artifact": "%s" },\n' \
+    "$(json_escape "${OFFSITE_TARGET}")" "${OFFSITE_STATUS}" "${OFFSITE_ENC}" "$(json_escape "${OFFSITE_ARTIFACT}")"
   printf '  "files": [\n'
   first=1
   while read -r sum name; do
@@ -269,33 +450,77 @@ OK=false
 } > "${SNAP}/_manifest.json"
 chmod 600 "${SNAP}/_manifest.json"
 
-# manifest dosyłamy off-site na końcu (best-effort)
+# Manifest (wolny od sekretów: nazwy plików, rozmiary, sumy, ostrzeżenia) dosyłamy off-site
+# obok zaszyfrowanego archiwum — pozwala sprawdzić kompletność bez odszyfrowywania.
 if [[ "${OFFSITE_STATUS}" == "ok" ]]; then
-  if [[ "${OFFSITE_TARGET}" == rclone://* ]]; then
-    rclone copy "${SNAP}/_manifest.json" "${OFFSITE_TARGET#rclone://}/${STAMP}" || true
+  if [[ "${OFFSITE_ENC}" == "plaintext" ]]; then
+    offsite_put_dir "${SNAP}" || true
   else
-    rsync -a "${SNAP}/_manifest.json" "${OFFSITE_TARGET}/${STAMP}/" || true
+    offsite_put_file "${SNAP}/_manifest.json" "${STAMP}._manifest.json" || true
   fi
 fi
 
-# --- 13. Retencja: 14 dni nightly; pierwszy snapshot miesiąca trzymany ~6 mies. ---
+# --- 13. Retencja: 14 dni nightly; pierwszy KOMPLETNY snapshot miesiąca trzymany ~6 mies. ---
+#
+# Wcześniej regułą był „najstarszy katalog miesiąca po nazwie" — promowało to na 186 dni
+# snapshot wadliwy (2026-09-03_032613 nie zawierał panel.sqlite, a miał ok:true ze starego
+# kontraktu). Kandydatem na kopię miesięczną może być wyłącznie snapshot KOMPLETNY:
+# manifest z ok:true, komplet REQUIRED_ARTIFACTS oraz każdy plik z SHA256SUMS obecny
+# i niepusty. Wśród kompletnych preferujemy zimny (neo4jMode: cold) — daje gwarantowany
+# punkt spójności grafu. Miesiąc bez ani jednego kompletnego snapshotu NIE dostaje kopii
+# miesięcznej (fail-loudly: promowanie wadliwego to fałszywe poczucie bezpieczeństwa).
+
+# snapshot_complete <katalog> — 0 gdy snapshot nadaje się na kopię miesięczną
+snapshot_complete() {
+  local d=$1 f name
+  [[ -f "${d}/_manifest.json" ]] || return 1
+  grep -qE '"ok"[[:space:]]*:[[:space:]]*true' "${d}/_manifest.json" || return 1
+  for f in "${REQUIRED_ARTIFACTS[@]}"; do
+    [[ -s "${d}/${f}" ]] || return 1
+  done
+  [[ -f "${d}/SHA256SUMS" ]] || return 1
+  while read -r _ name; do
+    [[ -n "${name}" ]] || continue
+    [[ -s "${d}/${name}" ]] || return 1
+  done < "${d}/SHA256SUMS"
+  return 0
+}
+
+snapshot_is_cold() { grep -qE '"neo4jMode"[[:space:]]*:[[:space:]]*"cold"' "$1/_manifest.json" 2>/dev/null; }
+
 prune_snapshots() {
   local now dir name month ts age
   now=$(date +%s)
-  declare -A month_first=()
-  # pierwszy (najstarszy) snapshot każdego miesiąca
+  declare -A month_keep=() month_cold=() month_any=() month_seen=()
+  # kandydaci miesięczni: pierwszy kompletny zimny, w drugiej kolejności pierwszy kompletny
   while IFS= read -r name; do
+    dir="${BACKUP_ROOT}/${name}"
     month=${name:0:7}
-    [[ -n "${month_first[${month}]:-}" ]] || month_first[${month}]=${name}
+    month_seen[${month}]=1
+    snapshot_complete "${dir}" || continue
+    [[ -n "${month_any[${month}]:-}" ]] || month_any[${month}]=${name}
+    if snapshot_is_cold "${dir}" && [[ -z "${month_cold[${month}]:-}" ]]; then
+      month_cold[${month}]=${name}
+    fi
   done < <(find "${BACKUP_ROOT}" -mindepth 1 -maxdepth 1 -type d -printf '%P\n' \
              | grep -E '^[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{6}$' | sort)
+  for month in "${!month_seen[@]}"; do
+    if [[ -n "${month_cold[${month}]:-}" ]]; then
+      month_keep[${month}]=${month_cold[${month}]}
+    elif [[ -n "${month_any[${month}]:-}" ]]; then
+      month_keep[${month}]=${month_any[${month}]}
+    else
+      warn "retencja: miesiąc ${month} nie ma ANI JEDNEGO kompletnego snapshotu — brak kopii miesięcznej"
+    fi
+  done
+
   while IFS= read -r name; do
     dir="${BACKUP_ROOT}/${name}"
     ts=$(date -d "${name:0:10}" +%s 2>/dev/null) || continue
     age=$(( (now - ts) / 86400 ))
     if [[ ${age} -le ${RETENTION_DAYS} ]]; then continue; fi
     month=${name:0:7}
-    if [[ "${month_first[${month}]:-}" == "${name}" && ${age} -le ${MONTHLY_KEEP_DAYS} ]]; then
+    if [[ "${month_keep[${month}]:-}" == "${name}" && ${age} -le ${MONTHLY_KEEP_DAYS} ]]; then
       continue   # miesięczny snapshot zostaje
     fi
     log "retencja: usuwam stary snapshot ${name} (wiek ${age} dni)"

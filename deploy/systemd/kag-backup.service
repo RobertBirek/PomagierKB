@@ -17,6 +17,11 @@ WorkingDirectory=/kag
 Environment=DATA_ROOT=/srv/kag-data
 # Cel off-site: "rclone://remote:sciezka" albo cel rsync (user@host:/sciezka).
 # Puste = backup tylko lokalny + warning w manifescie.
+# FAIL-CLOSED: sam cel NIE WYSTARCZY. Bez BACKUP_AGE_RECIPIENT albo BACKUP_GPG_RECIPIENT
+# (w /etc/kag/alerts.env) wysylka jest BLOKOWANA i manifest dostaje status
+# "blocked_no_encryption" — snapshot zawiera oba pliki .env, klucze prywatne certow
+# i surowy klucz API modelu embeddingow, wiec kopia jawnym tekstem u obcego dostawcy
+# bylaby gorsza niz brak kopii off-site. Swiadome obejscie: BACKUP_OFFSITE_ALLOW_PLAINTEXT=true.
 Environment=BACKUP_OFFSITE_TARGET=
 # /etc/kag/alerts.env moze definiowac BACKUP_PING_URL (ping sukcesu) i ALERT_WEBHOOK_URL.
 EnvironmentFile=-/etc/kag/alerts.env
