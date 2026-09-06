@@ -119,10 +119,15 @@ Kolejność ma znaczenie — treść żyje w **czterech** miejscach naraz.
 2. **Panel → Bazy wiedzy → Buduj**: build po wycofaniu przebudowuje eksport i mirror —
    dopiero to usuwa treść z `chunks_mirror`/FTS5 i przestaje ją podawać w wyszukiwaniu.
 3. **Graf OpenSPG**: builder działa w trybie `UPSERT` — **nie kasuje** encji usuniętych
-   ze źródła. Encje `CHUNK_*`/`DOC_*` pozostają w Neo4j do czasu ręcznego usunięcia
-   (`reason/run` jest ZAKAZANE jako proxy — patrz `backend-mcp.md` Aneks; usuwanie
-   wykonuje admin bezpośrednio w `cypher-shell` na projekcie bazy) albo do odtworzenia
-   projektu od zera. **Zaplanuj to jako świadomą operację, nie zakładaj, że build wystarczy.**
+   ze źródła, a wiersza-nagrobka NIE stosuje (potwierdzone na produkcji 2026-09-06: job
+   kończy się sukcesem, węzeł zachowuje treść). Retrieval odsiewa takie id po
+   `graph_ids.live = 0`, więc po kroku 2 treść jest **niedostępna** — ale nadal
+   **istnieje** w Neo4j. Fizyczne usunięcie:
+   `sudo deploy/scripts/purge_graph_nodes.sh --namespace <NS> --apply`
+   (lista wyłącznie z rejestru, więc nie da się skasować treści żywej; operacja
+   audytowana jako `graph.purge_nodes`). Pełna procedura i weryfikacja:
+   `docs/runbooks/purge-document.md`. `reason/run` jest ZAKAZANE jako proxy —
+   patrz `backend-mcp.md` Aneks.
 4. **MinIO**: CSV przekazane builderowi zostaje w buckecie `builder/upload/…` — usuń obiekt,
    jeśli dokument był wrażliwy.
 5. **Pliki**: blob źródłowy w `uploads/` (content-addressed) i katalog eksportu w `exports/`
