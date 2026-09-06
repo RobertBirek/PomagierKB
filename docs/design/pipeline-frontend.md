@@ -1,8 +1,20 @@
 # PODSYSTEM 3: Pipeline wiedzy + frontend panelu
 
-Zakres: rejestr KB w SQLite, generyczny szablon schema DSL, provisioning projektów OpenSPG, pipeline ingest (ekstrakcja → czyszczenie → analyze → inbox → promote → chunking → CSV → builder → quality gate), luki wiedzy, frontend React 18 + Vite.
+Zakres: rejestr KB w SQLite, generyczny szablon schema DSL, provisioning projektów OpenSPG, pipeline ingest (ekstrakcja → czyszczenie → analyze → inbox → promote → chunking → CSV → builder → quality gate), luki wiedzy, frontend React 19 + Vite.
 
-Konwencje wspólne (kontrakt z pozostałymi podsystemami): jedna baza `data/kag.db` (better-sqlite3, `journal_mode=WAL`, `busy_timeout=5000`, dostęp przez pakiet `packages/db` współdzielony z procesem MCP), klient OpenSPG w `packages/openspg-client` (auto-login `POST /v1/accounts/login` z `sha256(password+"OPENSPG")`, cookie w pamięci + odświeżanie po 401), audyt hash-chained przez globalny hook na każdą mutację (podsystem 2), akcje długobieżne wg wzorca 202+actionId.
+> **Mapa nazw: planowane pakiety `packages/db` i `packages/openspg-client` NIE POWSTAŁY**
+> jako osobne workspace'y — zostały scalone w **`packages/shared`**. Czytając ten dokument,
+> podstawiaj:
+> `packages/db/src/index.ts` → `packages/shared/src/db/` (open, migrate, `migrations/*.sql`),
+> `packages/db/src/repos/*` → `packages/shared/src/db/repos/*`,
+> `packages/db/src/schema.sql` → `packages/shared/src/db/migrations/0001_init.sql` (+ kolejne),
+> `packages/openspg-client/src/*` → `packages/shared/src/openspg/*`
+> (`client.ts` — w tym auto-login, `projects.ts`, `models.ts`, `search.ts`, `builder.ts`, `query.ts`;
+> osobnego `login.ts` nie ma).
+> Sekcje „Krytyczne pliki do implementacji" i „FILE LAYOUT" to zapis planistyczny sprzed
+> scalenia — nie są listą istniejących plików.
+
+Konwencje wspólne (kontrakt z pozostałymi podsystemami): jedna baza SQLite (produkcyjnie `/srv/kag-data/kag/panel/db/kag.db`; better-sqlite3, `journal_mode=WAL`, `busy_timeout=5000`, dostęp przez warstwę db w `packages/shared` współdzieloną z procesem MCP), klient OpenSPG w `packages/shared/src/openspg/` (auto-login `POST /v1/accounts/login` z `sha256(password+"OPENSPG")`, cookie w pamięci + odświeżanie po 401), audyt hash-chained przez globalny hook na każdą mutację (podsystem 2), akcje długobieżne wg wzorca 202+actionId.
 
 ---
 
@@ -317,36 +329,62 @@ Zapis: `kb.answer` (proces MCP) po policzeniu confidence (czysta funkcja: `0.6*m
 
 ---
 
-## (e) Frontend: React 18 + Vite
+## (e) Frontend: React 19 + Vite
+
+> **Zweryfikowane ze stanem kodu 2026-09-06.** Sekcja opisuje STAN FAKTYCZNY po przebudowie
+> UX v2 (2026-09-03) i konsolidacji stron. Pierwotna wersja tej sekcji (React 18, strony
+> `/learning` i `/system`, CSRF na tokenie `X-CSRF-Token`, cookie `kag_session`, tokeny CSS
+> w `:root`) opisywała stan, który nigdy nie wszedł do produkcji albo został zastąpiony —
+> jeżeli szukasz zapisu historycznego, jest nim git log tego pliku, nie ten tekst.
+> Aktualny opis wyglądu i raport przebudowy: `docs/design/ux-audit.md` + kod `apps/panel-web/`.
 
 ### Decyzje
+- **React 19 + Vite.** (`apps/panel-web/package.json`: `react`/`react-dom` ^19.2.8.)
 - **Routing: TanStack Router** (zamiast react-router): typowane ścieżki i **typowane search-params** — deep-linki filtrów (inbox `?status=pending&kb=X`) to wymaganie z wzorców optimaKB, a search-params API TanStack robi to deklaratywnie; naturalna integracja z TanStack Query. Konfiguracja code-based (jeden plik tras — bez plugina file-based, mniej magii w v1).
 - **TanStack Query v5**: klucze `['kb']`, `['kb', ns]`, `['drafts', filters]`, `['action', id]` (refetchInterval 2000 dopóki status `running`), `['gaps', filters]`, `['me']`, `['overview']` (refetchInterval 15000). Mutacje inwalidują klucze zasobu.
 - **i18n: minimalna warstwa tłumaczeń** (nie stringi wprost, nie i18next): jeden słownik `src/i18n/pl.ts` (`export const pl = { 'inbox.promote': 'Zatwierdź', ... } as const`) + helper `t(key, params?)` z prostą interpolacją `{name}` i typowanymi kluczami (`keyof typeof pl`). Koszt ~30 linii, kod trzyma identyfikatory po angielsku, przyszłe EN bez refaktoru. Daty/liczby przez `Intl` z locale `pl-PL`.
-- **Motyw**: CSS variables w `:root` (light) i `[data-theme="dark"]`; tokeny: `--bg`, `--surface`, `--border`, `--text`, `--text-muted`, `--accent`, `--ok`, `--warn`, `--fail`; toggle w headerze, persist w localStorage, start z `prefers-color-scheme`.
+- **Design system v2 (Linear-like) — obowiązkowy kit.** Tokeny semantyczne żyją w **Tailwind v4 `@theme`** w `apps/panel-web/src/styles/app.css` (wartości light; dark = nadpisanie zmiennych), nie w ręcznym `:root`. Komponenty bierz **z `src/ui/`** (`button`, `card`, `dialog`, `sheet`, `data-table`, `select`, `toast`, `badge`, `field`, `tabs`, …) — nowego UI nie buduje się gołym HTML/CSS ani klasami `.btn`. Shell aplikacji (sidebar, topbar, paleta ⌘K) w `src/components/shell/`. Pliki `styles/theme.css` i `styles/base.css` to **mostki migracyjne** (aliasy starych nazw tokenów) — nie dopisuj do nich nic nowego; docelowo znikają. Toggle motywu w topbarze, persist w localStorage, start z `prefers-color-scheme`.
 
 ### Sesja OIDC i rola (kontrakt z backendem)
 
 Cały flow OIDC po stronie backendu (Fastify) — frontend NIGDY nie widzi tokenów:
-1. Frontend przy starcie woła `GET /api/me`. 401 → `window.location = '/auth/login?next=' + encodeURIComponent(pathname+search)`.
-2. `GET /auth/login` → redirect 302 do Authentik authorize (Authorization Code + PKCE + state).
-3. `GET /auth/callback` → wymiana kodu, weryfikacja ID tokena, mapowanie grup (`kag-admin`→admin, `kag-operator`→operator, `kag-viewer`→viewer; brak grupy = 403 strona "brak dostępu"), utworzenie sesji w tabeli `sessions` (SQLite), cookie `kag_session` HttpOnly+Secure+SameSite=Lax, redirect na `next`.
-4. `GET /api/me` → `{ user: {sub, email, name}, role: 'admin'|'operator'|'viewer', csrfToken }`. CSRF: token per-sesja w wierszu sesji (przeżywa restart — naprawa buga optimaKB), wysyłany nagłówkiem `X-CSRF-Token` przy mutacjach.
-5. Wylogowanie: `POST /auth/logout` → kasacja sesji + redirect do end-session Authentika.
+1. Frontend przy starcie woła `GET /api/v1/me`. 401 → `window.location = '/auth/login?returnTo=' + encodeURIComponent(pathname+search)`.
+2. `GET /auth/login` → redirect 302 do Authentik authorize (Authorization Code + PKCE + state + nonce w cookie transakcyjnym `kag_txn`).
+3. `GET /auth/callback` → wymiana kodu, weryfikacja ID tokena, mapowanie grup (`kag-admin`→admin, `kag-operator`→operator, `kag-viewer`→viewer; brak grupy = 403 „brak dostępu"), utworzenie sesji w tabeli `sessions` (SQLite), cookie **`kag_sid`** HttpOnly+Secure+SameSite=Lax+host-only, redirect na `returnTo`.
+   Redirect URI zarejestrowany w Authentiku to **`https://kag.ilovelighting.sanok.pl/auth/callback`** (BEZ `/api` — trasy `/auth/*` i `/healthz` idą bez prefiksu `/api/v1`).
+4. `GET /api/v1/me` → `{ user: {id, email, displayName, role}, session: {expiresAt} }`.
+   **CSRF: BEZ tokenów** — zgodnie z rozstrzygniętą decyzją (PLAN.md §Decyzje, `backend-mcp.md` §3.3)
+   ochrona jest bezstanowa: dla metod mutujących backend wymaga, by `Origin` (jeśli obecny)
+   był dokładnie `https://kag.ilovelighting.sanok.pl`, a `Sec-Fetch-Site` (jeśli obecny)
+   ∈ {`same-origin`, `none`}. **Nie ma pola `csrfToken` ani nagłówka `X-CSRF-Token`** —
+   w kodzie nie występują (0 trafień w `apps/` i `packages/`); front wysyła zwykły `fetch`
+   same-origin z `credentials: 'include'`.
+5. Wylogowanie: `POST /api/v1/auth/logout`… — faktycznie **`POST /auth/logout`** (bez prefiksu): kasacja sesji, wyczyszczenie cookie i zwrot `logoutUrl` (end_session Authentika), na który przekierowuje front.
 Rola w UI: hook `useMe()`; `can(role, permission)` — czysta funkcja z mapą uprawnień (viewer: read; operator: +content/drafts/build/gaps; admin: +kb create/provision, settings, MCP keys). Gating w UI to tylko UX — egzekwuje backend.
 
 ### Strony (funkcje per strona)
 
-- **/overview** — health cockpit (karta sygnałów + status ogólny), kafle: liczba KB / dokumentów / chunków / pending draftów / otwartych luk; lista ostatnich akcji (status, czas, link do logu); KB z `dirty=1` ("wymaga builda") z przyciskiem build.
-- **/kb** — DataTable rejestru (namespace, nazwa, status, projectId, totals, ostatni build, verdict gate); akcje wierszowe wg roli: Provision, Build (modal preflight z listą checks i opcją force), Quality gate, Szczegóły (drawer: historia buildów per plik, raport jakości z listą checków, wersja schematu); modal "Nowa baza" (admin): namespace z walidacją live regex + podgląd wyrenderowanego schematu.
-- **/inbox** — DataTable draftów; filtry w search-params (status/kb/fraza/strona); podgląd draftu w modalu (render markdown, metadane, badge providera analizy); akcje: Zatwierdź/Odrzuć/Wycofaj/Zmień KB/Edytuj (pending); bulk: checkboxy → pasek akcji → dryRun preflight (tabela per-draft ok/konflikt) → potwierdzenie.
-- **/add** — trzy taby: Plik (drag&drop, progress), URL, Tekst; wybór profilu czyszczenia (auto + override); stepper statusu intake (przyjęto → ekstrakcja(provider, jakość) → czyszczenie(usunięto %) → analiza(tytuł/tagi/KB/provider/confidence) → szkic utworzony → link do inboxu); lista ostatnich intake'ów z błędami ekstrakcji.
-- **/learning** — kafle statystyk (open/in_draft/resolved/ignored); tabela luk (pytanie, KB, confidence, źródło, data); akcje: Utwórz szkic (nawigacja do /add z prefill), Rozwiązana, Ignoruj.
-- **/mcp** — (dane z podsystemu 4) lista użytkowników/kluczy (prefix, scope, ostatnie użycie, TTL), tworzenie klucza (raw pokazany JEDEN raz w modalu z copy), rotate/revoke, lista profili z manifestu (namespaces, tools, mode), snippety konfiguracyjne (Claude Code/Desktop JSON z copy), health per profil.
-- **/system** — lista akcji (filtr status) z viewerem logTail (polling); przeglądarka audytu (filtr aktor/zdarzenie/data); health usług (OpenSPG, Stirling, Tika, DB, MCP); status backupów.
-- **/settings** (admin) — provider LLM: base_url + modele openie_llm/chat_llm, klucz maskowany (`configured` + preview 4 znaki, zapis tylko-nadpisanie), przycisk "Testuj połączenie"; model embeddingu (read-only gdy ≥1 KB active, z ostrzeżeniem o niezmienności); progi (confidence, chunk size — advanced); opcjonalne klucze Exa/Tavily (maskowane, opisane jako "faza 2: auto-drafty").
+**Siedem stron** (`apps/panel-web/src/routes/`: `OverviewPage`, `AskPage`, `AddPage`,
+`InboxPage`, `KbPage`, `McpPage`, `SettingsPage`). Pierwotnie planowane `/learning` i
+`/system` **nie istnieją jako osobne trasy** — zostały zakładkami: luki wiedzy w `/inbox`,
+akcje/audyt/health w `/settings`.
+
+- **/overview** — health cockpit (karta sygnałów + status ogólny), kafle: liczba KB / dokumentów / chunków / pending draftów / otwartych luk; lista ostatnich akcji (status, czas, link do logu); KB z `dirty=1` („wymaga builda") z przyciskiem build; karta „Jakość odpowiedzi — tydzień".
+- **/ask** — „Zapytaj bazę": mobile-first, streaming SSE z `POST /api/v1/ask` (ta sama logika co `kb_answer`); cytowania jako rozwijane karty (drawer z fragmentem); 👍/👎 (`POST /api/v1/ask/:answerId/feedback`) + „co jest nie tak?"; historia per użytkownik (`GET /api/v1/ask/history`); jawne „Nie znalazłem tego w bazie" + plakietka niepewności.
+- **/kb** — DataTable rejestru (namespace, nazwa, status, projectId, totals, ostatni build, verdict gate); akcje wierszowe wg roli: Provision, Build (modal preflight z listą checks i opcją force), Quality gate, Szczegóły (drawer: historia buildów per plik, raport jakości, wersja schematu); modal „Nowa baza" (admin): namespace z walidacją live regex + podgląd wyrenderowanego schematu.
+- **/inbox** — DataTable draftów; filtry w search-params (status/kb/fraza/strona); podgląd draftu (render markdown, metadane, badge providera analizy); akcje: Zatwierdź/Odrzuć/Wycofaj/Edytuj (`PATCH /drafts/:id` dla `pending`); bulk: checkboxy → pasek akcji → dryRun preflight → potwierdzenie. **Zakładka „Luki"** (dawne `/learning`): kafle statystyk, tabela luk, akcje Uzupełnij (`start-draft` → prefill `/add`), Rozwiąż, Ignoruj, Otwórz ponownie.
+- **/add** — trzy taby: Plik (drag&drop, progress), **URL** (pobranie przez `safe_http`), Tekst; stepper statusu intake (przyjęto → ekstrakcja(provider, jakość) → czyszczenie(usunięto %) → analiza(tytuł/tagi/KB/provider/confidence) → szkic utworzony → link do inboxu); lista ostatnich intake'ów z błędami ekstrakcji i akcją Ponów.
+- **/mcp** — lista użytkowników/kluczy (prefix, scope, ostatnie użycie, TTL), tworzenie klucza (raw pokazany JEDEN raz w modalu z copy), rotate/revoke, lista profili (namespaces, tools), snippety konfiguracyjne (Claude Code/Cursor/generic JSON z copy), health MCP.
+- **/settings** (admin) — zakładki:
+  - *LLM*: base_url + modele `openie_llm`/`chat_llm`/embeddings, klucz maskowany (`configured` + preview, zapis tylko-nadpisanie), „Testuj połączenie"; model embeddingu read-only gdy ≥1 KB `active` (ostrzeżenie o niezmienności);
+  - *progi i limity*: `learning.threshold`, `answer.minScore`, `answer.rerank`, `answer.rewrite`, `drafts.limits`, `chunking`, `ingest.limits`, `retention`;
+  - *system*: lista akcji z logTail przez SSE, przeglądarka audytu, health usług, status backupów (dawne `/system`).
 
 ### Komponenty wspólne i logika czysta (z testami vitest)
+
+**Stan po v2:** komponenty prezentacyjne żyją w `apps/panel-web/src/ui/` (kit) —
+poniższa lista opisuje ROLE, nie nazwy plików; sprawdź kit, zanim napiszesz nowy komponent.
+Logika czysta (`lib/`, `i18n/`) pozostaje bez zmian i nadal ma testy vitest.
 
 `StatusBadge` (mapa status→wariant jako czysta fn `statusVariant()`), `DataTable` (headless: sort/paginacja/selekcja kontrolowane propami), `Modal` (focus trap, Esc), `ConfirmButton`, `Stepper`, `CopyField`, `SafeExternalLink` (noopener+noreferrer, tylko http/https), `EmptyState`, `Skeleton`, `Toast`, `ThemeToggle`, `MetricTile`. Logika czysta w `.ts` bez Reacta: `lib/health.ts` — `normalizeStatus()` (PASS/FINISH/OK→OK, FAIL/ERROR→FAIL, WARN/RUNNING/STALE→WARN), `worstStatus()`, `buildHealthCockpit(overview)` → `{overallStatus, signals: [{id,label,value,status}]}` z sygnałami: openspg, mcp, quality (najgorszy verdict aktywnych KB), inbox (pending>0→WARN), akcje (failed→FAIL, running→WARN), luki (open>próg→WARN), dirty KB; `lib/bulkSelection.ts` (reducer selekcji), `lib/permissions.ts` (`can()`), `i18n/t.ts` — wszystkie z testami jednostkowymi.
 
@@ -354,7 +392,7 @@ Rola w UI: hook `useMe()`; `can(role, permission)` — czysta funkcja z mapą up
 
 ## Kolejność implementacji
 
-1. `packages/db` (schema.sql + migracje + repozytoria) i `packages/openspg-client` (login, projects, models, schemas, builder, upload) — fundament, testy na fixture'ach.
+1. Warstwa db (schemat + migracje + repozytoria) i klient OpenSPG (login, projects, models, schemas, builder, upload) — fundament, testy na fixture'ach. **Wykonane w `packages/shared`** (`src/db/`, `src/openspg/`), nie w osobnych pakietach — patrz mapa nazw na górze dokumentu.
 2. Rejestr KB + provisioning (szablon schema, ensureEmbeddingModel) — pierwszy KB end-to-end na czystym serwerze.
 3. Pipeline: extract → clean → analyze → draft (intake worker) + API inboxu.
 4. Exporter + chunker + builder runner + quality gate (akcje 202/preflight/resume/FORCE).
@@ -362,6 +400,10 @@ Rola w UI: hook `useMe()`; `can(role, permission)` — czysta funkcja z mapą up
 6. Frontend: shell + auth/me + Overview/KB → Inbox/Add → Learning/System/Settings → MCP.
 
 ## Krytyczne pliki do implementacji
+
+> **Zapis planistyczny sprzed scalenia pakietów** — ścieżki `packages/db/*` i
+> `packages/openspg-client/*` nie istnieją; odpowiedniki są w `packages/shared/src/{db,openspg}/`
+> (mapa nazw na górze dokumentu).
 
 - /kag/packages/openspg-client/src/client.ts — cały kontrakt REST OpenSPG (projects/models/schemas/upload/builder)
 - /kag/apps/panel-api/src/pipeline/builder.ts — runner buildów (resume z SQLite, reuse-active, FORCE, polling)
@@ -371,6 +413,9 @@ Rola w UI: hook `useMe()`; `can(role, permission)` — czysta funkcja z mapą up
 
 
 ## FILE LAYOUT
+
+> Jw. — lista planowana, nie stan repo. `packages/db` → `packages/shared/src/db`,
+> `packages/openspg-client` → `packages/shared/src/openspg`.
 - /kag/schemas/document_kb.schema.tpl — generyczny szablon schema DSL z placeholderem __NAMESPACE__
 - /kag/packages/db/src/schema.sql — pełny DDL SQLite (kb_registry, intakes, drafts, export_runs/files, upload_records, build_jobs, quality_reports, learning_gaps, sessions)
 - /kag/packages/db/src/index.ts — otwarcie bazy (WAL, busy_timeout), migracje, eksport repozytoriów

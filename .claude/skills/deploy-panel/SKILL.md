@@ -17,14 +17,20 @@ npm run typecheck && npm run lint && npm test && npm run build
 
 Wszystko zielone albo STOP. Niezacommitowane zmiany → najpierw commit (gitleaks w pre-commit).
 
-## 2. Tag rollback + build obrazu
+## 2. Snapshot, tag rollback + build obrazu
 
 ```bash
-docker tag kag-panel:local kag-panel:pre-$(date +%Y%m%d-%H%M)   # rollback poprzedniej wersji
+sudo systemctl start kag-backup.service          # świeży snapshot PRZED zmianą
+TAG="pre-$(date +%Y%m%d-%H%M)"
+docker tag kag-panel:local "kag-panel:${TAG}"    # rollback poprzedniej wersji
+echo "${TAG}" | sudo tee /srv/kag-data/kag/last-rollback-tag
+git rev-parse --short HEAD                       # zanotuj commit — obraz :local nie ma etykiety revision
 docker build -t kag-panel:local -f services/panel/Dockerfile .
 ```
 
 Dockerfile: `services/panel/Dockerfile` (kontekst = root repo, monorepo workspaces).
+Wzorzec tagu `pre-<RRRRMMDD>-<GGMM>` jest wiążący — historyczne tagi na hoście
+(`pre-v2`, `pre-brain-20260903`, `pre-mcp2026`) powstały ad hoc, nie powielaj ich.
 
 ## 3. Wdrożenie i weryfikacja
 
@@ -34,8 +40,28 @@ deploy/scripts/smoke.sh
 node tools/ux-audit/e2e.mjs        # 10 checków klikalnych na produkcji (login akadmin)
 ```
 
-Smoke lub E2E czerwone → rollback: `docker tag kag-panel:pre-<data> kag-panel:local`
+Smoke lub E2E czerwone → rollback:
+`docker tag "kag-panel:$(cat /srv/kag-data/kag/last-rollback-tag)" kag-panel:local`
 i ponowne `compose up -d panel`; dopiero potem diagnoza.
+
+**Granica rollbacku — migracje SQLite są forward-only** i uruchamia je panel-api przy
+starcie. Bezpieczny jest powrót o JEDNĄ wersję (migracje muszą być addytywne
+i kompatybilne wstecz o jedno wydanie); głębszy powrót wymaga odtworzenia pliku SQLite
+ze snapshotu. Pełny opis zasady: `docs/deployment.md` §12.1.
+
+## 3b. Deploy serwera MCP (osobny obraz — ta sama procedura)
+
+```bash
+TAG="pre-$(date +%Y%m%d-%H%M)"
+docker tag kag-mcp:local "kag-mcp:${TAG}"
+docker build -t kag-mcp:local -f services/mcp/Dockerfile .
+docker compose -f deploy/kag/compose.yaml up -d mcp
+deploy/scripts/smoke.sh            # sprawdza initialize + tools/list (wymaga SMOKE_MCP_KEY)
+```
+
+**Kolejność przy wspólnej zmianie schematu:** migracje uruchamia panel-api, a mcp-server
+odmawia startu przy rozjeździe wersji — wdrażaj i restartuj **panel PRZED mcp**.
+Rollback MCP analogicznie: `docker tag "kag-mcp:${TAG}" kag-mcp:local && compose up -d mcp`.
 
 ## 4. Po wdrożeniu
 

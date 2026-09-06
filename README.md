@@ -34,16 +34,23 @@ Runbook dev/testów/diagnostyki: `.claude/skills/kag-runbook/SKILL.md`.
 
 ## Deployment
 
-Dwa stacki compose na VPS: `deploy/edge` (Caddy+Authentik+Kuma) i `deploy/kag`
+Dwa stacki compose na VPS: `deploy/edge` (Caddy + Authentik) i `deploy/kag`
 (panel, MCP, OpenSPG, Tika, Stirling). Procedura krok po kroku: `docs/deployment.md`;
-smoke po wdrożeniu: `deploy/scripts/smoke.sh`. Backup nocny + weryfikacja + zimny
-snapshot miesięczny: `deploy/systemd/` (alerty przez `/etc/kag/alerts.env`).
+smoke po wdrożeniu: `deploy/scripts/smoke.sh`. Cztery timery ops w `deploy/systemd/`
+(backup nocny, weryfikacja tygodniowa, zimny snapshot miesięczny, raport aktualizacji;
+alerty przez `/etc/kag/alerts.env`).
+
+Stack edge ma też opcjonalny profil `monitoring` z Uptime Kumą, ale **nie jest ona
+skonfigurowana**: kontener działa, natomiast `status.ilovelighting.sanok.pl` zwraca 404
+(brak aplikacji forward-auth w Authentiku) i nie ma ani jednego monitora. Stan i dwie
+możliwe decyzje: `docs/authentik-setup.md` §Monitoring.
 
 ## Dokumentacja
 
 | Dokument | Co zawiera |
 |---|---|
 | `docs/operator-manual.md` | pętla day-2: dodawanie treści, recenzja Inboxu, luki, klucze MCP, goldens |
+| `docs/data-governance.md` | inwentarz danych, retencja, usuwanie dokumentu/konta, żądania osób |
 | `docs/lessons-convention.md` | lekcje z sesji agentów → `kb_submit_draft` |
 | `docs/runbooks/` | awarie: DR, break-glass SSO, backup, rotacja sekretów, restore 1 KB |
 | `docs/authentik-setup.md` | konfiguracja SSO i forward-auth |

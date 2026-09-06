@@ -62,15 +62,17 @@ i testowe logowanie do panelu w przeglądarce.
 Authentik działa, ale nikt nie ma dostępu administracyjnego:
 
 ```bash
-docker exec edge-authentik-server ak create_recovery_key 10 akadmin
+docker exec edge-authentik-server ak create_recovery_key 1 akadmin
 ```
 
 Komenda wypisze jednorazowy link `https://auth.ilovelighting.sanok.pl/recovery/use-token/...`.
 Otwarcie linku loguje jako `akadmin` bez hasła i MFA.
 
-**UWAGA:** link = pełne przejęcie administratora; argument `10` to ważność klucza
-**w latach**. Po użyciu: ustaw nowe hasło akadmin i **usuń token** w
-Directory → Tokens & App passwords. Linku nie wysyłaj otwartym kanałem.
+**UWAGA:** link = pełne przejęcie administratora; pierwszy argument to ważność klucza
+**w LATACH** — dlatego `1`, nie `10` (wcześniejsza wersja tego runbooka kazała wystawiać
+klucz ważny dekadę). Natychmiast po użyciu: ustaw nowe hasło akadmin i **usuń token**
+w Directory → Tokens & App passwords — nie zostawiaj go „na wszelki wypadek".
+Linku nie wysyłaj otwartym kanałem.
 
 ## 4. Dostęp awaryjny, gdy panel niedostępny (SSO leży dłużej)
 
@@ -81,11 +83,22 @@ Do czasu naprawy SSO operacje wykonuj przez SSH — **nie** wystawiaj tymczasowo
 # stan stacka kag
 docker compose -f /kag/deploy/kag/compose.yaml ps
 
-# API OpenSPG od środka (przykład: lista projektów)
-docker run --rm --network kag_kag-internal curlimages/curl -fsS \
-  'http://release-openspg-server:8887/v1/projects/list?isOwner=false&keyword=&pageNo=1&pageSize=200&appId=0'
+# API OpenSPG od środka (przykład: lista projektów) — BEZ pobierania obrazu z rejestru
+docker exec release-openspg-server curl -fsS \
+  'http://127.0.0.1:8887/v1/projects/list?isOwner=false&keyword=&pageNo=1&pageSize=200&appId=0'
 
-# healthz panelu/mcp od środka
+# healthz panelu od środka
+docker exec kag-panel wget -qO- http://127.0.0.1:8080/healthz
+docker exec kag-mcp   wget -qO- http://127.0.0.1:3001/healthz
+```
+
+Warianty przez sieć (gdy trzeba sprawdzić samą łączność) — **uwaga na sieć**: OpenSPG
+i jego bazy są w `kag_kag-datastores`, a nie w `kag_kag-internal`; komenda z `kag-internal`
+do `release-openspg-*` skończy się timeoutem, który wygląda jak awaria serwera:
+
+```bash
+docker run --rm --network kag_kag-datastores curlimages/curl -fsS \
+  'http://release-openspg-server:8887/v1/projects/list?isOwner=false&keyword=&pageNo=1&pageSize=200&appId=0'
 docker run --rm --network kag_kag-internal curlimages/curl -fsS http://kag-panel:8080/healthz
 ```
 

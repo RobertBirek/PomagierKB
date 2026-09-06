@@ -9,7 +9,12 @@ jest niezmienialny (`vector_model_id` w rejestrze + preflight).
 
 - `update_check.sh` może raportować nowsze tagi OpenSPG — to INFORMACJA, nie TODO.
 - Poprawki bezpieczeństwa OpenSPG nie przychodzą; mitygacja: port 8887 nigdy na
-  hoście, sieć `kag-internal` wewnętrzna, dostęp tylko z paneli.
+  hoście, wydzielona sieć wewnętrzna `kag-datastores` (patrz §Mitygacja sieciowa),
+  dostęp tylko z `kag-panel` i `kag-mcp`.
+- **Klucz API modelu embeddingu leży w MariaDB jawnym tekstem** (`kg_user_model`;
+  jasypt w tym buildzie nic nie szyfruje — zweryfikowane 2026-09-06). Dump MySQL,
+  snapshot backupu i zrzut diagnostyczny = bezpośredni wyciek klucza LLM. Rotacja:
+  `docs/runbooks/secret-rotation.md` (obie kopie klucza).
 - DR nie może zależeć od rejestru Aliyun: obrazy archiwizowane lokalnie
   (`deploy/scripts/save_images.sh` → `/srv/kag-data/backups/images/`, odświeżane
   przy miesięcznym zimnym backupie).

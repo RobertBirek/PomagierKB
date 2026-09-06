@@ -35,15 +35,45 @@ Runbook wdrożenia platformy na czystym serwerze wg `docs/design/infra.md` §7 i
 ## 0. Wymagania wstępne
 
 - Linux z dostępem root (SSH), publiczne IPv4.
-- Docker Engine + plugin compose (`docker compose version` ≥ 2.x), `git`, `curl`.
-- Do backupów/weryfikacji: `zstd`, `jq`; do `update_check.sh`: `skopeo` (opcjonalnie).
 - Wolne porty **80/tcp, 443/tcp, 443/udp** na hoście. Inne usługi hosta (np. trilium na 8080)
   nie kolidują — platforma nie publikuje nic poza Caddy.
 
+**Zależności hosta — WYMAGANE** (bez nich stack nie wstanie albo backup nie zadziała):
+
+| Narzędzie | Do czego |
+|---|---|
+| `docker` + plugin `compose` (≥2.x) | oba stacki |
+| `git` | klon repo, `git pull` przy aktualizacjach panelu |
+| `curl` | smoke test, weryfikacja vhostów |
+| `zstd` | `backup.sh`, `verify_backup.sh`, `save_images.sh` |
+| `jq` | `backup.sh`, odczyt manifestów |
+| `openssl`, `python3` | generowanie sekretów, URL-encode haseł do URI OpenSPG |
+
+**Zależności WARUNKOWE** (potrzebne dopiero, gdy używasz danej procedury):
+
+| Narzędzie | Kiedy potrzebne | Bez niego |
+|---|---|---|
+| `skopeo` | `update_check.sh` (miesięczny raport aktualizacji) | raport nie powstanie |
+| `sqlite3` | hostowy wariant `restore-single-kb.md` §B i fallback kopii SQLite w `backup.sh` | zostaje wyłącznie ścieżka przez kontener (`docker exec kag-panel node -e …`) |
+| `rclone` | off-site backupu przy `BACKUP_OFFSITE_TARGET=rclone://…` | off-site rclone niemożliwy (alternatywa: cel `rsync`) |
+| `rsync` | off-site backupu na ścieżkę/host | — |
+
 ```bash
 docker version && docker compose version && git --version
+for t in docker git curl zstd jq openssl python3; do
+  command -v "$t" >/dev/null || echo "BRAK WYMAGANEGO: $t"
+done
+for t in skopeo sqlite3 rclone rsync; do
+  command -v "$t" >/dev/null || echo "brak warunkowego: $t (patrz tabela wyżej)"
+done
 ss -tlnp | grep -E ':80|:443' || echo "porty 80/443 wolne — OK"
 ```
+
+**Stan na tym VPS (2026-09-06):** `sqlite3` i `rclone` NIE są zainstalowane — hostowy wariant
+`restore-single-kb.md` §B oraz off-site przez `rclone://` są dziś niewykonalne. Obraz
+`curlimages/curl`, używany w komendach diagnostycznych runbooków, też nie jest cache'owany
+lokalnie — dlatego runbooki podają w pierwszej kolejności warianty
+`docker exec release-openspg-server curl …` / `docker exec kag-panel node -e …` (zero egressu).
 
 ## 1. DNS — PRZED pierwszym startem Caddy
 
@@ -153,12 +183,24 @@ docker compose up -d
 watch docker compose ps    # openspg-server ma start_period 120s — healthy po ~2-4 min
 ```
 
-Po pierwszym udanym starcie warto zabezpieczyć obrazy OpenSPG na wypadek zniknięcia rejestru:
+Po pierwszym udanym starcie **zabezpiecz obrazy obu stacków** na wypadek zniknięcia rejestru
+(Aliyun bywa niedostępny z EU). Służy do tego skrypt z repo — nie rób `docker save` ręcznie:
 
 ```bash
-docker save $(docker compose config --images | grep spg-registry) \
-  | zstd -o /srv/kag-data/backups/images/openspg-images.tar.zst
+sudo /kag/deploy/scripts/save_images.sh
 ```
+
+Skrypt zapisuje **plik per obraz** do `/srv/kag-data/backups/images/` w układzie
+`<repo_z_podmienionymi_/:@_na_>@<16 znaków digestu>.tar.zst`, np.:
+
+```
+spg-registry.us-west-1.cr.aliyuncs.com_spg_openspg-server_sha256_fe67…@fe6708deef9ebb8d.tar.zst
+kag-panel_local@d23b9d2ff333ea18.tar.zst
+```
+
+Jest idempotentny (pomija już zapisane digesty) i kasuje starsze archiwum tego samego repo.
+Odtworzenie: `zstd -dc <plik>.tar.zst | docker load` (patrz `runbooks/openspg-frozen.md`).
+**Nie ma pliku `openspg-images.tar.zst`** — każde odwołanie do takiej nazwy jest błędem.
 
 ## 6. Pierwsze logowanie do panelu
 
@@ -167,7 +209,9 @@ Wejdź na `https://kag.ilovelighting.sanok.pl/` kontem należącym do grupy `kag
 
 - 403 od Authentika = konto bez żadnej grupy `kag-*` (patrz `docs/authentik-setup.md` §3).
 - Błąd callbacku = sprawdź `PANEL_OIDC_CLIENT_SECRET`, Redirect URI w providerze
-  (`https://kag.ilovelighting.sanok.pl/api/auth/callback`) i `PANEL_OIDC_ISSUER` w `.env`.
+  (**`https://kag.ilovelighting.sanok.pl/auth/callback`** — BEZ `/api`; taki adres wysyła
+  panel: `apps/panel-api/src/routes/auth.ts` buduje `${PUBLIC_URL}/auth/callback`) oraz
+  `PANEL_OIDC_ISSUER` w `.env`. Provider w trybie Strict odrzuci każdy inny adres.
 
 ## 7. Klucz LLM w Ustawieniach
 
@@ -181,6 +225,15 @@ Panel → **Ustawienia → LLM** (tylko admin):
 
 Embeddingi: platforma używa `text-embedding-3-small` — model jest **zamrażany per baza**
 przy jej tworzeniu (patrz krok 8).
+
+**UWAGA — DRUGA kopia klucza LLM (nie jest sealowana):** przy provisioningu pierwszej bazy
+panel rejestruje model embeddingu w rejestrze modeli OpenSPG (`POST /v1/model`). Serwer
+zapisuje ten klucz w MariaDB (`openspg.kg_user_model.config`) **jawnym tekstem** —
+zweryfikowane 2026-09-06 (1 wiersz, 0 wartości `ENC(...)`). Skutki:
+- każdy `mysqldump`/snapshot backupu zawiera żywy klucz API → snapshoty to materiał sekretny
+  (0600, off-site tylko szyfrowanym kanałem — patrz `runbooks/secret-rotation.md`);
+- rotacja/unieważnienie klucza u dostawcy **musi objąć obie kopie**, inaczej albo builder
+  przestanie liczyć embeddingi, albo skompromitowany klucz zostanie żywy w OpenSPG.
 
 ## 8. Utworzenie pierwszej bazy wiedzy
 
@@ -223,17 +276,46 @@ Sprawdza m.in.: `healthz` panelu i MCP, discovery OIDC, 302 panelu bez sesji,
 `initialize` + `tools/list` na `/mcp` (wymaga `SMOKE_MCP_KEY`), sondę wyszukiwania OpenSPG (wymaga `SMOKE_STAGING_NS`).
 **Musi przechodzić po każdym wdrożeniu i każdej aktualizacji.**
 
-## 11. Backupy — timery systemd
+## 11. Timery systemd (backup, weryfikacja, zimny snapshot, raport aktualizacji)
+
+Kopiujemy **wszystkie** unity z repo (w tym `kag-alert@.service`, używany przez pozostałe
+do powiadomień) i włączamy **cztery** timery — serwer odbudowany bez `kag-backup-cold.timer`
+nie ma zimnego snapshotu Neo4j, czyli jedynej ścieżki ratunkowej z DR §4 przy uszkodzonym
+hot-tarze; bez `kag-update-check.timer` przestaje działać polityka „zamrożonego OpenSPG".
 
 ```bash
-sudo cp /kag/deploy/systemd/kag-backup.service /kag/deploy/systemd/kag-backup.timer /etc/systemd/system/
-sudo cp /kag/deploy/systemd/kag-backup-verify.service /kag/deploy/systemd/kag-backup-verify.timer /etc/systemd/system/
+sudo cp /kag/deploy/systemd/*.service /kag/deploy/systemd/*.timer /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now kag-backup.timer kag-backup-verify.timer
-systemctl list-timers 'kag-backup*'
+# włącz WSZYSTKIE timery dostarczone w repo (odporne na dodanie nowych unitów)
+sudo systemctl enable --now $(cd /kag/deploy/systemd && ls *.timer)
+systemctl list-timers --all 'kag-*'
 ```
 
-Harmonogram: backup codziennie 03:20 (±10 min), weryfikacja w niedzielę 04:30.
+Weryfikacja — **liczba timerów na liście musi być równa liczbie plików `.timer` w repo**:
+
+```bash
+echo "w repo:  $(ls /kag/deploy/systemd/*.timer | wc -l)"
+echo "włączone: $(systemctl list-timers --all --no-legend 'kag-*' | wc -l)"
+```
+
+Minimum obowiązkowe (bez nich system jest niekompletny): `kag-backup.timer`,
+`kag-backup-verify.timer`, **`kag-backup-cold.timer`** (zimny snapshot Neo4j — jedyna
+ścieżka ratunkowa z DR §4 przy uszkodzonym hot-tarze) i **`kag-update-check.timer`**
+(polityka zamrożonego OpenSPG). Jeżeli któregoś brakuje — instalacja jest niepełna.
+
+Harmonogram (czytany z plików `.timer` — w razie wątpliwości `systemctl cat <unit>`):
+backup codziennie 03:20 (±10 min), weryfikacja w niedzielę 04:30 (±10 min), zimny snapshot
+Neo4j 1. dnia miesiąca 02:30 (±10 min), raport aktualizacji 2. dnia miesiąca 05:15 (±30 min),
+skan CVE obrazów w poniedziałek 03:10 (±20 min). Wszystkie `Persistent=true` (nadrobią po przestoju).
+
+`deploy/systemd/` zawiera też unity **bez timera**, które trzeba włączyć osobno:
+`kag-alert@.service` (powiadomienie `OnFailure` — pozostałe unity go wołają, nie włącza się go ręcznie)
+oraz `kag-egress-guard.service` (blokada pivotu `kag-egress` → usługi hosta):
+
+```bash
+sudo systemctl enable --now kag-egress-guard.service
+systemctl is-enabled kag-egress-guard.service    # oczekiwane: enabled
+```
 Uruchom pierwszy backup ręcznie i obejrzyj manifest:
 
 ```bash
@@ -251,11 +333,17 @@ jako warning; to znane i zaakceptowane.
 Zasada ogólna: **żadnych auto-aktualizacji** (bez Watchtowera). Obrazy są przypięte
 digestami; podnosi je człowiek, świadomie.
 
-Wykrywanie dostępnych aktualizacji:
+Wykrywanie dostępnych aktualizacji — **jest dokładnie JEDEN mechanizm**:
+miesięczny `kag-update-check.timer` (2. dzień 05:15) uruchamiający `update_check.sh`.
+Ręcznie:
 
 ```bash
 sudo /kag/deploy/scripts/update_check.sh   # skopeo/manifest inspect vs digesty w .env
 ```
+
+**Raz w miesiącu przejrzyj raport update-check** (powiadomienie na `ALERT_WEBHOOK_URL`
+z `/etc/kag/alerts.env`) i skonfrontuj go z `runbooks/openspg-frozen.md` — obrazy
+`spg-registry.*` są zamrożone celowo i ich nowsze tagi to informacja, nie zadanie.
 
 Procedura standardowa (Caddy, Postgres, Redis, Tika, Stirling):
 
@@ -273,11 +361,59 @@ Zasady szczególne:
   backup Postgresa przed** (`kag-backup.service` albo ręczny `pg_dump`); server+worker
   aktualizowane razem (jeden obraz/digest); migracje DB robi sam przy starcie;
   po aktualizacji sprawdź logowanie do panelu i forward-auth (`smoke.sh`).
-- **Panel/MCP (kod własny):** `git -C /kag pull` →
-  `docker compose -f /kag/deploy/kag/compose.yaml build panel mcp && docker compose -f /kag/deploy/kag/compose.yaml up -d panel mcp` → `smoke.sh`.
+- **Panel/MCP (kod własny):** obraz powstaje ze źródeł NA TYM SERWERZE, więc poprzednia
+  wersja musi zostać zachowana **przed** buildem — inaczej nie ma do czego wrócić
+  (stary obraz zostaje wyłącznie jako dangling ID). Pełna procedura niżej.
 - **OS:** unattended-upgrades tylko security; Docker Engine ręcznie w oknie serwisowym.
-- Renovate otwiera PR-y dla Caddy/Authentik/Stirling/node; obrazy `spg-registry.*` są
-  wykluczone celowo.
+- **Renovate: NIE jest zainstalowany na repozytorium.** Plik `renovate.json` jest
+  przygotowany (Caddy/Authentik/Stirling/node = PR, `spg-registry.*` wykluczone celowo),
+  ale nie ma wykonawcy — żadne PR-y nie powstają. Jedynym źródłem sygnału o aktualizacjach
+  jest `kag-update-check.timer` opisany wyżej. Gdy aplikacja Renovate zostanie włączona,
+  popraw to zdanie i dopisz link do dashboardu.
+
+### 12.1 Wdrożenie panelu/MCP z możliwością rollbacku
+
+```bash
+# 1) świeży snapshot i znacznik poprzedniej wersji (RÓB TO ZAWSZE PRZED BUILDEM)
+sudo systemctl start kag-backup.service
+TAG="pre-$(date +%Y%m%d-%H%M)"
+docker tag kag-panel:local "kag-panel:${TAG}"
+docker tag kag-mcp:local   "kag-mcp:${TAG}"
+echo "${TAG}" | sudo tee /srv/kag-data/kag/last-rollback-tag
+
+# 2) build i start nowej wersji
+git -C /kag pull
+git -C /kag rev-parse --short HEAD          # zanotuj commit — obrazy :local nie mają etykiety revision
+docker compose -f /kag/deploy/kag/compose.yaml build panel mcp
+docker compose -f /kag/deploy/kag/compose.yaml up -d panel mcp
+
+# 3) weryfikacja
+sudo /kag/deploy/scripts/smoke.sh
+```
+
+**Rollback** (obie usługi mają osobne obrazy — cofaj obie, chyba że zmiana dotyczyła jednej):
+
+```bash
+TAG=$(cat /srv/kag-data/kag/last-rollback-tag)
+docker tag "kag-panel:${TAG}" kag-panel:local
+docker tag "kag-mcp:${TAG}"   kag-mcp:local
+docker compose -f /kag/deploy/kag/compose.yaml up -d panel mcp
+sudo /kag/deploy/scripts/smoke.sh
+```
+
+**Ograniczenie rollbacku — migracje SQLite są forward-only** i uruchamia je panel-api przy
+starcie; nie ma migracji „w dół". Dlatego:
+- każda migracja musi być **addytywna i kompatybilna z poprzednią wersją kodu** (nowe
+  kolumny nullable/z DEFAULT, nowe tabele; **nigdy** DROP/RENAME kolumny w tym samym
+  wydaniu, w którym kod przestaje jej używać);
+- rollback obrazu po zastosowaniu migracji jest bezpieczny tylko o **jedną** wersję wstecz;
+- głębszy powrót = odtworzenie pliku SQLite ze snapshotu (`runbooks/restore-single-kb.md`
+  lub pełny DR) — inaczej stary kod zobaczy nowszy schemat.
+
+Obrazy `kag-panel:local` / `kag-mcp:local` nie niosą etykiet OCI (`Labels=map[]`), więc
+mapowanie obraz→commit trzyma się wyłącznie na zanotowanym SHA i czasie utworzenia.
+Istniejące na hoście tagi historyczne (`pre-v2`, `pre-brain-20260903`, `pre-mcp2026`) nie
+odpowiadają wzorcowi `pre-<data>-<godzina>` — powstały ad hoc; nowe twórz wg wzorca wyżej.
 
 ## 13. Kontrola bezpieczeństwa po wdrożeniu
 
@@ -289,7 +425,11 @@ sudo ls -l /kag/deploy/edge/.env /kag/deploy/kag/.env   # 0600, root
 - Konto spoza grup `kag-*` → 403 na panelu (test na świeżym koncie).
 - Zrewokowany klucz MCP przestaje działać ≤60 s.
 - Żaden kontener OpenSPG nie publikuje portu (nawet na 127.0.0.1) — diagnostyka wyłącznie
-  przez `docker compose exec` / `docker run --rm --network kag_kag-internal ...`.
+  od środka: `docker exec release-openspg-server curl …`, `docker compose exec …` albo
+  `docker run --rm --network kag_kag-datastores …`. **OpenSPG i jego bazy są w sieci
+  `kag-datastores`, NIE w `kag-internal`** (tam zostały Tika/Stirling i panel) — komenda
+  z `kag_kag-internal` do `release-openspg-*` kończy się timeoutem. Sprawdzenie:
+  `docker inspect --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}' release-openspg-server`.
 
 Powiązane dokumenty: `docs/authentik-setup.md`, `docs/runbooks/break-glass-authentik.md`,
 `docs/runbooks/disaster-recovery.md`, `docs/runbooks/typowe-awarie.md`.

@@ -61,9 +61,15 @@ Dla każdego pracownika (`Directory → Users → Create`):
 | Client type | **Confidential** |
 | Client ID | `kag-panel` |
 | Client Secret | wygenerowany — **skopiuj do `deploy/kag/.env` jako `PANEL_OIDC_CLIENT_SECRET`** |
-| Redirect URIs | tryb **Strict**: `https://kag.ilovelighting.sanok.pl/api/auth/callback` (dokładnie ten jeden) |
+| Redirect URIs | tryb **Strict**: `https://kag.ilovelighting.sanok.pl/auth/callback` (dokładnie ten jeden, **BEZ `/api`**) |
 | Signing Key | `authentik Self-signed Certificate` |
 | Subject mode | **Based on the User's UUID** (stabilny `sub` — panel wiąże po nim użytkowników i klucze MCP; nie zmieniaj później, bo wszyscy „staną się" nowymi kontami) |
+
+**UWAGA — najczęstszy błąd przy odbudowie Authentika (DR/rotacja):** panel wysyła
+`redirect_uri = ${PUBLIC_URL}/auth/callback` (`apps/panel-api/src/routes/auth.ts`),
+a trasa jest zarejestrowana BEZ prefiksu `/api/v1` (`routes/index.ts`: `/auth/*` i `/healthz`
+bez prefiksu). Wpisanie `/api/auth/callback` w trybie Strict oznacza, że **nikt się nie
+zaloguje** — provider odrzuci wymianę kodu.
 
 **Scopes** (Advanced protocol settings → Scopes) — zaznacz standardowe mapowania:
 `openid`, `email`, `profile` **oraz `offline_access`**. Mapping `profile` emituje claim
@@ -94,7 +100,7 @@ curl -fsS https://auth.ilovelighting.sanok.pl/application/o/kag-panel/.well-know
 
 Ten krok przygotowuje ochronę ścieżki `/openspg/*` (produktowe UI OpenSPG, tylko
 `kag-admin`). Sama ścieżka jest **domyślnie wyłączona** — blok w `deploy/edge/Caddyfile`
-jest wykomentowany, a Caddy nie jest wpięty do sieci `kag-internal`. Konfigurację w
+jest wykomentowany, a Caddy nie jest wpięty do sieci OpenSPG. Konfigurację w
 Authentiku warto jednak założyć od razu.
 
 1. **Providers → Create → Proxy Provider:**
@@ -109,7 +115,8 @@ Authentiku warto jednak założyć od razu.
    `/outpost.goauthentik.io/*` w Caddyfile na vhoście `kag.*`; niczego nie instalujesz.)
 
 Włączenie ścieżki (świadoma decyzja admina, zwiększa powierzchnię ataku):
-odkomentuj blok `/openspg/*` w Caddyfile, dopnij usługę caddy do sieci `kag-internal`
+odkomentuj blok `/openspg/*` w Caddyfile, dopnij usługę caddy do sieci **`kag-datastores`**
+(tam, a nie w `kag-internal`, żyje `release-openspg-server` — patrz `docs/design/infra.md` §1)
 w compose edge, `docker compose up -d caddy`. Test: niezalogowany → redirect na
 `auth.*`; zalogowany bez `kag-admin` → 403; członek `kag-admin` → UI OpenSPG.
 
@@ -155,17 +162,41 @@ wymusi konfigurację TOTP.
 - [ ] Członek `kag-admin` przechodzi przez MFA.
 - [ ] Embedded outpost obsługuje aplikację `OpenSPG Admin` (nawet jeśli ścieżka wyłączona).
 
-## Monitoring: Uptime Kuma (opcjonalnie)
+## Monitoring: Uptime Kuma (NIEDOKOŃCZONA — stan na 2026-09-06)
+
+**Stan faktyczny:** kontener `edge-uptime-kuma` DZIAŁA (profil `monitoring` został
+uruchomiony, ~0,38 GB RAM), vhost `status.ilovelighting.sanok.pl` istnieje w Caddyfile
+i ma certyfikat — ale **wejście zwraca 404** (sprawdzone `curl`), bo w Authentiku nie ma
+aplikacji dla providera forward-auth. Kuma jest pusta: **zero monitorów, zero alertów**.
+Czyli: monitoring wygląda na wdrożony, a nie monitoruje niczego.
+
+Do rozstrzygnięcia — jedna z dwóch dróg (nie zostawiaj stanu pośredniego):
+- **dokończ** kroki 1-3 poniżej i dodaj monitory z pkt 6, albo
+- **zatrzymaj** profil `monitoring` i usuń vhost `status.*` z Caddyfile
+  (`docker compose -f deploy/edge/compose.yaml --profile monitoring stop uptime-kuma`;
+  po edycji Caddyfile obowiązkowo `docker restart edge-caddy` — bind-mount pojedynczego
+  pliku, `caddy reload` przeładuje starą wersję).
 
 1. Providers → Create → *Proxy Provider*, tryb **Forward auth (single application)**;
-   Name `kuma-fwd`; External host: `https://status.ilovelighting.sanok.pl`.
+   Name `kuma-fwd`; External host: `https://status.ilovelighting.sanok.pl`.  ← NIE WYKONANE
 2. Applications → Create: Name `Status Monitor`, slug `status-monitor`, provider `kuma-fwd`;
-   binding: TYLKO grupa `kag-admin`.
-3. Outposts → `authentik Embedded Outpost` → dodaj aplikację `Status Monitor` → Update.
+   binding: TYLKO grupa `kag-admin`.  ← NIE WYKONANE
+3. Outposts → `authentik Embedded Outpost` → dodaj aplikację `Status Monitor` → Update.  ← NIE WYKONANE
 4. DNS: rekord A `status.ilovelighting.sanok.pl` → IP serwera (PRZED startem — limity Let's Encrypt).
 5. Start: `docker compose -f deploy/edge/compose.yaml --profile monitoring up -d`;
    pierwsze wejście na https://status.ilovelighting.sanok.pl tworzy konto administratora Kumy.
-6. Monitory (sugerowane): HTTP https://kag.ilovelighting.sanok.pl/healthz, /mcp (405 = OK),
-   https://auth.ilovelighting.sanok.pl, ważność certów; powiadomienia: ntfy/e-mail.
+6. Monitory i **oczekiwane kody** (zweryfikowane 2026-09-06):
+
+   | Monitor | Oczekiwany kod | Co sprawdza |
+   |---|---|---|
+   | `GET https://kag.ilovelighting.sanok.pl/healthz` | **200** | panel-api żyje (bez dotykania upstreamów) |
+   | `GET https://kag.ilovelighting.sanok.pl/mcp` | **200** | Caddy + SPA panelu (od naprawy routingu 2026-09-03 **nie 405**) |
+   | `POST https://kag.ilovelighting.sanok.pl/mcp/<profil>` bez nagłówka `Authorization` | **401** | serwer MCP żyje i jest fail-closed |
+   | `GET https://auth.ilovelighting.sanok.pl/` | **200** | Authentik |
+   | ważność certów obu vhostów | — | wygaśnięcie TLS |
+
+   Powiadomienia: ntfy/e-mail. **Nie ustawiaj monitora `/mcp` na 405** — stary opis
+   pochodzi sprzed naprawy routingu i alarmowałby fałszywie, a przy realnej awarii SPA
+   nadal pokazywałby „OK".
 7. Kuma umiera razem z serwerem — dodatkowo darmowa sonda ZEWNĘTRZNA (healthchecks.io /
    UptimeRobot) na https://kag.ilovelighting.sanok.pl/healthz.

@@ -16,7 +16,10 @@ Domeny: kag.ilovelighting.sanok.pl (panel+MCP), auth.ilovelighting.sanok.pl (Aut
 Deployment: 2 stacki docker compose na tym VPS (deploy/edge + deploy/kag).
 
 **Zanim zaczniesz pracę nad nowym obszarem, przeczytaj:**
-- `docs/design/PLAN.md` — zatwierdzony plan (decyzje są ROZSTRZYGNIĘTE — nie otwieraj ich ponownie)
+- `docs/design/PLAN.md` — zatwierdzony plan. Decyzje są ROZSTRZYGNIĘTE — nie otwieraj ich
+  ponownie **bez wpisu w sekcji „Zmiany decyzji po zatwierdzeniu"** (append-only, na końcu
+  PLAN.md). Zanim uznasz, że kod łamie plan, sprawdź tę sekcję: część decyzji została
+  świadomie zmieniona i tam jest to odnotowane wraz z dowodem w kodzie.
 - `docs/design/{infra,backend-mcp,pipeline-frontend}.md` — szczegółowe projekty podsystemów
 - `.claude/skills/openspg-api/SKILL.md` — API i pułapki OpenSPG (obowiązkowe przy pracy z OpenSPG)
 
@@ -24,8 +27,8 @@ Deployment: 2 stacki docker compose na tym VPS (deploy/edge + deploy/kag).
 
 ```bash
 npm install               # root monorepo (workspaces: apps/*, packages/*)
-npm test                  # vitest we wszystkich workspace'ach
-npm run test -w apps/panel-api -- run test/chunker.test.ts   # pojedynczy plik testów
+npm test                  # JEDEN proces vitest Z ROOTA (vitest.config.ts obejmuje apps/** i packages/**)
+npx vitest run apps/panel-api/test/pipeline-build-chunker.test.ts   # pojedynczy plik testów
 npm run lint              # eslint
 npm run typecheck         # tsc --noEmit we wszystkich workspace'ach
 npm run build             # build wszystkich pakietów/aplikacji
@@ -33,10 +36,14 @@ docker compose -f deploy/edge/compose.yaml config -q   # walidacja compose (wyma
 docker compose -f deploy/kag/compose.yaml config -q
 docker compose -f compose.dev.yaml up    # dev: panel+mcp+SQLite+stub OpenSPG (bez pełnego stacka)
 deploy/scripts/smoke.sh   # smoke test po deployu
-npm run eval              # hit@k/MRR retrievalu na goldens.jsonl (DATA_DIR wskazuje bazę)
+npm run eval              # hit@k/MRR retrievalu; domyślnie KATALOG tools/eval/goldens/<Ns>.jsonl (DATA_DIR wskazuje bazę)
 node tools/ux-audit/e2e.mjs         # E2E klikalne na produkcji (10 checków, login akadmin)
 node tools/ux-audit/screenshot.mjs  # zrzuty produkcji (--pages /kb,... --out katalog)
 ```
+
+**UWAGA:** workspace'y (`apps/*`, `packages/shared`) mają wyłącznie skrypty
+`build`/`typecheck`/`dev` — skrypt `test` istnieje TYLKO w root `package.json`.
+`npm run test -w <workspace>` zawsze zwróci `Missing script: "test"`.
 
 ## Architektura (skrót — pełny obraz w docs/design/PLAN.md)
 
@@ -44,14 +51,18 @@ node tools/ux-audit/screenshot.mjs  # zrzuty produkcji (--pages /kb,... --out ka
   logika w services/; pipeline wiedzy w pipeline/; długobieżne akcje w jobs/ (spawn + 202+actionId + SSE).
   Auth: OIDC (openid-client), sesje w SQLite, role z grup Authentika. CSRF: Origin/Sec-Fetch-Site.
 - **apps/mcp-server** — @modelcontextprotocol/sdk, Streamable HTTP stateless, profile po ścieżce
-  /mcp/<profil>; auth Bearer sk-... (sha256 w SQLite). Narzędzia: kb_search/kb_answer/kb_list/
-  kb_submit_draft/kb_feedback.
+  /mcp/<profil>; auth Bearer sk-... (sha256 w SQLite). **11 narzędzi** (rejestr:
+  `apps/mcp-server/src/tools/index.ts`, pełny katalog ze schematami: `docs/design/backend-mcp.md` §7.4):
+  kb_search, kb_answer, kb_list, kb_get_source, kb_list_documents, kb_draft_status,
+  kb_entity_get, kb_graph_neighbors, kb_claim_verify, kb_submit_draft (scope **write**),
+  kb_feedback.
 - **apps/panel-web** — React 19 + Vite + TanStack Router/Query. Strony: overview, ask
   (mobile-first), add, inbox(+luki), kb, mcp, settings. Design system v2 (Linear-like):
   tokeny Tailwind v4 w src/styles/app.css, kit komponentów w src/ui/, shell (sidebar/
   topbar/⌘K) w components/shell/ — nowe UI buduj Z KITU, nie gołym HTML/CSS ani .btn.
 - **packages/shared** — db (better-sqlite3 WAL, migracje SQL), audit (hash-chain), crypto,
-  openspg (client/search/builder/login/models), llm (openai-compatible), schemas, errors.
+  openspg (client [z auto-loginem] / projects / models / schemas / search / builder / query),
+  llm (openai-compatible), answer (retrieval, verify), schemas, errors.
 - **Stan**: JEDEN plik SQLite współdzielony panel-api+mcp-server (WAL, busy_timeout 5000,
   krótkie BEGIN IMMEDIATE). Migracje uruchamia tylko panel-api. Pliki na dysku: logi akcji,
   uploady, eksporty CSV, usage-JSONL.
@@ -59,6 +70,14 @@ node tools/ux-audit/screenshot.mjs  # zrzuty produkcji (--pages /kb,... --out ka
   analyze (LLM+fallback heurystyczny) → draft w Inboxie → recenzja CZŁOWIEKA → eksport CSV
   (+mirror FTS5) → builder job OpenSPG → quality gate. MCP/LLM NIGDY nie pisze do grafu —
   tylko draft do inboxu.
+- **Sieci docker** (diagnostyka! zła sieć = timeout wyglądający jak awaria):
+  `kag-datastores` (internal) — OpenSPG + mysql/neo4j/minio + panel + mcp;
+  `kag-internal` (internal) — tika, stirling, panel; `kag-egress` — TYLKO openspg-server
+  (API LLM); `edge-net` (external) — caddy ↔ authentik/panel/mcp. Szczegóły i komendy:
+  `docs/runbooks/typowe-awarie.md` §0.
+- **Dane osobowe i retencja**: `docs/data-governance.md` (inwentarz, okresy retencji,
+  procedura usunięcia dokumentu/użytkownika) — przeczytaj przed zmianami w pipeline,
+  logowaniu i eksportach.
 
 ## Twarde zasady (z audytów systemu wzorcowego — nie łamać)
 

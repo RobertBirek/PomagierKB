@@ -2,8 +2,39 @@
 
 Szybkie procedury dla najczęstszych problemów. Ścieżki: repo `/kag`, dane
 `/srv/kag-data`. Zasada nadrzędna: **nie publikujemy portów na hoście** — diagnostykę
-wewnątrz sieci rób przez `docker compose exec` albo
-`docker run --rm --network kag_kag-internal curlimages/curl ...`.
+robimy od środka kontenerów.
+
+## 0. Która sieć do czego (SPRAWDŹ PRZED diagnostyką)
+
+Segmentacja zmieniła się w „fazie 2" (`openspg-frozen.md` §Mitygacja sieciowa): OpenSPG
+i jego bazy zostały wyniesione z `kag-internal` do `kag-datastores`. Zła sieć w komendzie
+daje **timeout**, który wygląda jak awaria OpenSPG — nie daj się nabrać.
+
+| Cel | Sieć docker | Członkowie |
+|---|---|---|
+| `release-openspg-{server,mysql,neo4j,minio}` | `kag_kag-datastores` | + `kag-panel`, `kag-mcp` |
+| `kag-tika`, `kag-stirling`, `kag-panel` | `kag_kag-internal` | parsery niezaufanych uploadów |
+| `edge-caddy`, `edge-authentik-*`, `kag-panel`, `kag-mcp` | `edge-net` | ingress + egress do LLM |
+
+Weryfikacja przynależności (zawsze z `--format`, nigdy gołe `docker inspect`):
+
+```bash
+docker network ls
+docker inspect --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}' release-openspg-server
+```
+
+**Diagnostyka bez egressu (zalecana — nie wymaga pobierania obrazu):**
+
+```bash
+# OpenSPG od środka jego własnego kontenera (curl jest w obrazie):
+docker exec release-openspg-server curl -fsS http://127.0.0.1:8887/<ścieżka>
+# dowolna usługa widziana z panelu (panel jest i w kag-internal, i w kag-datastores):
+docker exec kag-panel node -e "fetch('http://release-openspg-server:8887/').then(r=>console.log(r.status))"
+```
+
+Wariant z osobnym kontenerem (`docker run --rm --network kag_kag-datastores curlimages/curl …`)
+działa, ale **obraz `curlimages/curl` nie jest cache'owany lokalnie** — w momencie awarii
+wymaga egressu do rejestru. Traktuj go jako opcję zapasową.
 
 ---
 
@@ -51,12 +82,20 @@ Diagnoza — najpierw panel (Bazy wiedzy → drawer historii buildów), potem be
 API buildera. **`start` MUSI być 1** (start=0 to bug SQL w OpenSPG):
 
 ```bash
-docker run --rm --network kag_kag-internal curlimages/curl -fsS \
-  'http://release-openspg-server:8887/public/v1/builder/job/list?projectId=<ID>&start=1&limit=20'
+docker exec release-openspg-server curl -fsS \
+  'http://127.0.0.1:8887/public/v1/builder/job/list?projectId=<ID>&start=1&limit=20'
 # pojedynczy job:
-docker run --rm --network kag_kag-internal curlimages/curl -fsS \
-  'http://release-openspg-server:8887/public/v1/builder/job/get?id=<JOBID>'
+docker exec release-openspg-server curl -fsS \
+  'http://127.0.0.1:8887/public/v1/builder/job/get?id=<JOBID>'
 docker logs --tail 300 release-openspg-server | grep -i -E 'builder|error'
+```
+
+Wariant przez sieć (gdy kontener serwera nie wstaje, ale sieć ma zostać sprawdzona) —
+**sieć to `kag_kag-datastores`, NIE `kag-internal`** (§0):
+
+```bash
+docker run --rm --network kag_kag-datastores curlimages/curl -fsS \
+  'http://release-openspg-server:8887/public/v1/builder/job/list?projectId=<ID>&start=1&limit=20'
 ```
 
 Interpretacja statusów: terminalne = `FINISH`, `ERROR`, `SKIP`, `TERMINATE`,
@@ -130,7 +169,9 @@ Unhealthy datastore pociąga za sobą serwer — naprawiaj od dołu.
 - `kag-stirling` ubity przy OCR dużego skanu → wstaje sam (`restart: always`);
   powtarzające się pady = przytnij równoległość OCR / patrz §5.
 - Panel/mcp unhealthy przy działającym OpenSPG: sprawdź `/healthz` od środka
-  (`docker run --rm --network kag_kag-internal curlimages/curl -fsS http://kag-panel:8080/healthz`)
+  (`docker exec kag-panel wget -qO- http://127.0.0.1:8080/healthz`; przez sieć:
+  `docker run --rm --network kag_kag-internal curlimages/curl -fsS http://kag-panel:8080/healthz`
+  — panel JEST w `kag-internal`, w przeciwieństwie do OpenSPG)
   i logi — typowo problem z SQLite (dysk, uprawnienia 10001) albo z migracjami
   (mcp odmawia startu przy rozjeździe wersji schematu — zaktualizuj/zrestartuj panel
   PRZED mcp).

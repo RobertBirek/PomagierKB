@@ -6,31 +6,45 @@ Cel: dwa stacki compose (`edge`, `kag`) na czystym serwerze, TLS przez Caddy, SS
 
 ## 1. Topologia sieci Docker
 
+Stan faktyczny na 2026-09-06 (zweryfikowany `docker network ls` + `docker inspect --format`).
+**Cztery sieci, nie trzy** — separacja datastores („faza 2" z RISKS) jest WDROŻONA.
+
 ```
 INTERNET ── 80/443(+udp) ──► [edge-caddy]
                                   │ edge-net (external, bridge; utworzona raz: docker network create edge-net)
         ┌─────────────────────────┼───────────────────────────┐
         ▼                         ▼                           ▼
 [edge-authentik-server]      [kag-panel:8080]           [kag-mcp:3001]
-[edge-authentik-worker]           │                           │
-        │ edge-internal           │ kag-internal (internal: true — bez NAT/internetu)
-        ▼                         ▼
-[edge-postgres]        [release-openspg-server:8887] [release-openspg-mysql]
-[edge-redis]           [release-openspg-neo4j]       [release-openspg-minio]
-                       [kag-tika:9998]  [kag-stirling:8080]
-                                  │
+[edge-authentik-worker]        │        │                     │
+        │ edge-internal        │        └──────────┬──────────┘
+        ▼                      │                   │ kag-datastores (internal: true)
+[edge-postgres]                │                   ▼
+[edge-redis]                   │     [release-openspg-server:8887] [release-openspg-mysql]
+                               │     [release-openspg-neo4j]       [release-openspg-minio]
+                               │ kag-internal (internal: true)
+                               ▼
+                     [kag-tika:9998]  [kag-stirling:8080]
+                                                   │
                        [release-openspg-server] ─ kag-egress (bridge, NAT) ─► API LLM
 ```
 
 **Sieci:**
 | Sieć | Typ | Członkowie | Po co |
 |---|---|---|---|
-| `edge-net` | external bridge (tworzona poza compose, wspólna dla przyszłych appek) | caddy, authentik-server, authentik-worker, kag-panel, kag-mcp | ruch Caddy→aplikacje; egress panel/mcp do LLM |
+| `edge-net` | external bridge (tworzona poza compose, wspólna dla przyszłych appek) | caddy, authentik-server, authentik-worker, kag-panel, kag-mcp, (profil `monitoring`: uptime-kuma) | ruch Caddy→aplikacje; egress panel/mcp do LLM |
 | `edge-internal` | `internal: true` (stack edge) | authentik-server, worker, postgres, redis | izolacja PG/Redis od świata |
-| `kag-internal` | `internal: true` (stack kag) | wszystkie usługi kag | OpenSPG bez internetu i bez dostępu z zewnątrz |
+| `kag-datastores` | `internal: true` (stack kag) | release-openspg-{server,mysql,neo4j,minio}, kag-panel, kag-mcp | OpenSPG :8887 (BEZ auth) widzą tylko panel i mcp — parsery niezaufanych uploadów nie mają tam drogi |
+| `kag-internal` | `internal: true` (stack kag) | kag-tika, kag-stirling, kag-panel | parsery treści bez internetu; panel jest w obu sieciach, bo woła i parsery, i OpenSPG |
 | `kag-egress` | bridge (stack kag) | TYLKO release-openspg-server | serwer OpenSPG musi wołać API LLM (wektoryzacja, ekstrakcja); reszta datastores zostaje odcięta |
 
-**Twarde zasady:** ŻADNA usługa OpenSPG nie publikuje portu na host (nawet 127.0.0.1 — różnica vs optimaKB, który publikował 8887 i 9998; diagnostyka przez `docker compose exec` albo `docker run --rm --network kag_kag-internal curlimages/curl ...`). Jedyne porty hosta: 80/tcp, 443/tcp, 443/udp (Caddy, HTTP/3).
+**Twarde zasady:** ŻADNA usługa OpenSPG nie publikuje portu na host (nawet 127.0.0.1 — różnica vs optimaKB, który publikował 8887 i 9998). Jedyne porty hosta: 80/tcp, 443/tcp, 443/udp (Caddy, HTTP/3).
+
+**Diagnostyka — którą sieć wybrać:** do `release-openspg-*` używaj `kag_kag-datastores`
+(komenda z `kag_kag-internal` daje TIMEOUT, co bywa mylone z awarią OpenSPG); do
+`kag-tika`/`kag-stirling`/`kag-panel` — `kag_kag-internal`. Wariant bez egressu (nie wymaga
+pobierania `curlimages/curl`): `docker exec release-openspg-server curl -fsS http://127.0.0.1:8887/…`
+albo `docker exec kag-panel node -e "fetch('http://release-openspg-server:8887/')…"`.
+Pełne procedury: `docs/runbooks/typowe-awarie.md` §0.
 
 **Trik hairpin/OIDC:** usługa caddy dostaje w `edge-net` aliasy sieciowe `auth.ilovelighting.sanok.pl` i `kag.ilovelighting.sanok.pl`. Dzięki temu panel-api robi discovery/token-exchange OIDC na publiczny URL issuer-a bez wychodzenia z hosta (i z prawdziwym certem LE), niezależnie od NAT reflection.
 
@@ -107,7 +121,8 @@ kag.ilovelighting.sanok.pl {
 	}
 
 	# 3) (OPCJA, domyślnie wyłączone) produktowe UI OpenSPG za forward-auth (tylko kag-admin).
-	#    Wymaga dopięcia caddy do sieci kag-internal — świadoma decyzja administratora.
+	#    Wymaga dopięcia caddy do sieci kag-datastores (tam żyje release-openspg-server)
+	#    — świadoma decyzja administratora, poszerza powierzchnię ataku na :8887 bez auth.
 	# handle /openspg/* {
 	# 	forward_auth edge-authentik-server:9000 {
 	# 		uri /outpost.goauthentik.io/auth/caddy
@@ -170,14 +185,17 @@ MCP_IMAGE=kag-mcp:local        # build lokalny (services/mcp/Dockerfile)
 
 | Usługa | container_name | cap_add | mem_limit (profil 32G) | sieci | healthcheck |
 |---|---|---|---|---|---|
-| mysql | release-openspg-mysql | SETUID, SETGID | 2g | kag-internal | `mysqladmin ping` (jak optimaKB) |
-| neo4j | release-openspg-neo4j | CHOWN, DAC_OVERRIDE, FOWNER, SETUID, SETGID | 5g | kag-internal | `cypher-shell 'RETURN 1;'` |
-| minio | release-openspg-minio | — | 768m | kag-internal | `mc ready local` |
-| server | release-openspg-server | — | 5g | kag-internal, **kag-egress** | `curl -fsS -I http://127.0.0.1:8887/`, start_period 120s |
+| mysql | release-openspg-mysql | SETUID, SETGID | 2g | kag-datastores | `mysqladmin ping` (jak optimaKB) |
+| neo4j | release-openspg-neo4j | CHOWN, DAC_OVERRIDE, FOWNER, SETUID, SETGID | 5g | kag-datastores | `cypher-shell 'RETURN 1;'` |
+| minio | release-openspg-minio | — | 768m | kag-datastores | `mc ready local` |
+| server | release-openspg-server | — | 5g | kag-datastores, **kag-egress** | `curl -fsS -I http://127.0.0.1:8887/`, start_period 120s |
 | tika | kag-tika | — | 1.5g | kag-internal | `bash -c 'exec 3<>/dev/tcp/127.0.0.1/9998'` (obraz bez curl/wget) |
 | stirling | kag-stirling | — | 2g | kag-internal | `curl -f http://127.0.0.1:8080/api/v1/info/status` |
-| panel | kag-panel | — | 512m | kag-internal, edge-net | `wget -qO /dev/null http://127.0.0.1:8080/healthz` |
-| mcp | kag-mcp | — | 384m | kag-internal, edge-net | `wget -qO /dev/null http://127.0.0.1:3001/healthz` |
+| panel | kag-panel | — | 512m | kag-internal, kag-datastores, edge-net | `wget -qO /dev/null http://127.0.0.1:8080/healthz` |
+| mcp | kag-mcp | — | 384m | kag-datastores, edge-net | `wget -qO /dev/null http://127.0.0.1:3001/healthz` |
+
+(Kolumna „sieci" odzwierciedla stan z `deploy/kag/compose.yaml` i `docker inspect`
+z 2026-09-06; `mcp` nie używa Tika/Stirling, więc celowo NIE jest w `kag-internal`.)
 
 Szczegóły per usługa (delta względem wzorca optimaKB):
 
@@ -242,9 +260,17 @@ AUTHENTIK_PG_PASSWORD=change-me         # openssl rand -base64 36
 
 ## 5. Backup i aktualizacje
 
-**Backup — co:** (1) dump logiczny MySQL (`docker exec release-openspg-mysql mysqldump --single-transaction`), (2) tar.zst `kag/neo4j/data`, (3) tar.zst `kag/minio`, (4) kopia online SQLite panelu (`docker exec kag-panel node scripts/db-backup.mjs` → better-sqlite3 `.backup()` do `/data/backup-staging/`, potem zabierany z bind mountu), (5) `pg_dump` Authentika (`docker exec edge-postgres`), (6) tar `edge/caddy/data` (certy), (7) kopie obu `.env` (0600), (8) audit JSONL panelu, (9) `compose config` + `compose ps` (stan). Manifest `_manifest.json` (ok, timestamps, rozmiary, sha256, warnings) — wzorzec backup_openspg_stack.mjs, ale w bash (host bez node).
+**Backup — co:** (1) dump logiczny MySQL (`docker exec release-openspg-mysql mysqldump --single-transaction`), (2) tar.zst `kag/neo4j/data`, (3) tar.zst `kag/minio`, (4) kopia online SQLite panelu (`docker exec kag-panel node scripts/db-backup.mjs` → better-sqlite3 `.backup()` do `/data/backup-staging/`, potem zabierany z bind mountu), (5) `pg_dump` Authentika (`docker exec edge-postgres`), (6) tar `edge/caddy/data` (certy), (7) kopie obu `.env` (0600), (8) audit JSONL panelu, (9) `repo-state.txt` (commit, gałąź, `git describe`, lista brudnych plików) + SUROWE `edge-compose.yaml`/`kag-compose.yaml` + `compose ps`. Manifest `_manifest.json` (ok, timestamps, rozmiary, sha256, warnings, `neo4jMode`, `neo4jCheckpoint`, `buildsRunning`, `requiredArtifacts`) — wzorzec backup_openspg_stack.mjs, ale w bash (host bez node).
 
-**Czym i kiedy:** `deploy/scripts/backup.sh` + systemd `kag-backup.service` (Type=oneshot, Nice=10, IOSchedulingClass=idle) i `kag-backup.timer` (`OnCalendar=*-*-* 03:20:00`, `RandomizedDelaySec=10m`, `Persistent=true` — jak OpenSPG_Backup.timer z optimaKB). Retencja: 14 snapshotów nightly + pierwszy snapshot miesiąca trzymany 6 mies. **Weryfikacja** (`kag-backup-verify.timer`, niedziela 04:30): test integralności archiwów, restore dumpu MySQL do jednorazowego kontenera mariadb + zliczenie tabel, `PRAGMA integrity_check` na kopii SQLite; raport JSON do `backups/verify/`. **Cold snapshot Neo4j** raz w miesiącu (opcja w skrypcie: `compose stop neo4j` → tar → `start`; hot-tar DozerDB może być niespójny — stąd weryfikacja + zimna kopia). Off-site: rsync/rclone snapshotu na zewnętrzny storage — parametr `BACKUP_OFFSITE_TARGET` (puste = pomijane, warning w manifeście).
+> **Snapshot ma klauzulę „wszystkie sekrety stacku".** Zawiera oba pliki `.env`, klucze prywatne
+> certyfikatów w `caddy-data.tar.zst` oraz — z natury zamrożonego OpenSPG — surowy klucz API
+> modelu embeddingów w dumpie MySQL. Dlatego katalog snapshotów ma 0700, pliki 0600, a wysyłka
+> off-site jest **fail-closed**: bez `BACKUP_AGE_RECIPIENT`/`BACKUP_GPG_RECIPIENT` nie wychodzi
+> nic (status `blocked_no_encryption` w manifeście). Wyrenderowany `compose config` został
+> USUNIĘTY ze snapshotu (audyt 2026-09-06, D5-03) — była to druga, zbędna kopia wszystkich
+> sekretów, w tym haseł w URL-ach `CLOUDEXT_*`.
+
+**Czym i kiedy:** `deploy/scripts/backup.sh` + systemd `kag-backup.service` (Type=oneshot, Nice=10, IOSchedulingClass=idle) i `kag-backup.timer` (`OnCalendar=*-*-* 03:20:00`, `RandomizedDelaySec=10m`, `Persistent=true` — jak OpenSPG_Backup.timer z optimaKB). Retencja: 14 snapshotów nightly + pierwszy snapshot miesiąca trzymany 6 mies. **Weryfikacja** (`kag-backup-verify.timer`, niedziela 04:30) to test ODTWARZALNOŚCI, nie integralności plików: każdy magazyn jest realnie odtwarzany na efemerycznym kontenerze `--network none` i odpytywany — MySQL (import + liczba tabel), Neo4j (start z hot-tara, `SHOW DATABASES` wszystkie `online`, `count(n)` per baza), MinIO (`mc ls --recursive` vs zawartość archiwum), Postgres Authentika (import `pg_dump` + liczba użytkowników), SQLite panelu (`integrity_check`, migracje, rejestr KB, `verifyChain` audytu). Do tego check `docs_artifacts`: każda nazwa `$SNAP/...` przywołana w runbookach i `restore.sh` musi istnieć w snapshocie — regresja po literówce `panel.sqlite3`. Raport JSON do `backups/verify/` + `backup-verify-status.json` dla kokpitu panelu. **Cold snapshot Neo4j** raz w miesiącu (opcja w skrypcie: `compose stop neo4j` → tar → `start`; hot-tar DozerDB może być niespójny — stąd weryfikacja + zimna kopia). Off-site: rsync/rclone snapshotu na zewnętrzny storage — parametr `BACKUP_OFFSITE_TARGET` (puste = pomijane, warning w manifeście).
 
 **Aktualizacje — bez Watchtowera (pinning digestów jest celowy):**
 - `deploy/scripts/update_check.sh`: `skopeo inspect` (lub `docker manifest inspect`) dla każdego obrazu → raport „nowy digest dostępny"; człowiek podnosi digest w `.env`, robi backup, `docker compose pull && up -d`, czeka na healthy, odpala smoke test (`deploy/scripts/smoke.sh`: healthz panelu/mcp, login-flow HEAD, `/v1/projects/list` przez exec).
@@ -294,7 +320,7 @@ Dysk: min. 250 GB NVMe (dane + 14 dni backupów lokalnych; neo4j+minio rosną z 
 - deploy/edge/compose.yaml — stack edge: Caddy + Authentik server/worker + PostgreSQL + Redis, sieci edge-net(external)/edge-internal, healthchecki, mem_limity
 - deploy/edge/Caddyfile — vhosty auth.* i kag.*, routing /mcp (bez forward-auth, flush_interval -1), /outpost.goauthentik.io, opcjonalny /openspg za forward-auth, fallback na panel
 - deploy/edge/.env.example — obrazy z digestami, ACME_EMAIL, sekrety Authentika/PG z :?required
-- deploy/kag/compose.yaml — 5 usług OpenSPG (release-openspg-*) + tika + stirling + panel + mcp; x-security-defaults, cap_add minimalne, digest-pinning, kag-internal(internal:true)/kag-egress, zero portów na host
+- deploy/kag/compose.yaml — 5 usług OpenSPG (release-openspg-*) + tika + stirling + panel + mcp; x-security-defaults, cap_add minimalne, digest-pinning, kag-datastores + kag-internal (obie internal:true) / kag-egress, zero portów na host
 - deploy/kag/.env.example — digesty OpenSPG, MYSQL_APP_USER, warianty *_URLENCODED, heapy (NEO4J_HEAP, OPENSPG_SERVER_XMX), OIDC panelu
 - deploy/kag/mysql-init/10-create-app-user.sh — tworzy użytkownika openspg_app przy pierwszej inicjalizacji wolumenu MySQL
 - deploy/kag/openspg/patch_openspg_openai_client.py — patch klienta OpenAI w obrazie serwera (enable_thinking/max_completion_tokens/temperature + wyciszenie logów z kluczami), montowany :ro
@@ -307,6 +333,11 @@ Dysk: min. 250 GB NVMe (dane + 14 dni backupów lokalnych; neo4j+minio rosną z 
 - deploy/systemd/kag-backup.timer — OnCalendar 03:20, RandomizedDelaySec=10m, Persistent=true
 - deploy/systemd/kag-backup-verify.service — oneshot verify_backup.sh
 - deploy/systemd/kag-backup-verify.timer — niedziela 04:30
+- deploy/systemd/kag-backup-cold.{service,timer} — zimny snapshot Neo4j (stop→tar→start), 1. dnia miesiąca 02:30
+- deploy/systemd/kag-update-check.{service,timer} — miesięczny raport aktualizacji (update_check.sh), 2. dnia 05:15
+- deploy/systemd/kag-alert@.service — powiadomienie na ALERT_WEBHOOK_URL (OnFailure pozostałych unitów)
+- deploy/scripts/save_images.sh — `docker save` obrazów obu stacków do /srv/kag-data/backups/images/ (plik per obraz: `<repo>@<digest>.tar.zst`)
+- deploy/scripts/update_notify.sh, deploy/scripts/drift_check.sh — powiadomienia i porównanie compose↔runtime
 - docs/deployment.md — runbook wdrożenia krok po kroku (PL)
 - docs/authentik-setup.md — konfiguracja Authentika: grupy kag-*, provider OIDC, aplikacja, embedded outpost, forward-auth (PL)
 - docs/runbooks/ — operacje (PL): disaster-recovery, break-glass-authentik, typowe-awarie, backup-failure-triage, restore-single-kb, secret-rotation, openspg-frozen
@@ -316,13 +347,13 @@ Dysk: min. 250 GB NVMe (dane + 14 dni backupów lokalnych; neo4j+minio rosną z 
 ## RISKS
 - Hot-tar katalogu Neo4j/DozerDB może dać niespójny backup — mitigacja: cotygodniowa weryfikacja restore + comiesięczny zimny snapshot (stop→tar→start) w oknie nocnym
 - Rejestr Aliyun (spg-registry.us-west-1.cr.aliyuncs.com) bywa wolny/niedostępny z EU — mitigacja: po pierwszym pullu `docker save` obrazów do /srv/kag-data/backups/images/ (odtwarzalność bez rejestru)
-- OpenSPG REST :8887 bez auth jest osiągalny dla KAŻDEGO kontenera w kag-internal (w tym stirling/tika) — mitigacja: te usługi nie mają ingressu z internetu ani egressu (internal:true), minimalny attack surface; opcjonalnie osobna podsieć datastores w fazie 2
-- Statyczne jasypt.encryptor.password=openspg → dump MySQL pozwala odszyfrować klucze LLM — mitigacja: backupy 0600 na szyfrowanym wolumenie, offsite tylko przez szyfrowany kanał, rotacja kluczy LLM po incydencie
+- **[ZREALIZOWANE 2026-09]** OpenSPG REST :8887 bez auth był osiągalny dla KAŻDEGO kontenera w `kag-internal` (w tym stirling/tika) — wdrożono osobną podsieć `kag-datastores` (patrz §1 i `docs/runbooks/openspg-frozen.md` §„Mitygacja sieciowa"): OpenSPG + jego bazy + panel + mcp; Tika/Stirling zostały w `kag-internal` i nie mają drogi do :8887. Test negatywny: `docker exec kag-stirling curl http://release-openspg-server:8887/` musi paść
+- **Klucze API modeli w MySQL leżą JAWNYM TEKSTEM** (`kg_user_model`; zweryfikowane 2026-09-06: 0 wartości `ENC(...)`, 1 wartość `sk-…`). Wcześniejsze założenie, że `jasypt.encryptor.password=openspg` je szyfruje, jest NIEPRAWDZIWE w tym buildzie — każdy dump/snapshot to bezpośredni wyciek klucza LLM. Mitigacja: backupy 0600, off-site wyłącznie szyfrowanym kanałem i w postaci zaszyfrowanej, zakaz wynoszenia surowych dumpów z hosta, rotacja OBU kopii klucza po incydencie (panel + `POST /v1/model` OpenSPG — `docs/runbooks/secret-rotation.md`)
 - Wspólna edge-net: przyszła skompromitowana appka dojdzie do kag-panel:8080/kag-mcp:3001 — mitigacja: oba wymagają auth na każdym endpoincie (OIDC session/Bearer), zero endpointów anonimowych poza /healthz; docelowo per-app sieci proxy
 - Limity Let's Encrypt przy błędnej konfiguracji DNS (5 fail/h) — mitigacja: staging CA w Caddyfile na czas testów, DNS przed pierwszym startem
 - Skoki RAM Stirling przy OCR dużych skanów mogą ubić kontener (OOM w mem_limit 2g) — mitigacja: kolejkowanie OCR w panel-api (1-2 równoległe), restart: always, Tika jako fallback ścieżki ekstrakcji
 - Aktualizacja Authentika 2025.x→2026.x może zmienić embedded outpost/forward-auth — mitigacja: pin digest, upgrade tylko po release notes, backup PG przed, test forward-auth w smoke.sh
-- Hairpin NAT dla OIDC (panel→auth.*) — zmitygowane aliasami sieciowymi caddy w edge-net; UWAGA: aliasy działają tylko dla kontenerów w edge-net, nie w kag-internal
+- Hairpin NAT dla OIDC (panel→auth.*) — zmitygowane aliasami sieciowymi caddy w edge-net; UWAGA: aliasy działają tylko dla kontenerów w edge-net, nie w kag-internal ani kag-datastores
 - Profil S (32GB): równoległy duży build (BUILDER_MODEL_EXECUTE_NUM) + OCR może zbliżyć się do limitu — mitigacja: BUILDER=4, swap 4-8G jako bezpiecznik, monitoring w health cockpicie panelu
 
 ## OPEN QUESTIONS

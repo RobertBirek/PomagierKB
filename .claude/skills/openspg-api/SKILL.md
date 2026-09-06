@@ -15,8 +15,18 @@ build 2025-07-03). Upstream ZAMROŻONY od 06/2025 — nie zakładać poprawek, p
   `{account, password: sha256(password + "OPENSPG")}` → cookie sesyjne (skleić wszystkie
   Set-Cookie w `name=value; name2=value2`). Domyślne konto: openspg / openspg@kag.
   Cookie wygasa — klient musi ponawiać login po 401.
-- `jasypt.encryptor.password=openspg` (statyczne!) szyfruje klucze API modeli w MySQL —
-  dump MySQL = odszyfrowywalne klucze. Backupy 0600.
+- **Klucze API modeli leżą w MySQL JAWNYM TEKSTEM** (zweryfikowane 2026-09-06 na tej
+  instalacji: `kg_user_model` — 1 wiersz, 0 wartości `ENC(...)`, 1 wartość zaczynająca się
+  od `sk-`). Konfiguracja ma wprawdzie `jasypt.encryptor.password=openspg` (statyczne
+  hasło), ale **w tym buildzie jasypt nie szyfruje niczego** w tabelach `kg_user_model`,
+  `kg_config`, `kg_project_info`, `kg_builder_job`, `kg_scheduler_task`.
+  Konsekwencje operacyjne (twarde zasady):
+  - każdy `mysqldump`, każdy snapshot backupu i każdy zrzut diagnostyczny z tych tabel
+    to **bezpośredni wyciek żywego klucza LLM** — traktuj je jak materiał sekretny
+    (0600, nigdy poza host bez szyfrowania kanału i pliku);
+  - nie wklejaj surowych dumpów MySQL do zgłoszeń, logów ani odpowiedzi API;
+  - rotacja klucza LLM u dostawcy MUSI objąć **drugą kopię** w rejestrze modeli serwera
+    (`POST /v1/model`) — patrz `docs/runbooks/secret-rotation.md`.
 
 ## Projekty i schemat
 - `GET /v1/projects/list?isOwner=false&keyword=&pageNo=1&pageSize=200&appId=0` — szukanie po
@@ -58,12 +68,24 @@ build 2025-07-03). Upstream ZAMROŻONY od 06/2025 — nie zakładać poprawek, p
   tylko gdy (jobName, fileUrl) zgodne i wiek ≤45 min.
 - Datasource API wspiera TYLKO ODPS/SLS → import zawsze przez upload CSV + builder job.
 
-## Search / reasoner (otwarte /public/v1)
-- `POST /public/v1/search/text` (prawdopodobnie `{queryString, labelConstraints, page, size}`)
-  i `POST /public/v1/search/vector` (`{label, propertyKey, queryVector, topk, efSearch}`) —
-  **payloady NIEZWERYFIKOWANE W BOJU** (optimaKB ich nie używał!). Klient defensywny:
-  normalizator odpowiedzi (`{success,result}|{data}|array`), sonda zgodności przy starcie,
-  logowanie surowej odpowiedzi przy nieznanym kształcie, fallback FTS5 z degraded:true.
+## Search / reasoner (otwarte /public/v1) — payloady ZWERYFIKOWANE W BOJU
+Jedno źródło prawdy dla `search/*` (zdekompilowane DTO + potwierdzenie na żywym serwerze
+2026-09-02, powtórzone 2026-09-06):
+- `POST /public/v1/search/text` body `TextSearchRequest`:
+  `{projectId (WYMAGANE, int), queryString, labelConstraints: ["Ns.Chunk", ...], page, topk}`
+  — limit nazywa się **topk**.
+- `POST /public/v1/search/vector` body `VectorSearchRequest`:
+  `{projectId (WYMAGANE, int), label: "Ns.Chunk", propertyKey, queryVector, topk, efSearch}`.
+- **NIE PRZYWRACAĆ starej wersji** `{queryString, labelConstraints, page, size}` bez
+  `projectId`: serwer odpowiada HTTP 400 („There is no such fulltext schema index:
+  `_default_text_index`") — dowód z 2026-09-06 na `release-openspg-server`:
+  wariant z `size`/bez `projectId` → 400, wariant z `projectId`+`topk` → 200.
+- Konsekwencja: klient musi znać `projectId` per namespace (u nas `kb_registry.project_id`),
+  więc zapytania idą PER NAMESPACE i są scalane (RRF).
+- Klient mimo to zostaje defensywny — ale z INNEGO powodu: niestabilny jest kształt
+  **ODPOWIEDZI** (`{success,result}|{data}|goły array`). Stąd normalizator odpowiedzi,
+  sonda zgodności przy starcie, log surowej odpowiedzi przy nieznanym kształcie
+  i fallback FTS5 z `degraded:true`.
 - Wektor zapytania liczymy SAMI (openai-compatible embeddings) modelem IDENTYCZNYM
   z vectorizerem projektu.
 - Inne: `/public/v1/reason/run`, `/public/v1/search/custom`, `/v1/chat/completions`
@@ -91,16 +113,6 @@ nie zostanie zmienione. Payload (zweryfikowany):
 Po zmianie: login nowym hasłem → result:true i API odblokowane. Warianty ze stringiem w body
 dają 400; bez confirmPassword → "confirmPassword is blank". Deployment robi to skryptem
 (deploy/scripts — patrz bootstrap-openspg-password w runbooku).
-
-## search/text i search/vector — payloady ZWERYFIKOWANE W BOJU (2026-09-02)
-Zdekompilowane DTO + potwierdzone na żywym serwerze (wcześniej HTTP 400):
-- `POST /public/v1/search/text` body TextSearchRequest:
-  `{projectId (WYMAGANE, int), queryString, labelConstraints: ["Ns.Chunk",...], page, topk}`
-  — limit to **topk**, NIE "size".
-- `POST /public/v1/search/vector` body VectorSearchRequest:
-  `{projectId (WYMAGANE), label: "Ns.Chunk", propertyKey, queryVector, topk, efSearch}`.
-Konsekwencja: klient musi znać projectId per namespace (u nas: kb_registry.project_id),
-więc zapytania idą PER NAMESPACE i są scalane (RRF).
 
 ## query/spgType i reason/run — ZWERYFIKOWANE W BOJU (2026-09-04)
 

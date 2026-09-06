@@ -31,11 +31,16 @@ skuratowane niżej). Szczegółowe projekty 3 podsystemów leżą w scratchpadzi
 
 ## Decyzje kluczowe (rozstrzygnięte)
 
+> **Czytaj razem z sekcją „Zmiany decyzji po zatwierdzeniu" na końcu pliku.** Część
+> poniższych decyzji została po zatwierdzeniu świadomie zmieniona; wiersze, których to
+> dotyczy, są oznaczone **[ZMIENIONE — patrz Zmiany decyzji]**. Tabela pozostaje zapisem
+> stanu z chwili zatwierdzenia — nie edytujemy jej wstecz, dopisujemy do dziennika zmian.
+
 | Obszar | Decyzja |
 |---|---|
 | Stack | Node 22 + TypeScript, monorepo npm workspaces (`apps/panel-api`, `apps/panel-web`, `apps/mcp-server`, `packages/*`) |
 | Backend | Fastify (deklaratywny routing + JSON Schema + pluginy; koperta `{ok,data}/{ok:false,error}`; 405 z Allow) |
-| Frontend | React 18 + Vite + **TanStack Router** (typowane search-params) + TanStack Query; i18n: słownik `pl.ts` + typowane `t()` |
+| Frontend | React 18 + Vite + **TanStack Router** (typowane search-params) + TanStack Query; i18n: słownik `pl.ts` + typowane `t()` — **[ZMIENIONE: React 19]** |
 | MCP | **@modelcontextprotocol/sdk**, Streamable HTTP **stateless** (`enableJsonResponse`), multipleks profili po ścieżce `/mcp/<profil>` |
 | Stan | **SQLite WAL** (`better-sqlite3`) współdzielony przez panel-api i mcp-server na jednym lokalnym wolumenie (`busy_timeout=5000`, krótkie transakcje `BEGIN IMMEDIATE`); migracje uruchamia tylko panel-api, mcp-server sprawdza wersję i odmawia startu przy rozjeździe |
 | Auth panelu | OIDC Authorization Code + PKCE (openid-client v6) w aplikacji; sesja cookie `kag_sid` (HttpOnly/Secure/Lax, host-only, w DB sha256(sid)); role z grup Authentika `kag-admin/operator/viewer` (viewer = domyślna grupa całej firmy); ŻADNEGO trybu anon |
@@ -46,8 +51,8 @@ skuratowane niżej). Szczegółowe projekty 3 podsystemów leżą w scratchpadzi
 | Build | Domyślnie **lightweight/chunk-only** (bez pełnego OpenIE — koszty, bug #753); dedup po contentHash; kolejność topic→document→chunk; resume po sha256 w SQLite; FORCE po promocji; `builder/job/list` ze `start=1` |
 | kb_answer | Bramka odmowy PRZED chat_llm (słaby retrieval → `no_answer` po polsku + luka wiedzy); cytowania `[n]` walidowane post-hoc; `confidence = 0.5*llmSelf + 0.3*topScore + 0.2*coverage`; < progu → learning_gap |
 | Izolacja | 1 KB = 1 projekt OpenSPG = 1 namespace; `kb_id/namespace NOT NULL` w każdej tabeli stanu; klucze/profile z jawną listą namespace |
-| Sieci | ZERO portów OpenSPG na hoście (nawet 127.0.0.1); `kag-internal` (internal:true) + `kag-egress` tylko dla openspg-server (LLM); `edge-net` (external) łączy Caddy↔panel/mcp; alias sieciowy Caddy = oba vhosty (hairpin OIDC) |
-| Ingest v1 | Wklejony tekst + upload pliku + API. **Bez fetch URL-i** (SSRF poza krytyczną ścieżką; URL = tylko metadana provenance; fetch przez n8n lub v1.5 z safe_http) |
+| Sieci | ZERO portów OpenSPG na hoście (nawet 127.0.0.1); `kag-internal` (internal:true) + `kag-egress` tylko dla openspg-server (LLM); `edge-net` (external) łączy Caddy↔panel/mcp; alias sieciowy Caddy = oba vhosty (hairpin OIDC) — **[ZMIENIONE: doszła `kag-datastores`]** |
+| Ingest v1 | Wklejony tekst + upload pliku + API. **Bez fetch URL-i** (SSRF poza krytyczną ścieżką; URL = tylko metadana provenance; fetch przez n8n lub v1.5 z safe_http) — **[ZMIENIONE: fetch URL wdrożony z safe_http]** |
 | Panel v1 | 6 stron: **Zapytaj** (czat z cytowaniami, mobile-first+PWA), Dodaj treść, Inbox (+luki wiedzy jako zakładka), Bazy wiedzy, MCP, Ustawienia (admin; system/akcje/audyt) |
 | Akcje | 202+actionId; guard = partial unique index `(type,resource) WHERE running` (idempotencja bez wyścigów); spawn detached z logiem do pliku; **SSE** `/actions/:id/events` + polling fallback; preflight 422 z `checks[]`; orphan sweep przy starcie |
 | Audyt | Hash-chained w SQLite (BEGIN IMMEDIATE, triggery append-only), redakcja po regexie nazw kluczy; wszystkie mutacje + auth_failed; odczyty MCP do usage-JSONL (poza łańcuchem) |
@@ -139,6 +144,7 @@ Cel: admin podaje NAZWĘ nowej bazy + **rodzaje dokumentów, które będą w nie
 ## Fazy implementacji
 
 ### Faza 0 — narzędzia i szkielet repo (na prośbę użytkownika wykonać najpierw)
+**Status: WDROŻONA** (repo, skille, CI, gitleaks).
 1. Instalacje pluginów (user-scope): `typescript-lsp`, `frontend-design`, `commit-commands`.
 2. `git init` w /kag + `.gitignore` (`.env`, `*.env`, `/srv`, dist, node_modules) + **gitleaks**
    pre-commit (core.hooksPath) + `.gitleaks.toml` (reguły: `sk-[A-Za-z0-9_-]{32}`, CLOUDEXT_*_URL)
@@ -156,6 +162,7 @@ Cel: admin podaje NAZWĘ nowej bazy + **rodzaje dokumentów, które będą w nie
    (lint+tsc, testy, compose config -q obu stacków, gitleaks, build obrazów).
 
 ### Faza 1 — infra (deploy/)
+**Status: WDROŻONA** (oba stacki działają; sieci rozszerzone o `kag-datastores` — patrz Zmiany decyzji).
 1. `bootstrap.sh`: `docker network create edge-net`, katalogi `/srv/kag-data/*` z uprawnieniami,
    **swap 8G + vm.swappiness=10**, pobranie `pol/eng/osd.traineddata` (tessdata_fast), .env z example.
 2. Stack **edge**: compose (Caddy 2.10 + Authentik 2025.x + Postgres 16 + Redis 7, digesty,
@@ -172,6 +179,7 @@ Cel: admin podaje NAZWĘ nowej bazy + **rodzaje dokumentów, które będą w nie
 5. `smoke.sh` (healthz, discovery OIDC, 302 panelu, initialize+tools/list na /mcp, search).
 
 ### Faza 2 — fundamenty backendu (packages/shared)
+**Status: WDROŻONA** (payloady search zweryfikowane na żywym serwerze 2026-09-02).
 1. `db/open.ts` (WAL, pragmy) + `migrate.ts` (BEGIN EXCLUSIVE; tryb check-only dla mcp) +
    `migrations/0001_init.sql` (pełny scalony DDL) + repozytoria.
 2. `crypto/` (sk-keys sha256+prefix+timingSafeEqual; seal AES-256-GCM), `errors.ts`, `schemas/`.
@@ -186,6 +194,7 @@ Cel: admin podaje NAZWĘ nowej bazy + **rodzaje dokumentów, które będą w nie
    `compose.dev.yaml` (panel+mcp+SQLite+stub — dev bez 16 GB stacka) + seed 2-3 dokumentów PL.
 
 ### Faza 3 — panel-api core
+**Status: WDROŻONA** (63 trasy + `/openapi.json`; pełna tabela: `backend-mcp.md` §2.2).
 1. Pluginy: config (env *_FILE), db, session, oidc (PKCE, grupy→role, refresh, degradacja roli),
    rbac (deny-by-default z route.config), csrf (Origin/Sec-Fetch-Site), rate-limit (trustProxy:1,
    per-sesja na mutacjach), audit hook, error-handler (koperta, 405+Allow, requestId), sse.
@@ -201,6 +210,7 @@ Cel: admin podaje NAZWĘ nowej bazy + **rodzaje dokumentów, które będą w nie
    kompletność mapowania).
 
 ### Faza 4 — pipeline wiedzy
+**Status: WDROŻONA** (+ intake z URL — poza pierwotnym zakresem v1, patrz Zmiany decyzji).
 1. Intake worker (kolejka w tabeli, jeden worker in-process; limity: plik ≤50 MB, 100 draftów/dz.).
 2. `extract.ts` (kaskada Stirling markdown → Stirling OCR pol → Tika → fail z uczciwym błędem;
    `looksHumanText` czysta funkcja z testami; max 1-2 równoległe OCR).
@@ -216,6 +226,7 @@ Cel: admin podaje NAZWĘ nowej bazy + **rodzaje dokumentów, które będą w nie
 7. Luki wiedzy (recordGap z dedupe; API; start-draft z prefill).
 
 ### Faza 5 — mcp-server
+**Status: WDROŻONA i ROZSZERZONA** — 11 narzędzi zamiast 5 (katalog: `backend-mcp.md` §7.4).
 1. Shell Fastify + fabryka McpServer per żądanie (Streamable HTTP stateless, enableJsonResponse);
    `/healthz`, `/readyz` (migracje+profil+sonda search); internal :8091 cache-invalidate.
 2. Auth Bearer (lookup po hash, LRU 60 s, batch last_used; 401 JSON-RPC; deny-by-default write).
@@ -226,6 +237,7 @@ Cel: admin podaje NAZWĘ nowej bazy + **rodzaje dokumentów, które będą w nie
    (👍/👎 → luki). Usage-JSONL poza łańcuchem audytu.
 
 ### Faza 6 — frontend (apps/panel-web)
+**Status: WDROŻONA**, po przebudowie UX v2 (2026-09-03): React 19, design system v2, 7 stron (`/overview`, `/ask`, `/add`, `/inbox`, `/kb`, `/mcp`, `/settings`).
 1. Shell: TanStack Router+Query, i18n `pl.ts`+`t()`, theme light/dark (CSS variables), `useMe()`
    + `can()` (nawigacja renderuje tylko dostępne strony; viewer widzi Zapytaj+Dodaj treść).
 2. **/ask „Zapytaj bazę"** — mobile-first + manifest PWA; streaming SSE z `/api/ask` (ta sama
@@ -241,6 +253,7 @@ Cel: admin podaje NAZWĘ nowej bazy + **rodzaje dokumentów, które będą w nie
    normalizeStatus/worstStatus, bulkSelection, permissions, statusVariant, SafeExternalLink).
 
 ### Faza 7 — ops
+**Status: WDROŻONA CZĘŚCIOWO** — 4 timery systemd działają; Uptime Kuma uruchomiona, ale NIESKONFIGUROWANA (0 monitorów, `status.*` → 404); Renovate w repo bez zainstalowanej aplikacji. Szczegóły: `docs/authentik-setup.md` §Monitoring, `docs/deployment.md` §12.
 1. `backup.sh` (mysqldump w kontenerze, tar.zst neo4j/minio, SQLite `.backup()`, pg_dump
    Authentika, certy Caddy, .env 0600, manifest sha256; retencja 14 dni + 1. snapshot miesiąca
    6 mies.) + `verify_backup.sh` (restore MySQL do efemerycznego kontenera, PRAGMA
@@ -261,11 +274,16 @@ dokumentów) → provision → pierwszy dokument → build → Zapytaj → smoke
 
 ## Zakres v1.5 (zaraz po MVP) i roadmap
 
-**v1.5**: pełny **Kreator KB z analizą AI** (wyżej); query rewriting PL + rerank top-20; cache
-odpowiedzi wersjonowany kbVersion; ekspansja grafowa po refId; normalizacja polskich nazw encji;
-endpoint **OpenAI-compatible** (`/v1/chat/completions`+`/v1/models`, model=`kag:<ns>`); webhooki
-(outbox+HMAC; draft.awaiting_review, build.failed, api_key.expiring...); szablony n8n
-(integrations/n8n: powiadomienia, scraping→ingest, Google Drive→upload); fetch URL z safe_http;
+**v1.5**: pełny **Kreator KB z analizą AI** (wyżej);
+**[wdrożone 2026-09]** query rewriting PL + rerank top-20 (ustawienia `answer.rewrite`,
+`answer.rerank` — `packages/shared/src/db/repos/settings.ts`);
+cache odpowiedzi wersjonowany kbVersion; ekspansja grafowa po refId; normalizacja polskich
+nazw encji; endpoint **OpenAI-compatible** (`/v1/chat/completions`+`/v1/models`,
+model=`kag:<ns>`); webhooki (outbox+HMAC; draft.awaiting_review, build.failed,
+api_key.expiring...); szablony n8n (integrations/n8n: powiadomienia, scraping→ingest,
+Google Drive→upload);
+**[wdrożone 2026-09]** fetch URL z safe_http (migracja `0004_url_intake.sql`, `POST /content`
+z body `{url}`, polityka SSRF w `apps/panel-api/src/services/safe-http-policy.ts` + testy);
 restore-drill miesięczny + offsite; strona „Czego baza nie wie" (grupowanie po podobieństwie);
 kreator onboardingu; auto-drafty z sieci za flagą (Exa/Tavily); eksport/import KB jako paczka.
 
@@ -277,6 +295,9 @@ mini-eval rozszerzony o LLM-judge; budżety tokenów per KB/dzień.
 **Eval (goldens) — w v1, budowany przyrostowo**: `goldens.jsonl` zaczyna się od ~20 pytań
 zebranych przy pierwszych ingestach (w tym pytania negatywne); `npm run eval` liczy hit@k/MRR
 na retrievalu (zero kosztu LLM); wynik w quality gate.
+**[ZMIENIONE — patrz Zmiany decyzji]** obowiązuje konwencja per baza:
+`tools/eval/goldens/<Namespace>.jsonl` (katalog jest domyślnym źródłem; `goldens.jsonl`
+to już tylko fallback).
 
 ## Weryfikacja end-to-end
 
@@ -304,3 +325,28 @@ na retrievalu (zero kosztu LLM); wynik w quality gate.
 - Produktowe UI OpenSPG niewystawiane (blok w Caddyfile wykomentowany).
 - Trilium na porcie 8080 hosta zostaje bez zmian (nie koliduje); ewentualne wpięcie go za
   Caddy/Authentika = osobna, późniejsza decyzja użytkownika.
+
+---
+
+## Zmiany decyzji po zatwierdzeniu (APPEND-ONLY)
+
+Ta sekcja jest jedynym miejscem, w którym wolno odnotować, że decyzja z tabeli
+„Decyzje kluczowe (rozstrzygnięte)" przestała obowiązywać. Zasady:
+
+- **nie edytujemy tabeli decyzji wstecz** — dopisujemy wiersz tutaj i oznaczamy tamten
+  wiersz `[ZMIENIONE — patrz Zmiany decyzji]`;
+- każdy wpis musi mieć **dowód w kodzie/konfiguracji** (ścieżka pliku, migracja, test) —
+  bez dowodu to nie jest zmiana decyzji, tylko propozycja;
+- `CLAUDE.md` odsyła tu wprost: zakaz „otwierania rozstrzygniętych decyzji" nie blokuje
+  odnotowania faktu, że implementacja poszła inaczej.
+
+| Data | Decyzja pierwotna | Nowa decyzja | Powód | Dowód w kodzie |
+|---|---|---|---|---|
+| 2026-09 | Ingest v1 **bez fetch URL-i** (URL wyłącznie jako metadana provenance) | Intake z adresu URL **wdrożony** — pobranie treści przez `safe_http` (DNS-pinning, odrzucanie adresów prywatnych, cap 10 MB, allowlist typów) | SSRF dało się zamknąć fail-closed w jednym module; ingest z URL był najczęściej używaną drogą dodawania treści | `packages/shared/src/db/migrations/0004_url_intake.sql`; `apps/panel-api/src/routes/content.ts` (body `{url}`); `apps/panel-api/src/services/safe-http-policy.ts`; testy `apps/panel-api/test/safe-http-policy.test.ts`, `safe-http.test.ts`; UI: zakładka URL w `/add` (`docs/operator-manual.md` §1) |
+| 2026-09-03 | Frontend na **React 18** | **React 19** + design system v2 (Linear-like: tokeny Tailwind v4 w `@theme`, kit `src/ui/`, shell z sidebarem i ⌘K) | przebudowa UX v2; kit komponentów wymagał nowszego Reacta | `apps/panel-web/package.json` (`react`/`react-dom` ^19.2.8); `apps/panel-web/src/styles/app.css`; `apps/panel-web/src/ui/`; raport `docs/design/ux-audit.md` |
+| 2026-09 | Sieci stacku kag: `kag-internal` + `kag-egress` | Doszła **`kag-datastores`** (internal): OpenSPG + mysql/neo4j/minio + panel + mcp. Tika/Stirling zostają w `kag-internal` i nie mają drogi do :8887 | port 8887 nie ma żadnej autoryzacji, a Tika/Stirling parsują NIEZAUFANE uploady — to była „faza 2" z `infra.md` RISKS | `deploy/kag/compose.yaml` (definicje sieci + przypisania usług); `docs/runbooks/openspg-frozen.md` §Mitygacja sieciowa; `docs/design/infra.md` §1. **Skutek dla runbooków:** komendy diagnostyczne do OpenSPG używają `kag_kag-datastores` |
+| 2026-09 | Goldens jako jeden plik `goldens.jsonl` (~20 pytań) | Konwencja **per baza**: `tools/eval/goldens/<Namespace>.jsonl`; katalog jest domyślnym źródłem, pojedynczy plik to fallback | goldens jednej bazy nie mają sensu przy wielu KB; per-baza pozwala liczyć hit@k osobno | `tools/eval/run-eval.mjs` (`goldenFiles()`); `tools/eval/goldens/README.md`; `docs/operator-manual.md` §7 |
+| 2026-09 | Powierzchnia MCP: 5 narzędzi (`kb_search`, `kb_answer`, `kb_list`, `kb_submit_draft`, `kb_feedback`) | **11 narzędzi** — doszły `kb_get_source`, `kb_list_documents`, `kb_draft_status`, `kb_entity_get`, `kb_graph_neighbors`, `kb_claim_verify` | modernizacja MCP (Aneks 2026-09-05 w `backend-mcp.md`): agent potrzebował pełnych źródeł, statusu draftów i nawigacji po grafie | `apps/mcp-server/src/tools/index.ts` (`ALL_TOOLS`); katalog i schematy: `docs/design/backend-mcp.md` §7.4 |
+| 2026-09-02 | Payloady `search/text`/`search/vector` „niezweryfikowane w boju" (wariant z `size`, bez `projectId`) | Zweryfikowane: **`projectId` WYMAGANY, limit = `topk`**; wariant z `size` bez `projectId` → HTTP 400. Zapytania idą per namespace i są scalane RRF | ręczny test na żywym OpenSPG + zdekompilowane DTO (powtórzone 2026-09-06) | `packages/shared/src/openspg/search.ts` (`searchText`/`searchVector`); `.claude/skills/openspg-api/SKILL.md` §Search; `docs/design/backend-mcp.md` §7.5 |
+| 2026-09 | Uptime Kuma + monitory + ntfy jako element Fazy 7 | **Nie dokończone** — kontener działa, ale brak aplikacji forward-auth w Authentiku (`status.*` → 404) i zero monitorów. Decyzja do podjęcia: dokończyć albo zatrzymać profil `monitoring` | krok 5 (start kontenera) wykonano bez kroków 1-3 (konfiguracja Authentika) | `docs/authentik-setup.md` §Monitoring (stan + dwie drogi); `deploy/edge/Caddyfile` (vhost `status.*`) |
+| 2026-09 | `renovate.json` jako element dostarczony Fazy 7 (PR-y dla Caddy/Authentik/Stirling/node) | **Konfiguracja bez wykonawcy** — aplikacja Renovate nie jest zainstalowana na repozytorium; jedynym źródłem sygnału o aktualizacjach jest `kag-update-check.timer` | plik trafił do repo, integracja GitHub nigdy nie została włączona | `renovate.json` (obecny); `docs/deployment.md` §12 (opis stanu faktycznego); `deploy/scripts/update_check.sh` |

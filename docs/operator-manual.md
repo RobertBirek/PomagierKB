@@ -72,3 +72,22 @@ Ocena odpowiedzi LLM-sędzią (budżetowana): `node tools/eval/judge.mjs`.
   system odmawia zamiast zgadywać — znormalizowany top wyszukiwania);
 - `answer.rerank` (off/embed/llm), `answer.rewrite` (on/off), `drafts.limits`,
   `chunking`, `ingest.limits`, `retention` — wartości JSON, działają bez restartu.
+
+Klucz `retention` (domyślnie: logi akcji 90 dni, usage MCP 180, eksporty CSV 30,
+bloby nieudanych intake'ów 30) — pełne znaczenie i zakres: `docs/data-governance.md` §2.
+
+## 9. Dane osobowe: usuwanie, offboarding, żądania osób
+
+Treść żyje w kilku miejscach naraz (SQLite, graf OpenSPG, MinIO, pliki, backupy),
+więc „usunięcie" to procedura, nie jeden przycisk. Komplet:
+**`docs/data-governance.md`** — inwentarz danych, okresy retencji, procedury:
+
+- **usunięcie dokumentu** — §3.1 (Odrzuć/Wycofaj → build → graf w Neo4j i obiekt
+  w MinIO trzeba sprzątnąć osobno: builder działa w trybie UPSERT i nie kasuje encji);
+- **offboarding / prawo do usunięcia** — §3.2 (Authentik → Wyłącz konto → Anonimizuj;
+  anonimizacja wymaga wcześniejszego wyłączenia i jest nieodwracalna);
+- **żądanie dostępu i sprostowania** — §3.3;
+- **wyzwalacze DPIA** — §5.
+
+**Pamiętaj:** snapshoty backupu zawierają dane do ~186 dni i nie są modyfikowane wstecz —
+przy każdym żądaniu usunięcia trzeba to zakomunikować.

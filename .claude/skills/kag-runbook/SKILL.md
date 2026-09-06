@@ -20,17 +20,23 @@ Kolejność: docs/deployment.md (DNS → bootstrap.sh → edge → Authentik wg 
 `deploy/scripts/smoke.sh` (env: SMOKE_MCP_KEY, SMOKE_STAGING_NS; SMOKE_INSECURE=1 przy staging CA).
 
 ## Testy punktowe
+Workspace'y NIE mają skryptu `test` — vitest uruchamiaj ZAWSZE z roota, ścieżką od roota.
 ```bash
+npx vitest run apps/panel-api/test/pipeline-build-chunker.test.ts  # pojedynczy plik
 npx vitest run apps/panel-api/test/e2e-smoke.test.ts   # E2E panelu (OIDC mock, spawn joba, SSE)
 npx vitest run apps/mcp-server/test/                   # MCP (kontrakt tools/list==profil)
 npm run typecheck && npm run lint
 ```
 
 ## Diagnostyka (OpenSPG nie ma portów na hoście!)
+Sieci: **OpenSPG + jego bazy = `kag_kag-datastores`** (razem z panelem i mcp);
+Tika/Stirling/panel = `kag_kag-internal`; ingress/egress = `edge-net`.
+Użycie `kag_kag-internal` do OpenSPG daje TIMEOUT, nie „OpenSPG leży".
 ```bash
 docker compose -f deploy/kag/compose.yaml ps           # healthchecki
+docker inspect --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}' release-openspg-server
 docker exec release-openspg-server curl -s http://127.0.0.1:8887/ -o /dev/null -w '%{http_code}\n'
-docker run --rm --network kag_kag-internal curlimages/curl -s http://release-openspg-server:8887/
+docker run --rm --network kag_kag-datastores curlimages/curl -s http://release-openspg-server:8887/
 docker logs kag-panel --since 10m | grep -v healthz
 deploy/scripts/drift_check.sh                          # compose vs runtime
 ```
@@ -48,10 +54,14 @@ Logi akcji pipeline: /srv/kag-data/kag/panel/actions/<rok>/<mies>/<actionId>.log
 
 ## Eval retrievalu (goldens)
 ```bash
-DATA_DIR=/srv/kag-data/kag/panel npm run eval             # goldens.jsonl w katalogu bieżącym
-npm run eval -- tools/eval/goldens.example.jsonl          # wskazany plik
+DATA_DIR=/srv/kag-data/kag/panel npm run eval             # domyślnie KATALOG tools/eval/goldens/ (*.jsonl)
+npm run eval -- tools/eval/goldens/StagingSmoke.jsonl     # wskazany plik lub katalog
 EVAL_MIN_HIT5=0.8 npm run eval                            # bramka progowa (exit 1 poniżej)
+EVAL_CHANNELS=full npm run eval                           # produkcyjny hybrid (domyślnie: fts)
 ```
+Konwencja: jeden plik per baza — `tools/eval/goldens/<Namespace>.jsonl`
+(`goldens.jsonl` w katalogu bieżącym to już tylko fallback; `tools/eval/goldens.example.jsonl`
+to wzorzec formatu, nie zestaw do uruchamiania).
 Buduj goldens przyrostowo przy ingestach (w tym pytania NEGATYWNE spoza bazy).
 
 ## Weryfikacja UI na produkcji (tools/ux-audit)

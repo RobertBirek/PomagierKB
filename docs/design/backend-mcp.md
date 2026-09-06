@@ -73,62 +73,125 @@ Zasady: route = schema + wywołanie serwisu; serwis = czysta logika na db; plugi
 
 ### 2.2 Pełna tabela tras
 
-**Auth i sesja** (poza /api/v1; bez RBAC):
-| Metoda | Ścieżka | Rola | Odpowiedź |
-|---|---|---|---|
-| GET | `/auth/login?returnTo=` | publiczna | 302 → Authentik (PKCE+state+nonce w cookie transakcyjnym) |
-| GET | `/auth/callback` | publiczna | 302 → returnTo lub `/auth/error` (403 gdy brak grupy kag-*) |
-| POST | `/auth/logout` | zalogowany | 200 `{ok:true,data:{logoutUrl}}` — front przekierowuje na end_session Authentika |
-| GET | `/healthz` | publiczna (healthcheck Dockera) | 200 `{ok:true}` bez dotykania upstreamów |
+> **Źródło prawdy = deklaracje w `apps/panel-api/src/routes/*.ts`.** Tabela odtworzona
+> z kodu 2026-09-06: **64 trasy** w modułach + `GET /openapi.json` z pluginu swagger.
+> Kolumny `Rola`/`CSRF`/`Audyt` to dosłowna zawartość `config: { rbac, csrf, audit }`.
+> Trasy mutujące należą do grupy limitu `mutation` (60 req/min/sesja), `/auth/*` — do `auth`.
+> Przy edycji tras **zaktualizuj tę tabelę w tym samym commicie**; regenerację można
+> odtworzyć jednolinijkowcem czytającym deklaracje `app.<metoda>('<ścieżka>', { config: … })`.
 
-**Rdzeń** (wszystko poniżej z prefiksem `/api/v1`; kolumna Rola = minimalna):
-| Metoda | Ścieżka | Rola | Uwagi / kody |
-|---|---|---|---|
-| GET | `/me` | viewer | `{user:{id,email,displayName,role},session:{expiresAt}}` |
-| GET | `/status` | viewer | health cockpit: `{components:[{id,label,status:'ok'|'warn'|'down'|'unknown',detail,latencyMs}],worstStatus}`; zbierane asynchronicznie, cache 10 s, **zero spawnSync** |
-| GET | `/kbs` | viewer | rejestr z `kb_registry` + totals (cache) |
-| POST | `/kbs` | admin | tworzy wpis rejestru; z `createProject:true` → 202 akcja `create_kb` (projekt OpenSPG + schema DSL); 409 gdy namespace zajęty |
-| GET | `/kbs/:namespace` | viewer | 404 |
-| PATCH | `/kbs/:namespace` | admin | tylko name/description/status/config |
-| POST | `/kbs/:namespace/preflight` | operator | 200 `{ok,checks:[{id,ok,severity,message}]}` (dry-run buildu) |
-| POST | `/kbs/:namespace/build` | operator | 202 `{actionId}`; 409 `action_already_running`; 422 `preflight_failed` |
-| GET | `/kbs/:namespace/jobs` | viewer | proxy `builder/job/list` (start=1! — pułapka z briefu), normalizacja statusów |
-| GET | `/drafts?status&namespace&q&page&limit` | viewer | |
-| POST | `/drafts` | operator | multipart (`file`) lub JSON (`{namespace?,title?,url?|text?}`); limit body 25 MB; 201 `{draftId}` |
-| GET | `/drafts/:id` | viewer | pełna treść + analysis |
-| POST | `/drafts/:id/analyze` | operator | 202 `{actionId}` (LLM z fallbackiem heurystycznym; provider w wyniku) |
-| POST | `/drafts/:id/promote` | operator | 200; 409 gdy status ≠ inbox/analyzed |
-| POST | `/drafts/:id/reject` | operator | 200, body `{reason?}` |
-| POST | `/drafts/:id/withdraw` | operator | 200 (odwraca promote przed buildem) |
-| POST | `/drafts/bulk` | operator | `{op:'promote'|'reject',ids:[],dryRun:false}`; dryRun → raport per id; dwufazowo jak w optimaKB |
-| DELETE | `/drafts/:id` | admin | tylko status rejected; 409 inaczej |
-| GET | `/actions?status&type&page` | viewer | |
-| GET | `/actions/:id` | viewer | `{...action, logTail:[ostatnie 200 linii]}` |
-| GET | `/actions/:id/events` | viewer | **SSE** (patrz §5) |
-| GET | `/actions/:id/log` | viewer | `text/plain` pełny log |
-| POST | `/actions/:id/cancel` | operator | 202; 409 gdy nie running |
-| GET | `/audit?from&to&action&actor&outcome&page` | admin | |
-| GET | `/audit/verify?limit=5000` | admin | `{valid,checked,firstBrokenSeq?}` |
-| GET | `/learning/gaps?status&page` | viewer | |
-| POST | `/learning/gaps/:id/ignore` | operator | |
-| POST | `/learning/gaps/:id/draft` | operator | 201 `{draftId}` (auto-draft z luki) |
-| POST | `/learning/gaps/:id/resolve` | operator | |
-| GET | `/mcp/profiles` | viewer | |
-| POST | `/mcp/profiles` | admin | 201; walidacja: tools ⊆ znane, namespaces ⊆ rejestr |
-| PATCH | `/mcp/profiles/:id` | admin | |
-| DELETE | `/mcp/profiles/:id` | admin | 409 gdy istnieją aktywne klucze profilu |
-| GET | `/mcp/keys` | viewer (własne) / admin (wszystkie) | nigdy raw — tylko `{id,prefix,scopes,profileId,status,expiresAt,lastUsedAt}` |
-| POST | `/mcp/keys` | operator (własny, scope read) / admin (dowolny user, scope write) | 201 `{key:{...},raw:"sk-..."}` — **raw jeden raz**; limit 5 aktywnych/user; `ttlDays` wymagane (domyślnie 90, max 365) |
-| POST | `/mcp/keys/:id/rotate` | właściciel/admin | nowy raw raz; stary hash unieważniony natychmiast |
-| POST | `/mcp/keys/:id/revoke` | właściciel/admin | |
-| GET | `/mcp/snippets?profileId` | viewer | snippety konfiguracyjne (claude-code / cursor / generic JSON) z placeholderem klucza i URL `https://kag.ilovelighting.sanok.pl/mcp/<profil>` |
-| GET | `/mcp/health` | viewer | ping `mcp-server:/healthz` |
-| GET | `/settings` | admin | sekrety maskowane: `{configured:true,preview:"sk-…4f2a"}` |
-| PUT | `/settings/:key` | admin | klucz z białej listy; wartości sekretne sealowane AES-GCM |
-| POST | `/settings/test-llm` | admin | `{target:'chat'|'openie'|'embeddings'}` → test połączenia, 502/504 przy błędzie |
-| GET | `/users` | admin | użytkownicy OIDC + serwisowi |
-| POST | `/users` | admin | tylko `kind:'service'` (tożsamości dla kluczy MCP) |
-| PATCH | `/users/:id` | admin | enable/disable; disable kaskadowo dezaktywuje klucze |
+**Poza `/api/v1`** (bez prefiksu):
+| Metoda | Ścieżka | Rola | Audyt | Odpowiedź |
+|---|---|---|---|---|
+| GET | `/auth/login?returnTo=` | publiczna | — | 302 → Authentik (PKCE+state+nonce w cookie transakcyjnym) |
+| GET | `/auth/callback` | publiczna | `auth.login` | 302 → returnTo (403 gdy brak grupy kag-*) |
+| POST | `/auth/logout` | viewer | `auth.logout` | 200 `{ok:true,data:{logoutUrl}}`; CSRF |
+| GET | `/healthz` | publiczna (healthcheck Dockera) | — | 200 `{ok:true,data:{status}}` bez dotykania upstreamów |
+| GET | `/openapi.json` | **admin** | — | surowy dokument OpenAPI 3.0.3 (bez koperty) |
+
+**Rdzeń — prefiks `/api/v1`** (Rola = minimalna; CSRF ✓ = weryfikacja Origin/Sec-Fetch-Site):
+
+*Tożsamość i stan*
+| Metoda | Ścieżka | Rola | CSRF | Audyt | Uwagi |
+|---|---|---|---|---|---|
+| GET | `/me` | viewer | — | — | `{user:{id,email,displayName,role},session:{expiresAt}}` |
+| GET | `/status` | viewer | — | — | health cockpit; cache 10 s, zero spawnSync |
+| POST | `/status/breakers/:name/reset` | **admin** | ✓ | `breaker.reset` | ręczne zamknięcie breakera (LLM/OpenSPG/Stirling) — obejście auto-recovery |
+
+*Bazy wiedzy*
+| Metoda | Ścieżka | Rola | CSRF | Audyt | Uwagi |
+|---|---|---|---|---|---|
+| GET | `/kbs` | viewer | — | — | rejestr z `kb_registry` + totals (cache) |
+| POST | `/kbs` | admin | ✓ | `kb.create` | z `createProject:true` → 202 akcja `create_kb`; 409 gdy namespace zajęty |
+| GET | `/kbs/:namespace` | viewer | — | — | 404 |
+| PATCH | `/kbs/:namespace` | admin | ✓ | `kb.update` | tylko name/description/status/config |
+| POST | `/kbs/:namespace/preflight` | operator | ✓ | — | 200 `{ok,checks:[…]}` (dry-run buildu) |
+| POST | `/kbs/:namespace/build` | operator | ✓ | `kb.build` | 202 `{actionId}`; 409 `action_already_running`; 422 `preflight_failed` |
+| GET | `/kbs/:namespace/jobs` | viewer | — | — | proxy `builder/job/list` (**start=1**), normalizacja statusów |
+| GET | `/kbs/:namespace/quality` | viewer | — | — | ostatni raport quality gate bazy |
+| POST | `/kbs/:namespace/quality` | operator | ✓ | `kb.quality_gate` | przeliczenie quality gate (verdict OK/WARN/FAIL) |
+| POST | `/kbs/:namespace/schema-sync` | **admin** | ✓ | `kb.schema_sync` | addytywna synchronizacja schematu DSL ze strażnikiem diffów |
+
+*Intake treści (`/content` — JEDYNA droga dodania treści przez API)*
+| Metoda | Ścieżka | Rola | CSRF | Audyt | Uwagi |
+|---|---|---|---|---|---|
+| POST | `/content` | operator | ✓ | `content.submit` | multipart (`file`, ≤50 MB) **albo** JSON `{text,title?,sourceUrl?}` **albo** `{url}` (fetch przez safe_http); 202 `{intakeId}`, 200 przy dedupie/`Idempotency-Key` |
+| GET | `/content` | viewer | — | — | lista intake'ów (status, provider ekstrakcji, błędy) |
+| GET | `/content/:intakeId` | viewer | — | — | szczegóły etapów pipeline'u |
+| POST | `/content/:intakeId/retry` | operator | ✓ | `content.retry` | ponowienie nieudanego intake'u (max 3 próby) |
+
+*Inbox (drafty)*
+| Metoda | Ścieżka | Rola | CSRF | Audyt | Uwagi |
+|---|---|---|---|---|---|
+| GET | `/drafts?status&namespace&q&page&limit` | viewer | — | — | |
+| GET | `/drafts/:id` | viewer | — | — | pełna treść + analysis |
+| PATCH | `/drafts/:id` | operator | ✓ | `draft.update` | edycja treści/tytułu/namespace draftu `pending` |
+| POST | `/drafts/:id/promote` | operator | ✓ | `draft.promote` | 200; 409 przy złym statusie |
+| POST | `/drafts/:id/reject` | operator | ✓ | `draft.reject` | body `{reason?}` |
+| POST | `/drafts/:id/withdraw` | operator | ✓ | `draft.withdraw` | odwraca promote przed buildem |
+| POST | `/drafts/bulk` | operator | ✓ | `draft.bulk` | `{op,ids,dryRun}`; dryRun → raport per id |
+| DELETE | `/drafts/:id` | admin | ✓ | `draft.delete` | tylko status rejected; 409 inaczej |
+
+*Zapytaj (`/ask`)*
+| Metoda | Ścieżka | Rola | CSRF | Audyt | Uwagi |
+|---|---|---|---|---|---|
+| POST | `/ask` | viewer | ✓ | — | pytanie do bazy (ta sama logika co `kb_answer`); strumień SSE |
+| POST | `/ask/:answerId/feedback` | viewer | ✓ | `answer.feedback` | 👍/👎 — 👎 tworzy lukę wiedzy |
+| GET | `/ask/history` | viewer | — | — | historia pytań użytkownika |
+| DELETE | `/ask/history` | viewer | ✓ | `answer.purge_history` | użytkownik kasuje SWOJĄ historię (`answers` + `feedback`); luki wiedzy zostają |
+
+*Akcje i audyt*
+| Metoda | Ścieżka | Rola | CSRF | Audyt | Uwagi |
+|---|---|---|---|---|---|
+| GET | `/actions?status&type&page` | viewer | — | — | |
+| GET | `/actions/:id` | viewer | — | — | `{...action, logTail:[…200 linii]}` |
+| GET | `/actions/:id/events` | viewer | — | — | **SSE** (patrz §5) |
+| GET | `/actions/:id/log` | viewer | — | — | `text/plain` pełny log |
+| POST | `/actions/:id/cancel` | operator | ✓ | `action.cancel` | 202; 409 gdy nie running |
+| GET | `/audit?from&to&action&actor&outcome&page` | admin | — | — | |
+| GET | `/audit/verify?limit=5000` | admin | — | — | `{valid,checked,firstBrokenSeq?}` |
+
+*Luki wiedzy i jakość*
+| Metoda | Ścieżka | Rola | CSRF | Audyt | Uwagi |
+|---|---|---|---|---|---|
+| GET | `/learning/gaps?status&page` | viewer | — | — | |
+| POST | `/learning/gaps/:id/ignore` | operator | ✓ | `gap.ignore` | |
+| POST | `/learning/gaps/:id/resolve` | operator | ✓ | `gap.resolve` | |
+| POST | `/learning/gaps/:id/reopen` | operator | ✓ | `gap.reopen` | cofnięcie ignore/resolve |
+| POST | `/learning/gaps/:id/start-draft` | operator | ✓ | `gap.start_draft` | status→in_draft + prefill dla `/add` (**nie** `…/draft`) |
+| GET | `/learning/stats` | viewer | — | — | liczniki luk per status |
+| GET | `/learning/quality` | viewer | — | — | raport „Jakość odpowiedzi — tydzień" |
+| POST | `/learning/quality-report` | operator | ✓ | `learning.quality_report` | przeliczenie raportu jakości (akcja `quality_answers`) |
+
+*MCP (administracja z panelu)*
+| Metoda | Ścieżka | Rola | CSRF | Audyt | Uwagi |
+|---|---|---|---|---|---|
+| GET | `/mcp/profiles` | viewer | — | — | |
+| POST | `/mcp/profiles` | admin | ✓ | `mcp.profile.create` | walidacja: tools ⊆ znane, namespaces ⊆ rejestr |
+| PATCH | `/mcp/profiles/:id` | admin | ✓ | `mcp.profile.update` | |
+| DELETE | `/mcp/profiles/:id` | admin | ✓ | `mcp.profile.delete` | 409 gdy istnieją aktywne klucze profilu |
+| GET | `/mcp/keys` | viewer (własne) / admin (wszystkie) | — | — | nigdy raw — `{id,prefix,scopes,profileId,status,expiresAt,lastUsedAt}` |
+| POST | `/mcp/keys` | operator | ✓ | `mcp.key.create` | 201 `{key:{…},raw:"sk-…"}` — **raw jeden raz**; limit 5 aktywnych/user; `ttlDays` (default 90, max 365); scope `write` tylko admin |
+| POST | `/mcp/keys/:id/rotate` | viewer (właściciel) / admin | ✓ | `mcp.key.rotate` | nowy raw raz; stary hash unieważniony natychmiast |
+| POST | `/mcp/keys/:id/revoke` | viewer (właściciel) / admin | ✓ | `mcp.key.revoke` | |
+| GET | `/mcp/snippets?profileId` | viewer | — | — | snippety claude-code / cursor / generic JSON |
+| GET | `/mcp/health` | viewer | — | — | ping `mcp-server:/healthz` |
+
+*Ustawienia i użytkownicy*
+| Metoda | Ścieżka | Rola | CSRF | Audyt | Uwagi |
+|---|---|---|---|---|---|
+| GET | `/settings` | admin | — | — | sekrety maskowane: `{configured:true,preview:"sk-…4f2a"}` |
+| PUT | `/settings/:key` | admin | ✓ | `settings.update` | klucz z białej listy; wartości sekretne sealowane AES-GCM |
+| POST | `/settings/test-llm` | admin | ✓ | `settings.test_llm` | `{target:'chat'`\|`'openie'`\|`'embeddings'}`; 502/504 przy błędzie |
+| GET | `/users` | admin | — | — | użytkownicy OIDC + serwisowi |
+| POST | `/users` | admin | ✓ | `user.create` | tylko `kind:'service'` (tożsamości dla kluczy MCP) |
+| PATCH | `/users/:id` | admin | ✓ | `user.update` | enable/disable; disable kaskadowo dezaktywuje klucze |
+| POST | `/users/:id/anonymize` | admin | ✓ | `user.anonymize` | **nieodwracalne** wyczyszczenie danych osobowych (e-mail→NULL, `sub`→`anon:<sha256>`, sesje i klucze usunięte, `answers.user_id` odpięte); wymaga `status='disabled'` (409 inaczej). Procedura: `docs/data-governance.md` §3.2 |
+
+**Trasy, których NIE MA** (występowały w starszych wersjach tego dokumentu — nie implementuj
+klientów pod nie): `POST /drafts` (intake to `POST /content`), `POST /drafts/:id/analyze`
+(analyze jest etapem workera intake, nie endpointem), `POST /learning/gaps/:id/draft`
+(faktycznie `…/start-draft`), `/auth/error` (błąd callbacku wraca kodem, nie osobną trasą).
 
 ---
 
@@ -151,7 +214,7 @@ Plugin `rbac.ts`: preHandler czyta `route.config.rbac`; brak sesji → 401; rola
 Uzasadnienie: SameSite=Lax blokuje wysyłkę cookie przy cross-site POST/PUT/DELETE, więc klasyczny CSRF na mutacjach jest już zablokowany. Pozostałe ryzyka: (a) **same-site to cała strefa `*.ilovelighting.sanok.pl`** — skompromitowana inna aplikacja na subdomenie (w tym przyszłe za tym samym Caddy) mogłaby forsować żądania mimo Lax; (b) stare/nietypowe klienty. Dlatego defense-in-depth **stateless**: plugin `csrf.ts` dla metod mutujących wymaga, by `Origin` (jeśli obecny) był dokładnie `https://kag.ilovelighting.sanok.pl`, a `Sec-Fetch-Site` (jeśli obecny) ∈ {`same-origin`, `none`}; naruszenie → 403 `csrf_rejected`. Zero stanu per proces — eliminuje bug optimaKB „CSRF per proces, restart = 403". Tokenów synchronizacyjnych nie wprowadzamy (SPA + fetch same-origin; brak formularzy cross-origin).
 
 ### 3.4 Rate limiting z zaufanym X-Forwarded-For
-Fastify `trustProxy: 1` — panel-api nasłuchuje wyłącznie na sieci wewnętrznej Dockera (port niepublikowany), jedynym możliwym klientem jest Caddy, więc ufamy dokładnie jednemu hopowi XFF; `request.ip` = realny adres klienta. @fastify/rate-limit ze store w pamięci (jeden proces — wystarczy; sprzątanie wbudowane, bez wiecznych RATE_BUCKETS): globalnie 300 req/min/IP; `/auth/*` 10 req/min/IP; mutacje 60 req/min/sesja (keyGenerator: hash sid). 429 → koperta + `Retry-After`.
+Fastify `trustProxy: 1` — panel-api nasłuchuje wyłącznie na sieci wewnętrznej Dockera (port niepublikowany), jedynym możliwym klientem jest Caddy, więc ufamy dokładnie jednemu hopowi XFF; `request.ip` = realny adres klienta. @fastify/rate-limit ze store w pamięci (jeden proces — wystarczy; sprzątanie wbudowane, bez wiecznych RATE_BUCKETS): globalnie 300 req/min/IP; grupa `auth` (`/auth/login`, `/auth/callback`, `/auth/logout`) 10 req/min/IP **liczone PER TRASA, nie łącznie dla `/auth/*`** (każda trasa ma własny licznik — potwierdzone nagłówkami `RateLimit-Remaining` w audycie); grupa `mutation` 60 req/min/sesja (keyGenerator: hash sid). 429 → koperta + `Retry-After`.
 
 ---
 
@@ -303,7 +366,7 @@ CREATE VIRTUAL TABLE chunks_fts USING fts5(title, content, content=chunks_mirror
 
 ## 6. Audyt hash-chained w SQLite
 
-- `packages/shared/audit/append.ts` — używany przez oba procesy: `BEGIN IMMEDIATE; SELECT hash FROM audit ORDER BY seq DESC LIMIT 1; INSERT ...; COMMIT;` — transakcja IMMEDIATE serializuje append **między procesami** (busy_timeout 5000), bez spin-locka z optimaKB.
+- `packages/shared/src/audit/append.ts` — używany przez oba procesy: `BEGIN IMMEDIATE; SELECT hash FROM audit ORDER BY seq DESC LIMIT 1; INSERT ...; COMMIT;` — transakcja IMMEDIATE serializuje append **między procesami** (busy_timeout 5000), bez spin-locka z optimaKB.
 - `hash = sha256(JSON.stringify(stableSort({id,at,actor,actor_type,role,action,resource_type,resource_id,outcome,before,after,metadata,prev_hash})))`; pierwszy wpis `prev_hash=''`.
 - **Redakcja** przed zapisem: rekurencyjny sanitize — klucze pasujące do `/pass(word)?|secret|token|api[-_]?key|authorization|cookie|refresh/i` → `"[REDACTED]"`; stringi ucinane do 4000 zn., głębokość ≤8, tablice ≤100 elem.
 - Hook `audit.ts` w panel-api: `onResponse` dla tras z `config.audit` — zapisuje actor (user id/email), rolę, action z configu, resource z params, outcome (success/2xx, error/4xx-5xx), before/after dostarczane przez serwis przez `reply.auditContext`.
@@ -317,7 +380,7 @@ CREATE VIRTUAL TABLE chunks_fts USING fts5(title, content, content=chunks_mirror
 ### 7.1 Transport i kształt HTTP
 - Fastify jako shell HTTP (spójny logging/limity) + `@modelcontextprotocol/sdk`: **StreamableHTTPServerTransport w trybie bezstanowym** (`sessionIdGenerator: undefined`, `enableJsonResponse: true`) — każdy `POST /mcp/:profileId` tworzy parę McpServer+transport, obsługuje żądanie przez `transport.handleRequest(req.raw, reply.raw, req.body)` i zamyka. Uzasadnienie: narzędzia są bezstanowe (brak subskrypcji/resources), tryb JSON eliminuje problemy pseudo-SSE z optimaKB i buforowania proxy; skalowanie i restart bez utraty sesji.
 - `GET|DELETE /mcp/:profileId` → 405 (spec dopuszcza brak SSE w trybie stateless). `GET /healthz` (proces żyje), `GET /readyz` (DB otwarta + wersja migracji zgodna + ≥1 profil enabled).
-- Multipleks profili **po ścieżce** `/mcp/<profileId>` w jednym procesie (wzorzec optimaKB); Caddy: `kag.ilovelighting.sanok.pl/mcp/*` → `mcp-server:8090`.
+- Multipleks profili **po ścieżce** `/mcp/<profileId>` w jednym procesie (wzorzec optimaKB); Caddy: `kag.ilovelighting.sanok.pl/mcp*` → `kag-mcp:3001` (`deploy/edge/Caddyfile`; **port 3001**, nie 8090 — jak w PLAN.md §Architektura docelowa).
 - Rate limit per klucz w pamięci: 60 req/min, `kb_answer` 10/min (koszt LLM) → JSON-RPC error z `retryAfter`.
 
 ### 7.2 Auth per-user API keys
@@ -330,7 +393,52 @@ Czytane z `mcp_profiles` (cache 60 s + invalidate jak wyżej). Profil determinuj
 
 ### 7.4 Kontrakt narzędzi MCP (dokładne schematy)
 
-Wyniki zwracane podwójnie: `structuredContent` (poniższe schematy, zadeklarowane jako `outputSchema`) + `content:[{type:'text', text:<markdown PL>}]`. Adnotacje: search/answer/list → `readOnlyHint:true, idempotentHint:true, openWorldHint:false`; submit_draft → `readOnlyHint:false, destructiveHint:false`.
+> Źródło prawdy = `apps/mcp-server/src/tools/*.ts` (rejestr i kolejność w `apps/mcp-server/src/tools/index.ts`).
+> Katalog odtworzony z kodu 2026-09-06: **11 narzędzi**. Kolejność w tabeli = kolejność
+> w `tools/list`; widoczność przycina profil (`tools_json` ∩ rejestr).
+
+Wyniki zwracane podwójnie: `structuredContent` (schematy niżej, zadeklarowane jako `outputSchema`) + `content:[{type:'text', text:<markdown PL>}]`. Wszystkie narzędzia mają `openWorldHint:false`.
+
+**Katalog — co narzędzie ujawnia (to jest decyzja BEZPIECZEŃSTWA przy doborze `tools_json` do profilu):**
+
+| Narzędzie | Scope | readOnly / idempotent | Co ujawnia |
+|---|---|---|---|
+| `kb_search` | read | ✓ / ✓ | snippety fragmentów + score + `sourceRef` z dozwolonych namespace'ów |
+| `kb_answer` | read | ✓ / ✓ | odpowiedź LLM + cytowania ze snippetami; **koszt LLM** (limit 10/min) |
+| `kb_list` | read | ✓ / ✓ | metadane baz: namespace, nazwa, status, `projectId`, liczba dokumentów |
+| `kb_get_source` | read | ✓ / ✓ | **PEŁNĄ treść** fragmentu lub całego dokumentu (do `maxChars`) |
+| `kb_list_documents` | read | ✓ / ✓ | spis dokumentów bazy: `docId`, tytuł, liczba chunków, `sourceRef`, `updatedAt` |
+| `kb_draft_status` | read | ✓ / ✓ | losy draftów zgłoszonych **tym kluczem** (cudze → ten sam błąd co nieistniejące) |
+| `kb_entity_get` | read | ✓ / ✓ | **pełne `properties` encji** z grafu (po sanitizacji: bez pól wektorowych, bez literalnych cudzysłowów) |
+| `kb_graph_neighbors` | read | ✓ / ✓ | strukturę sąsiedztwa (nodes+edges, `in_document`/`about_topic`) do głębokości 3 |
+| `kb_claim_verify` | read | ✓ / ✗ | werdykt supported/contradicted/insufficient + cytowania; **koszt LLM** |
+| `kb_submit_draft` | **write** | ✗ / ✓ | nic nie czyta — jedyna droga zapisu (do Inboxu, NIGDY do grafu) |
+| `kb_feedback` | read (`requiresWriteScope:false`) | ✗ / ✗ | nic nie czyta — zapisuje ocenę odpowiedzi i ewentualną lukę wiedzy |
+
+Zasada doboru profilu: klucz, który ma tylko *odpowiadać*, nie potrzebuje `kb_get_source`
+ani `kb_entity_get` — to one wynoszą pełne treści i właściwości encji poza panel.
+
+**Schematy wejścia/wyjścia** (skrót — pola wymagane pogrubione, pełne JSON Schema w kodzie):
+
+| Narzędzie | Wejście | Wyjście (`required`) |
+|---|---|---|
+| `kb_search` | **query** (2-500), namespaces[≤10], limit 1-20 (=8), mode `hybrid`\|`text`\|`vector` (=hybrid) | `results[]`, `degraded` (+`tookMs`, `degradedReasons[openspg_down\|openspg_no_hits\|snippet_only\|kb_dirty]`, `matchedRouting[]`) |
+| `kb_answer` | **question** (5-2000), namespaces[≤10], maxSources 1-10 (=6), language `pl`\|`en` (=pl) | `answer`, `citations[]`, `confidence`, `gapRecorded`, **`answerId`** (+`claims[]`, `model`, `degraded`, `noAnswer`, `warnings[]`) |
+| `kb_list` | — (obiekt pusty) | `kbs[]` (namespace, name, status; opc. projectId, description, documentCount) |
+| `kb_get_source` | **id** (CHUNK_*/DOC_*), maxChars | `id`, `namespace`, `content`, `truncated` (+`docId`, `title`, `sourceRef`, `nextChunkId`, `prevChunkId`, `chunkCount`) |
+| `kb_list_documents` | **namespace**, q(≤200), limit 1-50 (=20), offset (=0) | `documents[]` (docId, chunks; opc. title, sourceRef, updatedAt), `total` |
+| `kb_draft_status` | draftId (opcjonalny — bez niego 20 ostatnich) | `drafts[]` (draftId, status `pending`\|`promoted`\|`rejected`\|`withdrawn`, title, …) (+`counts`) |
+| `kb_entity_get` | **id**, namespace | `id`, `namespace`, `spgType`, `properties`, `degraded` |
+| `kb_graph_neighbors` | **id**, namespace, depth 1-3 (=1), direction `out`\|`in`\|`both` (=both) | `nodes[]` (id, distance; opc. title, kind), `edges[]` (srcId, rel `in_document`\|`about_topic`, dstId) |
+| `kb_claim_verify` | **claim** (5-1000), namespaces[≤10] | `status` (`supported`\|`contradicted`\|`insufficient`), `explanation`, `citations[]` (+`degraded`, `gapRecorded`) |
+| `kb_submit_draft` | **namespace**, **title** (3-300), **content** (50-100000, markdown), sourceUrl, tags[≤10], **idempotencyKey** (8-128, opcjonalny — retry zwraca ten sam draftId) | `draftId`, `status`, `reviewRequired` (+`duplicate` — identyczna treść już czekała w Inboxie) |
+| `kb_feedback` | **answerId**, **verdict** (`up`\|`down`), comment (≤2000) | `ok`, `gapCreated` (+`gapUpdated`) |
+
+Uwaga nazewnicza: `kb_submit_draft` zwraca `status:"inbox"` (etykieta protokołu MCP),
+podczas gdy wiersz w tabeli `drafts` ma status `pending` — to świadomy rozjazd
+doc/API ↔ DB; `kb_draft_status` raportuje już wartości z DB (`pending`/…).
+
+Pełne, znakowo dokładne JSON Schema pierwszych czterech narzędzi (historyczne, zgodne z kodem):
 
 **kb_search** — wejście:
 ```json
@@ -354,7 +462,10 @@ wyjście:
         "score":{"type":"number"},
         "source":{"type":"string","enum":["openspg_text","openspg_vector","fallback_fts"]},
         "sourceRef":{"type":"string"} }}},
-    "tookMs":{"type":"integer"}, "degraded":{"type":"boolean"} } }
+    "tookMs":{"type":"integer"}, "degraded":{"type":"boolean"},
+    "degradedReasons":{"type":"array","items":{"type":"string",
+      "enum":["openspg_down","openspg_no_hits","snippet_only","kb_dirty"]}},
+    "matchedRouting":{"type":"array","items":{"type":"string"}} } }
 ```
 
 **kb_answer** — wejście:
@@ -368,16 +479,22 @@ wyjście:
 ```
 wyjście:
 ```json
-{ "type":"object","required":["answer","citations","confidence","gapRecorded"],
+{ "type":"object","required":["answer","citations","confidence","gapRecorded","answerId"],
   "properties":{
     "answer":{"type":"string","description":"Markdown z cytowaniami [1],[2]"},
     "citations":{"type":"array","items":{"type":"object",
       "required":["n","id","namespace"],
       "properties":{"n":{"type":"integer"},"id":{"type":"string"},"title":{"type":"string"},
         "namespace":{"type":"string"},"snippet":{"type":"string"},"sourceRef":{"type":"string"}}}},
+    "claims":{"type":"array","items":{"type":"object","required":["claim","evidenceNs"],
+      "properties":{"claim":{"type":"string"},
+        "evidenceNs":{"type":"array","items":{"type":"integer"}}}}},
     "confidence":{"type":"number","minimum":0,"maximum":1},
-    "model":{"type":"string"}, "degraded":{"type":"boolean"}, "gapRecorded":{"type":"boolean"} } }
+    "model":{"type":"string"}, "degraded":{"type":"boolean"}, "gapRecorded":{"type":"boolean"},
+    "answerId":{"type":"string"}, "noAnswer":{"type":"boolean"},
+    "warnings":{"type":"array","items":{"type":"string"}} } }
 ```
+`answerId` jest **wymagane** — bez niego agent nie ma czym zawołać `kb_feedback`.
 
 **kb_list** — wejście `{"type":"object","additionalProperties":false,"properties":{}}`; wyjście:
 ```json
@@ -397,16 +514,29 @@ wyjście:
     "title":{"type":"string","minLength":3,"maxLength":300},
     "content":{"type":"string","minLength":50,"maxLength":100000,"description":"Markdown"},
     "sourceUrl":{"type":"string","format":"uri"},
-    "tags":{"type":"array","items":{"type":"string"},"maxItems":10} } }
+    "tags":{"type":"array","items":{"type":"string"},"maxItems":10},
+    "idempotencyKey":{"type":"string","minLength":8,"maxLength":128,
+      "description":"Klucz idempotencji per klucz API — retry zwraca ten sam draftId zamiast duplikatu"} } }
 ```
-wyjście: `{"draftId":"draft_...","status":"inbox","reviewRequired":true}`. Insert do `drafts` z `source_type='mcp'`, `submitted_by_key`; audyt do łańcucha.
+wyjście (`required`: `draftId`, `status`, `reviewRequired`):
+`{"draftId":"draft_...","status":"inbox","reviewRequired":true,"duplicate":false}`
+— `duplicate:true` oznacza, że identyczna treść już czekała w Inboxie. Insert do `drafts`
+z `source_type='mcp'`, `submitted_by_key`; audyt do łańcucha.
 
 Błędy narzędzi: zwracane jako wynik z `isError:true` i tekstem PL + `structuredContent:{errorCode}` (`namespace_not_allowed`, `upstream_unavailable`, `rate_limited`, `validation`) — nie jako błędy protokołu (te tylko dla auth/transportu).
 
-### 7.5 Klient search OpenSPG — projekt defensywny (payloady NIEzweryfikowane w repo wzorcowym; potwierdzone jest tylko istnienie endpointów)
-`packages/shared/openspg/search.ts`:
-- **Wariant A (podstawowy, wg źródeł OpenSPG 0.8)** — `POST /public/v1/search/text` body: `{"queryString":"<q>","labelConstraints":["<Ns>.Chunk","<Ns>.ReferenceDocument"],"page":1,"size":<k>}`; `POST /public/v1/search/vector` body: `{"label":"<Ns>.Chunk","propertyKey":"descriptionPreview","queryVector":[...],"topk":<k>,"efSearch":200}` (wektor liczony przez nasz klient embeddings modelem `kb_registry.embedding_model` — przy braku konfiguracji embeddings tryb hybrid degraduje się do text-only).
-- **Normalizator odpowiedzi**: akceptuje `{success:true,result:[...]}` | `{data:[...]}` | goły array; element mapowany elastycznie: id z `docId|id|node.id`, score z `score`, pola z `fields|properties|node.properties`; nieznany kształt → log surowej odpowiedzi (poziom warn, obcięty) + traktowanie jako pustego wyniku.
+### 7.5 Klient search OpenSPG — payloady ZWERYFIKOWANE, klient defensywny na kształt ODPOWIEDZI
+`packages/shared/src/openspg/search.ts`:
+- **Payloady (zweryfikowane na żywym serwerze 2026-09-02, powtórzone 2026-09-06;
+  jedno źródło prawdy razem z `.claude/skills/openspg-api/SKILL.md`)**:
+  `POST /public/v1/search/text` body `{"projectId":<int, WYMAGANE>,"queryString":"<q>","labelConstraints":["<Ns>.Chunk","<Ns>.ReferenceDocument"],"page":1,"topk":<k>}`;
+  `POST /public/v1/search/vector` body `{"projectId":<int, WYMAGANE>,"label":"<Ns>.Chunk","propertyKey":"descriptionPreview","queryVector":[...],"topk":<k>,"efSearch":200}`
+  (wektor liczony przez nasz klient embeddings modelem `kb_registry.embedding_model` — przy braku konfiguracji embeddings tryb hybrid degraduje się do text-only).
+- **NIE PRZYWRACAĆ** wariantu `{queryString, labelConstraints, page, size}` bez `projectId`:
+  serwer zwraca HTTP 400 („There is no such fulltext schema index: `_default_text_index`").
+  Ponieważ `projectId` jest wymagany, zapytania idą **per namespace** (`kb_registry.project_id`)
+  i są scalane RRF.
+- **Normalizator odpowiedzi (POWÓD defensywności — kształt ODPOWIEDZI, nie żądania)**: akceptuje `{success:true,result:[...]}` | `{data:[...]}` | goły array; element mapowany elastycznie: id z `docId|id|node.id`, score z `score`, pola z `fields|properties|node.properties`; nieznany kształt → log surowej odpowiedzi (poziom warn, obcięty) + traktowanie jako pustego wyniku.
 - **Sonda przy starcie i co 10 min**: wywołanie testowe na aktywnym namespace; wynik (`textOk`, `vectorOk`, wykryty wariant) cachowany i raportowany w `/readyz` oraz w cockpicie `/api/v1/status`.
 - **Łańcuch fallbacków w kb_search**: hybrid = text + vector równolegle (timeout 5 s każdy), scalanie **RRF** (k=60), dedup po id/hash → gdy oba niedostępne lub 0 wyników przy niepustym mirrorze → **FTS5 po `chunks_fts`** (`bm25`, snippet() do podświetleń) z `source:'fallback_fts'` i `degraded:true`. Fallback jest jawnie oznaczony — to bezpiecznik, nie substytut OpenSPG (lekcja: „retrieval przez grep CSV" jako jedyna droga było błędem optimaKB).
 
@@ -460,6 +590,12 @@ data: {"status":"success","exitCode":0,"finishedAt":"2026-09-01T12:03:44Z"}
 
 
 ## FILE LAYOUT
+
+> **Lista planistyczna, nie stan repo.** Część nazw nigdy nie powstała w tej postaci —
+> np. `apps/panel-api/src/services/mcp-keys.ts` (logika kluczy MCP siedzi w
+> `apps/panel-api/src/services/mcp-admin.ts`), a `packages/shared` scaliło
+> planowane pakiety `db`/`openspg-client`. Aktualny obraz: tabela tras §2.2, katalog
+> narzędzi §7.4 oraz sam kod.
 - /kag/package.json — root monorepo (npm workspaces: apps/*, packages/*), skrypty test/build/migrate
 - /kag/packages/shared/src/db/open.ts — otwarcie better-sqlite3 z pragmami (WAL, FK, busy_timeout), wspólne dla obu procesów
 - /kag/packages/shared/src/db/migrate.ts — runner migracji SQL (BEGIN EXCLUSIVE, tabela schema_migrations); tryb check-only dla mcp-server
@@ -502,7 +638,7 @@ data: {"status":"success","exitCode":0,"finishedAt":"2026-09-01T12:03:44Z"}
 - /kag/apps/panel-api/test/ oraz /kag/apps/mcp-server/test/ — vitest: testy serwisów, kontraktowe (koperta, 405, tools/list==profil, łańcuch audytu), mock OIDC i OpenSPG
 
 ## RISKS
-- Kształt payloadów/odpowiedzi /public/v1/search/text|vector NIE jest zweryfikowany w boju (w optimaKB brak ani jednego wywołania — retrieval był grep-em po CSV). Mitigacja: normalizator wielu kształtów odpowiedzi, sonda zgodności przy starcie i cyklicznie (wynik w /readyz i cockpicie), logowanie surowej odpowiedzi przy nieznanym kształcie, fallback FTS5 z jawnym degraded:true; pierwszy sprint zawiera ręczny test na żywym OpenSPG i ewentualną korektę klienta w jednym pliku (search.ts).
+- **[ZAMKNIĘTE 2026-09-02, potwierdzone 2026-09-06]** Kształt PAYLOADÓW `/public/v1/search/text|vector` był niezweryfikowany. Zweryfikowano na żywym serwerze: wymagany `projectId` + limit `topk` (wariant z `size` bez `projectId` → HTTP 400). Klient (`search.ts`) wysyła już poprawne payloady; spec w §7.5 i w SKILL `openspg-api`. Defensywność klienta ZOSTAJE, ale z innego powodu: niestabilny jest kształt ODPOWIEDZI — normalizator (`{success,result}`/`{data}`/goły array), sonda zgodności przy starcie i cyklicznie (wynik w /readyz i cockpicie), log surowej odpowiedzi przy nieznanym kształcie, fallback FTS5 z jawnym `degraded:true`.
 - Współdzielenie SQLite między dwoma kontenerami wymaga wspólnego LOKALNEGO wolumenu (WAL nie działa na NFS/sieciowych FS) i dyscypliny krótkich transakcji. Mitigacja: oba procesy montują ten sam named volume, BEGIN IMMEDIATE tylko na krótkie sekcje (audit append, insert akcji), busy_timeout 5s, testy współbieżności dwuprocesowej w CI.
 - Kontencja hash-chaina audytu przy ruchu MCP. Mitigacja: do łańcucha trafiają tylko mutacje i auth_failed; odczyty (search/answer) idą do plikowego usage-JSONL i liczników batchowanych w pamięci.
 - Refresh tokenów wymaga scope offline_access i odpowiedniej konfiguracji providera w Authentiku; bez tego sesje kończą się z access tokenem. Mitigacja: jawny wymóg w konfiguracji Podsystemu deployment (provider kag-panel: offline_access włączony), a kod degraduje się przewidywalnie — sesja żyje do absolute_expires_at bez odświeżania roli.
