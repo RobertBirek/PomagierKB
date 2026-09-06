@@ -16,3 +16,8 @@ export {
 } from './search.js';
 export { querySpgType, sanitizeEntityProperties } from './query.js';
 export type { SpgEntity, QuerySpgTypeParams } from './query.js';
+export {
+  TOMBSTONE_CONTENT,
+  TOMBSTONE_SEMANTIC_TYPE,
+  isTombstoneProperties,
+} from './tombstone.js';

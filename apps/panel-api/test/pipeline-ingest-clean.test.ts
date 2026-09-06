@@ -123,3 +123,40 @@ describe('cleanWithOptionalAi (guard bezpieczeństwa)', () => {
     expect(res.aiUsed).toBe(false);
   });
 });
+
+describe('czyszczenie — audyt D7-10 (dokumenty techniczne, nie portale)', () => {
+  it('separator tabeli markdown i wiersze tabeli przeżywają czyszczenie', () => {
+    const table = [
+      '| Model | Moc |',
+      '|---|---|',
+      '| HighBay 150 | 150 W |',
+    ].join('\n');
+    const res = cleanContent(table, 'generic');
+    expect(res.text).toContain('|---|---|');
+    expect(res.text).toContain('| HighBay 150 | 150 W |');
+  });
+
+  it('linia z samych cyfr: rok w środku akapitu zostaje, numer strony PDF znika', () => {
+    const withYear = 'Norma obowiązuje od\n2024\nw całej Unii.';
+    expect(cleanContent(withYear, 'generic').text).toContain('2024');
+
+    const pagination = 'Koniec rozdziału.\n\n7\n\nPoczątek następnego.';
+    expect(cleanContent(pagination, 'pdf').text).not.toMatch(/^7$/m);
+    expect(cleanContent(pagination, 'generic').text).not.toMatch(/^7$/m); // paginacja kontekstowa
+  });
+
+  it("'tag: v1.0' i samotne 'x' to treść, nie boilerplate", () => {
+    const res = cleanContent('tag: v1.0\nx\nTagi: oświetlenie, LED', 'generic');
+    expect(res.text).toContain('tag: v1.0');
+    expect(res.text).toContain('x');
+    expect(res.text).not.toContain('Tagi:');
+  });
+
+  it('wycięcie ponad 30% treści dodaje ostrzeżenie dla recenzenta', () => {
+    const noisy = ['Menu', 'Kontakt', 'O nas', 'Regulamin', 'Krótka treść.'].join('\n');
+    const res = cleanContent(noisy, 'generic');
+    expect(res.removedRatio).toBeGreaterThan(0.3);
+    expect(res.warnings.join(' ')).toContain('czyszczenie usunęło');
+    expect(cleanContent('Zwykła treść bez śmieci.', 'generic').warnings).toEqual([]);
+  });
+});

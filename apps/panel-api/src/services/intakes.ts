@@ -31,6 +31,8 @@ export interface IntakeRow {
   analysis_json: string | null;
   draft_id: string | null;
   error: string | null;
+  /** Skrócona treść wyjątku (≤300 zn., po sanitizerze audytu) — D10-08. */
+  error_detail: string | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -168,12 +170,22 @@ export function countIntakes(db: Db): number {
   return (db.prepare('SELECT COUNT(*) AS n FROM intakes').get() as { n: number }).n;
 }
 
-/** Dedup po sha256 treści: najnowszy intake wskazujący ten sam blob. */
+/**
+ * Dedup po sha256 treści: najnowszy UŻYTECZNY intake wskazujący ten sam blob.
+ *
+ * D7-05: dotąd zwracany był najnowszy intake NIEZALEŻNIE od stanu, więc treść,
+ * której intake padł po wyczerpaniu prób, była nie do zgłoszenia ponownie —
+ * API odpowiadało {deduplicated:true} wskazując martwy wpis, a komunikat
+ * „zgłoś treść ponownie" był niewykonalny. Intake bez szansy na dokończenie
+ * (failed z wyczerpanymi próbami) nie blokuje już nowego zgłoszenia.
+ */
 export function findIntakeByBlobPath(db: Db, blobPath: string): IntakeRow | null {
   const row = db
     .prepare('SELECT * FROM intakes WHERE blob_path = ? ORDER BY created_at DESC, id DESC LIMIT 1')
     .get(blobPath) as IntakeRow | undefined;
-  return row ?? null;
+  if (row === undefined) return null;
+  if (row.status === 'failed' && row.attempts >= INTAKE_MAX_ATTEMPTS) return null;
+  return row;
 }
 
 /** Najstarszy intake w kolejce (status received) — pojedynczy worker in-process. */
@@ -220,6 +232,58 @@ export function retryIntake(db: Db, id: string): IntakeRow {
   return tx.immediate();
 }
 
+/** Statusy pośrednie: worker zapisał etap, ale nie doszedł do drafted/failed. */
+export const INTAKE_MIDSTAGE_STATUSES: readonly IntakeStatus[] = ['extracted', 'cleaned', 'analyzed'];
+
+export interface RequeueResult {
+  requeued: string[];
+  failed: string[];
+}
+
+/**
+ * SWEEP intake'ów zawieszonych w stanie pośrednim (D10-03/D7-05).
+ *
+ * Worker zapisuje status po każdym etapie, ale kolejka pobiera WYŁĄCZNIE
+ * 'received', a „Ponów" wymaga 'failed'. Restart kontenera w trakcie OCR/LLM
+ * (deploy, OOM, crash) zostawiał więc wiersz, którego nikt już nie podejmie:
+ * dokument znikał bez błędu i bez szkicu. Tu wracają do kolejki (albo kończą
+ * jako failed 'interrupted', gdy próby się wyczerpały).
+ *
+ * Wołane z każdego ticku workera — działa też bez restartu (wieszający się etap).
+ */
+export function requeueStaleIntakes(db: Db, staleMs: number): RequeueResult {
+  const cutoff = new Date(Date.now() - Math.max(0, staleMs)).toISOString();
+  const placeholders = INTAKE_MIDSTAGE_STATUSES.map(() => '?').join(',');
+  const tx = db.transaction(() => {
+    const rows = db
+      .prepare(
+        `SELECT id, attempts FROM intakes WHERE status IN (${placeholders}) AND updated_at < ?
+         ORDER BY updated_at LIMIT 100`,
+      )
+      .all(...INTAKE_MIDSTAGE_STATUSES, cutoff) as { id: string; attempts: number }[];
+    const result: RequeueResult = { requeued: [], failed: [] };
+    const now = nowIso();
+    for (const row of rows) {
+      if (row.attempts + 1 > INTAKE_MAX_ATTEMPTS) {
+        db.prepare(
+          `UPDATE intakes SET status = 'failed', error = 'interrupted',
+             error_detail = 'przetwarzanie przerwane (restart procesu) — wyczerpane próby',
+             updated_at = ? WHERE id = ?`,
+        ).run(now, row.id);
+        result.failed.push(row.id);
+        continue;
+      }
+      db.prepare(
+        `UPDATE intakes SET status = 'received', error = NULL, error_detail = NULL,
+           attempts = attempts + 1, updated_at = ? WHERE id = ?`,
+      ).run(now, row.id);
+      result.requeued.push(row.id);
+    }
+    return result;
+  });
+  return tx.immediate();
+}
+
 /** Pola etapów pipeline'u nadpisywane przy przejściach statusu. */
 export interface IntakePatch {
   status?: IntakeStatus;
@@ -231,6 +295,7 @@ export interface IntakePatch {
   analysis_json?: string;
   draft_id?: string;
   error?: string;
+  error_detail?: string;
 }
 
 const PATCHABLE_COLUMNS: readonly (keyof IntakePatch)[] = [
@@ -243,6 +308,7 @@ const PATCHABLE_COLUMNS: readonly (keyof IntakePatch)[] = [
   'analysis_json',
   'draft_id',
   'error',
+  'error_detail',
 ];
 
 export function updateIntake(db: Db, id: string, patch: IntakePatch): IntakeRow {
@@ -334,6 +400,8 @@ export function intakeToDetail(row: IntakeRow): Record<string, unknown> {
     removedRatio: row.removed_ratio,
     analysis: row.analysis_json !== null ? (JSON.parse(row.analysis_json) as unknown) : null,
     errorHuman: row.error !== null ? humanize(row.error) : null,
+    // D10-08: bez treści wyjątku nieudany intake był niediagnozowalny nawet po SSH.
+    errorDetail: row.error_detail,
     stages,
   };
 }

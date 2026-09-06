@@ -9,6 +9,19 @@ export interface OpenSpgClientOptions {
   fetchImpl?: typeof fetch;
   /** Timeout pojedynczego żądania HTTP (ms), domyślnie 30 s. */
   timeoutMs?: number;
+  /**
+   * Sygnał anulowania obejmujący WSZYSTKIE żądania tego klienta (D8-10). Ustawia
+   * go withSignal(); wołający, który nakłada własny, krótszy deadline (np. 5 s
+   * timeoutu kanału retrievalu), musi mieć jak realnie przerwać żądanie —
+   * inaczej połączenie żyje dalej z 30-sekundowym timeoutem klienta i breaker
+   * otwiera się dopiero po ~3×30 s zamiast po 3×5 s.
+   */
+  signal?: AbortSignal;
+}
+
+/** Sesja produktowa (cookie) współdzielona przez klienta i jego warianty z sygnałem. */
+interface SessionState {
+  cookie: string | null;
 }
 
 /** Komunikaty {success:false} wskazujące na wygaśniętą/nieobecną sesję produktową. */
@@ -34,26 +47,66 @@ export class OpenSpgClient {
   private readonly password: string;
   private readonly fetchImpl: typeof fetch;
   private readonly timeoutMs: number;
-  private cookie: string | null = null;
+  private readonly opts: OpenSpgClientOptions;
+  /** Sesja w obiekcie (nie w polu) — warianty z withSignal dzielą to samo cookie. */
+  private session: SessionState = { cookie: null };
+  private readonly signal: AbortSignal | undefined;
 
   constructor(opts: OpenSpgClientOptions) {
+    this.opts = opts;
     this.baseUrl = opts.baseUrl.replace(/\/+$/, '');
     this.account = opts.account;
     this.password = opts.password;
     this.fetchImpl = opts.fetchImpl ?? fetch;
     this.timeoutMs = opts.timeoutMs ?? 30_000;
+    this.signal = opts.signal;
+  }
+
+  /**
+   * Wariant klienta anulowany przez `signal`, WSPÓŁDZIELĄCY sesję (cookie) —
+   * ponowne logowanie w wariancie widzi też oryginał i odwrotnie. Do przekazania
+   * kodowi, który przyjmuje `OpenSpgClient` (search.ts) bez zmiany jego API.
+   */
+  withSignal(signal: AbortSignal): OpenSpgClient {
+    const scoped = new OpenSpgClient({ ...this.opts, signal });
+    scoped.session = this.session; // ta sama sesja produktowa
+    return scoped;
+  }
+
+  /**
+   * Łączy sygnał timeoutu klienta z sygnałem wołającego (init.signal / withSignal).
+   * `AbortSignal.any` jest w Node 20+; brak wsparcia → sam timeout (degradacja
+   * do stanu sprzed poprawki, nigdy wyjątek).
+   */
+  private combineSignals(timeout: AbortSignal, external: AbortSignal | undefined): AbortSignal {
+    if (external === undefined) return timeout;
+    const any = (AbortSignal as unknown as { any?: (s: AbortSignal[]) => AbortSignal }).any;
+    return typeof any === 'function' ? any([timeout, external]) : timeout;
   }
 
   /** Fetch z timeoutem (AbortSignal); withCookie dokleja aktualne cookie sesji. */
   private async doFetch(path: string, init: RequestInit, withCookie: boolean): Promise<Response> {
     const headers = new Headers(init.headers);
-    if (withCookie && this.cookie !== null) headers.set('cookie', this.cookie);
+    if (withCookie && this.session.cookie !== null) headers.set('cookie', this.session.cookie);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    // Kolejność ważna: sygnał wołającego z `init` ma pierwszeństwo nad instancyjnym.
+    const external = (init.signal ?? undefined) ?? this.signal;
     try {
-      return await this.fetchImpl(this.baseUrl + path, { ...init, headers, signal: controller.signal });
+      return await this.fetchImpl(this.baseUrl + path, {
+        ...init,
+        headers,
+        signal: this.combineSignals(controller.signal, external),
+      });
     } catch (err) {
-      const reason = err instanceof Error && err.name === 'AbortError' ? 'timeout' : (err as Error).message;
+      // Rozróżnienie w komunikacie: własny timeout klienta vs anulowanie przez
+      // wołającego (deadline kanału) — inaczej diagnoza jest nie do zrobienia.
+      const aborted = err instanceof Error && err.name === 'AbortError';
+      const reason = aborted
+        ? external?.aborted === true && !controller.signal.aborted
+          ? 'anulowane przez wołającego'
+          : 'timeout'
+        : (err as Error).message;
       throw new UpstreamError('openspg', path, undefined, `OpenSPG fetch failed: ${reason}`);
     } finally {
       clearTimeout(timer);
@@ -88,7 +141,10 @@ export class OpenSpgClient {
       throw new UpstreamError('openspg', path, res.status, 'OpenSPG login: brak Set-Cookie w odpowiedzi');
     }
     // 'a=b; Path=/; HttpOnly' → 'a=b'; wszystkie ciastka sklejone w jeden nagłówek Cookie
-    this.cookie = setCookies.map((c) => (c.split(';')[0] ?? '').trim()).filter((c) => c !== '').join('; ');
+    this.session.cookie = setCookies
+      .map((c) => (c.split(';')[0] ?? '').trim())
+      .filter((c) => c !== '')
+      .join('; ');
   }
 
   /** Czy odpowiedź wymaga ponownego logowania (wygasła sesja). */
@@ -103,13 +159,15 @@ export class OpenSpgClient {
   /**
    * Żądanie z automatycznym loginem (lazy) i JEDNYM ponowieniem po utracie sesji.
    * Zwraca sparsowane body (JSON lub surowy tekst); HTTP !ok → UpstreamError.
+   * `init.signal` (albo sygnał z withSignal) anuluje realne połączenie — także
+   * login i ponowienie, więc anulowany kanał nie zostawia żadnego żądania w locie.
    */
   async request(path: string, init: RequestInit = {}): Promise<unknown> {
-    if (this.cookie === null) await this.login();
+    if (this.session.cookie === null) await this.login();
     let res = await this.doFetch(path, init, true);
     let body = await OpenSpgClient.parseBody(res);
     if (OpenSpgClient.needsRelogin(res, body)) {
-      this.cookie = null;
+      this.session.cookie = null;
       await this.login();
       res = await this.doFetch(path, init, true);
       body = await OpenSpgClient.parseBody(res);

@@ -311,19 +311,47 @@ export function buildServer(opts: StubServerOptions = {}): FastifyInstance {
   });
 
   // --- search po "zbudowanych" chunkach ---
-  app.post('/public/v1/search/text', (req) => {
+  //
+  // KONTRAKT ŻĄDANIA jak w produkcji (SKILL openspg-api, „Search / reasoner",
+  // potwierdzone na żywym serwerze 2026-09-02 i 2026-09-06):
+  // Text/VectorSearchRequest WYMAGAJĄ `projectId`, a limit nazywa się `topk`.
+  // Stary kształt (`size`, bez `projectId`) prawdziwy serwer odrzuca HTTP 400
+  // („There is no such fulltext schema index: `_default_text_index`"), więc stub
+  // musi go odrzucać tak samo — inaczej dev i CI maskują regresję na produkcji.
+  const PROJECT_ID_400 =
+    'There is no such fulltext schema index: `_default_text_index`; ' +
+    'projectId jest wymagane (TextSearchRequest/VectorSearchRequest)';
+  const SIZE_400 = 'nieznane pole `size` — limit wyników nazywa się `topk`';
+
+  /** Waliduje wspólną część kontraktu search/*; zwraca komunikat błędu albo null. */
+  function searchRequestError(b: Record<string, unknown>): string | null {
+    if (b['size'] !== undefined) return SIZE_400;
+    const raw = b['projectId'];
+    const projectId = typeof raw === 'number' ? raw : Number(raw);
+    if (raw === undefined || raw === null || !Number.isInteger(projectId) || projectId < 1) {
+      return PROJECT_ID_400;
+    }
+    return null;
+  }
+
+  app.post('/public/v1/search/text', (req, reply) => {
     refreshJobs();
     const b = asRecord(req.body);
+    const err = searchRequestError(b);
+    if (err !== null) {
+      reply.code(400);
+      return fail(err);
+    }
     const query = str(b['queryString']).toLowerCase();
     const labelsRaw = b['labelConstraints'];
     const labels = Array.isArray(labelsRaw) ? labelsRaw.filter((x): x is string => typeof x === 'string') : [];
-    const size = Number(b['size']) > 0 ? Number(b['size']) : 10;
+    const topk = Number(b['topk']) > 0 ? Number(b['topk']) : 10;
     const hits = state.chunks
       .filter((c) => labels.length === 0 || labels.includes(c.label))
       .filter(
         (c) => query !== '' && (c.content.toLowerCase().includes(query) || c.name.toLowerCase().includes(query)),
       )
-      .slice(0, size)
+      .slice(0, topk)
       .map((c, i) => ({
         docId: c.id,
         score: Math.max(0.99 - i * 0.05, 0.1),
@@ -333,9 +361,14 @@ export function buildServer(opts: StubServerOptions = {}): FastifyInstance {
     return ok(hits);
   });
 
-  app.post('/public/v1/search/vector', (req) => {
+  app.post('/public/v1/search/vector', (req, reply) => {
     refreshJobs();
     const b = asRecord(req.body);
+    const err = searchRequestError(b);
+    if (err !== null) {
+      reply.code(400);
+      return fail(err);
+    }
     const label = str(b['label']);
     const topk = Number(b['topk']) > 0 ? Number(b['topk']) : 10;
     // deterministyczny "losowy" ranking: hash(id chunka + hash wektora zapytania)

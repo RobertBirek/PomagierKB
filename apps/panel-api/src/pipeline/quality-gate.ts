@@ -10,18 +10,31 @@ import {
   saveQualityReport,
 } from '@pomagierkb/shared/db';
 import { searchText, type OpenSpgClient } from '@pomagierkb/shared/openspg';
-import { docHash8 } from './exporter.js';
+import { applyPrecedence, docIdFor } from './exporter.js';
+import { pendingTombstones, TOMBSTONE_SEMANTIC_TYPE } from './graph-ids.js';
+import { readChunkingSettings } from '../services/pipeline-settings.js';
 import { sha256hex } from './chunker.js';
 
 /**
- * QUALITY GATE (Etap 9, docs/design/pipeline-frontend.md) — 10 checków na
+ * QUALITY GATE (Etap 9, docs/design/pipeline-frontend.md) — 13 checków na
  * OSTATNIM eksporcie KB. Każdy check: {id, level:'error'|'warn', ok, details};
  * verdict = FAIL gdy padł jakikolwiek error, WARN gdy tylko warny, inaczej OK.
  * Wynik ląduje w repo quality_reports (render w panelu; bez plików .md).
  *
  * ODSTĘPSTWO projektowe (limity pól indeksowanych): w chunk.csv indeksowane
- * TextAndVector jest PEŁNE chunk.content (≤1800), preview ≤800, summary ≤400
+ * TextAndVector jest PEŁNE chunk.content (limit = chunking.maxLen z ustawień,
+ * domyślnie 1800), preview = chunking.previewLen (800), summary ≤400
  * — zgodnie z szablonem schemas/document_kb.schema.tpl.
+ *
+ * Poprawki audytu G3:
+ *  - D7-08: limity NIE są zaszyte na sztywno — brane z ustawień 'chunking'
+ *    (admin mógł podnieść maxLen do 8000, co dawało permanentny FAIL);
+ *    promoted_coverage dopasowuje docId DOKŁADNIE, a nie po prefiksie hasha.
+ *  - D7-02/D14-01: check graph_stale_nodes — czy w grafie nie zostały węzły
+ *    spoza stanu docelowego (nagrobki bez potwierdzenia).
+ *  - D7-03/D8-02: check no_literal_newlines — pola indeksowane bez znaków nowej
+ *    linii (inaczej tokenizacja indeksu tekstowego gubi pierwsze słowo linii).
+ *  - GAP-02: check superseded_documents — co wycofała reguła precedencji.
  */
 
 export interface QualityCheckResult {
@@ -114,6 +127,27 @@ function limitList(items: string[], max = 5): string {
   return items.length <= max ? items.join(', ') : `${items.slice(0, max).join(', ')} … (+${items.length - max})`;
 }
 
+/**
+ * Słowo do sondy live_search_sanity: najdłuższy wyraz z WNĘTRZA treści pierwszego
+ * chunka (nie pierwszy wyraz — ten był wyszukiwalny nawet przy zepsutej
+ * tokenizacji). Deterministyczne: przy remisie wygrywa wcześniejsze wystąpienie.
+ */
+export function pickProbeWord(records: readonly Record<string, string>[]): string | undefined {
+  for (const rec of records) {
+    if (rec['semanticType'] === TOMBSTONE_SEMANTIC_TYPE) continue;
+    const words = (rec['content'] ?? '').split(/\s+/).slice(1);
+    let best: string | undefined;
+    for (const raw of words) {
+      const word = raw.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '');
+      if (word.length < 5 || word.length > 30) continue;
+      if (!/^[\p{L}][\p{L}\p{N}-]*$/u.test(word)) continue;
+      if (best === undefined || word.length > best.length) best = word;
+    }
+    if (best !== undefined) return best;
+  }
+  return undefined;
+}
+
 function allPromoted(db: Db, namespace: string): DraftRow[] {
   const out: DraftRow[] = [];
   for (let offset = 0; ; offset += 200) {
@@ -131,8 +165,11 @@ function allPromoted(db: Db, namespace: string): DraftRow[] {
 export async function runQualityGate(deps: QualityGateDeps): Promise<QualityGateReport> {
   const { db, namespace } = deps;
   const log = deps.log ?? ((): void => undefined);
-  const chunkContentMax = deps.limits?.chunkContentMax ?? 1800;
-  const previewMax = deps.limits?.previewMax ?? 800;
+  // D7-08: progi MUSZĄ pochodzić z tych samych ustawień, których użył chunker
+  // przy eksporcie — inaczej podniesienie maxLen w panelu = permanentny FAIL.
+  const chunking = readChunkingSettings(db);
+  const chunkContentMax = deps.limits?.chunkContentMax ?? chunking.maxLen;
+  const previewMax = deps.limits?.previewMax ?? chunking.previewLen;
   const summaryMax = deps.limits?.summaryMax ?? 400;
 
   const checks: QualityCheckResult[] = [];
@@ -237,7 +274,9 @@ export async function runQualityGate(deps: QualityGateDeps): Promise<QualityGate
     const docIds = new Set((files.get('reference_document.csv')?.records ?? []).map((r) => r['id'] ?? ''));
     const topicIds = new Set((files.get('topic.csv')?.records ?? []).map((r) => r['id'] ?? ''));
     const bad: string[] = [];
+    // Nagrobki (D7-02) celowo nie mają refIds — są tylko nadpisaniem treści w grafie.
     for (const rec of files.get('chunk.csv')?.records ?? []) {
+      if (rec['semanticType'] === TOMBSTONE_SEMANTIC_TYPE) continue;
       const ref = rec['sourceDocumentRefId'] ?? '';
       if (!docIds.has(ref)) bad.push(`chunk ${rec['id']}: sourceDocumentRefId ${ref || '(puste)'} nie istnieje`);
     }
@@ -250,19 +289,23 @@ export async function runQualityGate(deps: QualityGateDeps): Promise<QualityGate
       bad.length === 0 ? 'wszystkie refId celują w istniejące encje' : limitList(bad));
   }
 
-  // 6. promoted_coverage — każdy promowany draft ma ≥1 chunk (po hashu w docId).
+  // 6. promoted_coverage — każdy promowany draft (poza wycofanymi regułą
+  //    precedencji) ma ≥1 chunk. Dopasowanie DOKŁADNE po sourceDocumentRefId:
+  //    prefiks hasha był ślepy na kolizje tożsamości (D7-01/D7-08).
   const promoted = allPromoted(db, namespace);
+  const precedence = applyPrecedence(promoted);
   {
-    const chunkIds = (files.get('chunk.csv')?.records ?? []).map((r) => r['id'] ?? '');
-    const missing = promoted
-      .filter((d) => {
-        const dh8 = docHash8(namespace, d);
-        return !chunkIds.some((id) => id.startsWith(`CHUNK_${dh8}_`));
-      })
+    const chunkDocRefs = new Set(
+      (files.get('chunk.csv')?.records ?? [])
+        .filter((r) => r['semanticType'] !== TOMBSTONE_SEMANTIC_TYPE)
+        .map((r) => r['sourceDocumentRefId'] ?? ''),
+    );
+    const missing = precedence.kept
+      .filter((d) => !chunkDocRefs.has(docIdFor(namespace, d)))
       .map((d) => d.title);
     add('promoted_coverage', 'error', missing.length === 0,
       missing.length === 0
-        ? `każdy z ${promoted.length} promowanych draftów ma chunki w eksporcie`
+        ? `każdy z ${precedence.kept.length} aktywnych promowanych draftów ma chunki w eksporcie`
         : `drafty bez chunków: ${limitList(missing)}`);
   }
 
@@ -290,27 +333,28 @@ export async function runQualityGate(deps: QualityGateDeps): Promise<QualityGate
       dups.length === 0 ? 'brak zdublowanych sourceUrl' : `zdublowane sourceUrl: ${limitList(dups)}`);
   }
 
-  // 9. live_search_sanity (warn) — search/text frazą z promowanego tytułu;
-  //    OpenSPG niedostępny/brak klienta → check POMIJANY (ok, z adnotacją).
+  // 9. live_search_sanity (warn) — search/text słowem z WNĘTRZA treści chunka
+  //    (D7-03: sonda tytułem nie wykrywała, że słowa po znaku nowej linii są
+  //    nieszukalne); OpenSPG niedostępny/brak klienta → check POMIJANY.
   {
-    const probe = promoted[0];
+    const probeWord = pickProbeWord(files.get('chunk.csv')?.records ?? []) ?? promoted[0]?.title.slice(0, 80);
     if (deps.client === undefined || deps.client === null) {
       add('live_search_sanity', 'warn', true, 'pominięto — brak klienta OpenSPG (offline)');
-    } else if (probe === undefined) {
+    } else if (probeWord === undefined || probeWord === '') {
       add('live_search_sanity', 'warn', true, 'pominięto — brak promowanych draftów do sondy');
     } else {
       try {
         const result = await searchText(deps.client, {
           projectId: getKb(deps.db, namespace)?.project_id ?? 0,
-          queryString: probe.title.slice(0, 80),
+          queryString: probeWord,
           labelConstraints: [`${namespace}.Chunk`, `${namespace}.ReferenceDocument`],
           page: 1,
           topk: 5,
         });
         add('live_search_sanity', 'warn', result.items.length > 0,
           result.items.length > 0
-            ? `search/text zwraca wyniki dla frazy z tytułu („${probe.title.slice(0, 40)}…")`
-            : 'search/text nie zwrócił wyników — indeks może się jeszcze budować');
+            ? `search/text zwraca wyniki dla słowa z treści („${probeWord}")`
+            : `search/text nie zwrócił wyników dla „${probeWord}" — indeks może się jeszcze budować`);
       } catch (err) {
         add('live_search_sanity', 'warn', true,
           `pominięto — OpenSPG niedostępny (${err instanceof Error ? err.message : String(err)})`);
@@ -327,6 +371,48 @@ export async function runQualityGate(deps: QualityGateDeps): Promise<QualityGate
         : kb.dirty === 1
           ? 'dirty=1 — są promocje po ostatnim buildzie (uruchom build ponownie)'
           : 'dirty=0 — graf zgodny ze stanem inboxu');
+  }
+
+  // 11. graph_stale_nodes (warn) — węzły, których nie ma już w stanie docelowym,
+  //     a w grafie wciąż siedzą z treścią (builder jest UPSERT-only, D7-02/D14-01).
+  //     Rejestr graph_ids trzyma je jako nagrobki do wystawienia; potwierdzone
+  //     dopiero po udanym buildzie.
+  {
+    const stale = pendingTombstones(db, namespace);
+    add('graph_stale_nodes', 'warn', stale.length === 0,
+      stale.length === 0
+        ? 'graf nie ma węzłów spoza stanu docelowego'
+        : `węzły do wycofania z grafu: ${stale.length} (${limitList(stale.map((s) => s.id))}) — uruchom build`);
+  }
+
+  // 12. no_literal_newlines (error) — pola indeksowane bez znaków nowej linii.
+  //     Builder zapisuje property jako JSON-string, więc '\n' trafiał do grafu
+  //     literalnie i rozbijał tokenizację indeksu tekstowego (D7-03/D8-02).
+  {
+    const indexed = ['name', 'content', 'contentPreview', 'summary', 'sectionHeading'];
+    const bad: string[] = [];
+    for (const f of files.values()) {
+      for (const rec of f.records) {
+        for (const col of indexed) {
+          if (/[\r\n]/.test(rec[col] ?? '')) bad.push(`${f.manifest.file_name}/${rec['id']}: ${col}`);
+        }
+      }
+    }
+    add('no_literal_newlines', 'error', bad.length === 0,
+      bad.length === 0
+        ? 'pola indeksowane bez znaków nowej linii (tokenizacja indeksu bezpieczna)'
+        : `pola z nową linią: ${limitList(bad)}`);
+  }
+
+  // 13. superseded_documents (warn) — co wycofała reguła precedencji (GAP-02).
+  {
+    const list = precedence.superseded.map(
+      (s) => `${s.title} (${s.reason === 'explicit' ? 'supersedes' : 'nowsza wersja tego samego źródła'})`,
+    );
+    add('superseded_documents', 'warn', list.length === 0,
+      list.length === 0
+        ? 'brak dokumentów wycofanych regułą precedencji'
+        : `dokumenty zastąpione nowszą wersją (poza grafem): ${limitList(list)}`);
   }
 
   const verdict: QualityVerdict = checks.some((c) => !c.ok && c.level === 'error')

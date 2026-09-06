@@ -34,8 +34,10 @@ const BASE_INLINE: readonly RegExp[] = [
 ];
 
 const BASE_DROP: readonly RegExp[] = [
-  /^\d+$/, // goły numer strony
-  /^[-–—•|.\s]*$/, // linia z samych separatorów/pustki
+  // D7-10: reguły /^\d+$/ (goły numer) i separator z '|' NIE są tu — kasowały
+  // lata, kody i wiersze '|---|---|' (rozwalając KAŻDĄ tabelę markdown).
+  // Numer strony jest paginacją PDF-a i żyje wyłącznie w profilu 'pdf'.
+  /^[-–—•.\s]*$/, // linia z samych separatorów/pustki (bez '|' — to tabela)
   /^(strona|str\.?)\s+\d+(\s*(z|\/)\s*\d+)?$/i, // "Strona 3 z 12"
   /^page\s+\d+(\s+of\s+\d+)?$/i,
   /^©.*$/,
@@ -44,8 +46,9 @@ const BASE_DROP: readonly RegExp[] = [
   /^(menu|nawigacja|szukaj|wyszukaj|zaloguj( się)?|zarejestruj( się)?)$/i,
   /^(strona główna|kontakt|o nas|o firmie|mapa strony|do góry|wstecz|dalej)$/i,
   /^(polityka prywatności|regulamin|polityka cookies|rodo)$/i,
-  /^(facebook|twitter|x|instagram|linkedin|youtube|tiktok)$/i,
-  /^tagi?:.*$/i,
+  // 'x' wypadło z listy portali: samotne 'x' bywa komórką tabeli/oznaczeniem.
+  /^(facebook|twitter|instagram|linkedin|youtube|tiktok)$/i,
+  /^tagi:.*$/i, // wyłącznie polska liczba mnoga — 'tag: v1.0' to treść techniczna
   /^kategorie?:.*$/i,
   /^udostępnij.*$/i,
   /^skomentuj$/i,
@@ -82,6 +85,7 @@ const DOCS_DROP: readonly RegExp[] = [
 
 /** Boilerplate PDF-ów (nagłówki/stopki powtarzane per strona, paginacja). */
 const PDF_DROP: readonly RegExp[] = [
+  /^\d+$/, // goły numer strony — TYLKO w PDF (D7-10)
   /^[-–—\s]*\d+\s*[-–—\s]*$/, // "- 3 -"
   /^\d+\s*\|\s*(strona|page)$/i, // "3 | Strona"
   /^(strona|page)\s*\|\s*\d+$/i,

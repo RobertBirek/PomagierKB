@@ -1,5 +1,6 @@
 import type { Db } from '../open.js';
 import { nowIso } from '../open.js';
+import { appendAudit } from '../../audit/append.js';
 import { AppError } from '../../errors.js';
 import { markDirty } from './kbRegistry.js';
 import { hex8, sha256hex, slugify, ymdDashed } from './util.js';
@@ -64,6 +65,12 @@ export interface DraftRow {
   decided_by: string | null;
   decided_at: string | null;
   promoted_at: string | null;
+  /** Metadane źródła (migracja 0033, GAP-03) — kto odpowiada merytorycznie. */
+  source_owner: string | null;
+  /** Licencja treści — czy wolno cytować/wysyłać do LLM. */
+  source_license: string | null;
+  /** Data SAMEGO dokumentu (YYYY-MM-DD) — do reguły precedencji i cytowań. */
+  source_date: string | null;
 }
 
 export interface DraftCreateInput {
@@ -78,6 +85,25 @@ export interface DraftCreateInput {
   analysis?: Record<string, unknown> | null;
   submittedByUser?: string | null;
   submittedByKey?: string | null;
+  /** GAP-03: metadane źródła zapisywane RAZEM z draftem (kolumny migracji 0033). */
+  sourceOwner?: string | null;
+  sourceLicense?: string | null;
+  /** Data dokumentu w formacie YYYY-MM-DD (walidowana przez wołającego). */
+  sourceDate?: string | null;
+  /**
+   * GAP-02 (część JAWNA reguły precedencji): id draftu, który ten dokument
+   * zastępuje. Domyślnie brany z `metadata.supersedes`, żeby nie dublować
+   * kontraktu z exporterem (pipeline/exporter.ts: supersedesTargetOf).
+   */
+  supersedes?: string | null;
+}
+
+/** Jawne `supersedes` z wejścia albo z metadanych (ten sam klucz co w exporterze). */
+function supersedesOf(input: DraftCreateInput): string | null {
+  const explicit = typeof input.supersedes === 'string' ? input.supersedes.trim() : '';
+  if (explicit !== '') return explicit;
+  const fromMeta = input.metadata?.['supersedes'];
+  return typeof fromMeta === 'string' && fromMeta.trim() !== '' ? fromMeta.trim() : null;
 }
 
 function validateCreate(input: DraftCreateInput): void {
@@ -138,8 +164,9 @@ export function createDraft(db: Db, input: DraftCreateInput): DraftRow {
     db.prepare(
       `INSERT INTO drafts (id, namespace, status, title, content_md, content_hash, content_length,
          source_type, source_ref, document_category, tags_json, metadata_json, analysis_json,
-         submitted_by_user, submitted_by_key, created_at, updated_at)
-       VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         submitted_by_user, submitted_by_key, created_at, updated_at,
+         source_owner, source_license, source_date)
+       VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       id,
       input.namespace ?? null,
@@ -157,10 +184,55 @@ export function createDraft(db: Db, input: DraftCreateInput): DraftRow {
       input.submittedByKey ?? null,
       now,
       now,
+      input.sourceOwner ?? null,
+      input.sourceLicense ?? null,
+      input.sourceDate ?? null,
     );
     return getDraftOrThrow(db, id);
   });
-  return tx.immediate();
+  const row = tx.immediate();
+  // Reguła precedencji POZA transakcją: appendAudit otwiera własne BEGIN IMMEDIATE,
+  // a SQLite nie zna transakcji zagnieżdżonych.
+  const target = supersedesOf(input);
+  if (target !== null && target !== row.id) {
+    supersedeDraft(db, target, row.id, input.submittedByUser ?? 'system');
+  }
+  return row;
+}
+
+/**
+ * GAP-02, część JAWNA reguły precedencji: dokument z `supersedes: <draftId>`
+ * wycofuje poprzednika JUŻ przy zgłoszeniu, a nie dopiero przy eksporcie —
+ * inaczej Inbox pokazuje dwa „aktualne" dokumenty, a operator promuje oba.
+ *
+ * Świadomie pokrywa tylko wariant jawny i tylko szkice `promoted` (pozostałe
+ * statusy i tak nie trafiają do grafu). Wariant NIEJAWNY (ten sam `source_ref`
+ * = nowsza wersja) zostaje w pipeline/exporter.ts (applyPrecedence), bo tylko
+ * tam widać komplet promowanych szkiców jednej bazy — nie duplikujemy go tutaj.
+ *
+ * Zwraca wycofany wiersz albo null, gdy nie było czego wycofywać.
+ */
+export function supersedeDraft(
+  db: Db,
+  targetId: string,
+  supersededBy: string,
+  actor = 'system',
+): DraftRow | null {
+  const target = getDraft(db, targetId);
+  if (target === null || target.id === supersededBy) return null;
+  if (target.status !== 'promoted') return null;
+  const after = decide(db, targetId, 'promoted', 'withdrawn', actor);
+  appendAudit(db, {
+    actor,
+    actorType: 'system',
+    action: 'draft.supersede',
+    resourceType: 'draft',
+    resourceId: targetId,
+    before: { status: target.status, title: target.title },
+    after: { status: after.status },
+    metadata: { supersededBy, rule: 'explicit' },
+  });
+  return after;
 }
 
 /** Idempotencja submitów: ten sam content w tym samym namespace → istniejący draft. */

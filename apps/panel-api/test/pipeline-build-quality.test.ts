@@ -87,16 +87,20 @@ beforeAll(() => {
 afterAll(() => db.close());
 
 describe('runQualityGate', () => {
-  it('zdrowy eksport → verdict OK, 10 checków, raport zapisany w quality_reports', async () => {
+  it('zdrowy eksport → verdict OK, 13 checków, raport zapisany w quality_reports', async () => {
     const report = await runQualityGate({ db, namespace: NS, client: null });
-    expect(report.checks).toHaveLength(10);
+    expect(report.checks).toHaveLength(13);
     expect(report.verdict).toBe('OK');
     expect(report.runId).toBe(exp.runId);
     expect(check(report, 'live_search_sanity').details).toContain('pominięto'); // brak klienta OpenSPG
+    // Checki dołożone audytem G3 (D7-02, D7-03/D8-02, GAP-02).
+    expect(check(report, 'graph_stale_nodes').ok).toBe(true);
+    expect(check(report, 'no_literal_newlines').ok).toBe(true);
+    expect(check(report, 'superseded_documents').ok).toBe(true);
 
     const saved = latestQualityReport(db, NS);
     expect(saved?.verdict).toBe('OK');
-    expect(JSON.parse(saved!.checks_json)).toHaveLength(10);
+    expect(JSON.parse(saved!.checks_json)).toHaveLength(13);
   });
 
   it('zdublowane id w chunk.csv → FAIL z checkiem ids_unique_nonempty', async () => {

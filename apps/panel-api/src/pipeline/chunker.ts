@@ -42,13 +42,21 @@ const DEFAULT_PREVIEW_LEN = 800;
 const MD_HEADING_RE = /^(#{1,3})\s+(.+?)\s*#*\s*$/;
 
 /**
+ * Znaki, które dyskwalifikują linię jako pseudo-nagłówek: linie SQL („SELECT *
+ * FROM T"), ostrzeżenia („WARNING: DO NOT RUN"), nagłówki tabel markdown
+ * („| ID | NAZWA |") i przypisania z konfiguracji nie są nagłówkami sekcji (D7-09).
+ */
+const PSEUDO_HEADING_FORBIDDEN = /[|;*=:`]/;
+
+/**
  * Pseudo-nagłówek z OCR: linia ALL-CAPS 3–80 znaków, ≥3 wielkie litery,
- * ZERO małych liter (cyfry/interpunkcja dozwolone).
+ * ZERO małych liter (cyfry/interpunkcja dozwolone) i bez znaków technicznych.
  */
 export function isPseudoHeading(line: string): boolean {
   const t = line.trim();
   if (t.length < 3 || t.length > 80) return false;
   if (/\p{Ll}/u.test(t)) return false;
+  if (PSEUDO_HEADING_FORBIDDEN.test(t)) return false;
   const upper = t.match(/\p{Lu}/gu);
   return upper !== null && upper.length >= 3;
 }
@@ -58,12 +66,28 @@ interface Section {
   lines: string[];
 }
 
-/** Podział dokumentu na sekcje; linia nagłówka zostaje w treści sekcji. */
+/** Linia otwierająca/zamykająca blok kodu. */
+const FENCE_LINE_RE = /^\s*```/;
+
+/**
+ * Podział dokumentu na sekcje; linia nagłówka zostaje w treści sekcji.
+ *
+ * D7-09: świadomość code-fence'ów jest TUTAJ, przed podziałem — komentarz `# apt
+ * install …` wewnątrz bloku ```bash``` nie jest nagłówkiem markdown. Wcześniej
+ * każdy taki komentarz rozcinał blok kodu na osobne chunki z niedomkniętym
+ * fencem (zepsuty rendering, urwane polecenia w cytowaniach).
+ */
 function splitSections(markdown: string): Section[] {
   const sections: Section[] = [{ heading: '', lines: [] }];
+  let inFence = false;
   for (const line of markdown.split('\n')) {
-    const md = MD_HEADING_RE.exec(line);
-    const heading = md !== null ? md[2]!.trim() : isPseudoHeading(line) ? line.trim() : null;
+    if (FENCE_LINE_RE.test(line)) {
+      inFence = !inFence;
+      sections[sections.length - 1]!.lines.push(line);
+      continue;
+    }
+    const md = inFence ? null : MD_HEADING_RE.exec(line);
+    const heading = md !== null ? md[2]!.trim() : !inFence && isPseudoHeading(line) ? line.trim() : null;
     if (heading !== null) {
       sections.push({ heading, lines: [line] });
     } else {
@@ -73,6 +97,22 @@ function splitSections(markdown: string): Section[] {
   return sections.filter((s) => s.lines.some((l) => l.trim() !== ''));
 }
 
+/**
+ * Cięcie tekstu nie może rozerwać pary zastępczej UTF-16 (emoji, znaki spoza BMP)
+ * — inaczej chunk kończy się samotnym surrogatem i po zapisie w UTF-8 zostaje
+ * U+FFFD (D7-09). Cofa indeks o 1, gdy trafia między high a low surrogate.
+ */
+export function safeCutIndex(text: string, index: number): number {
+  if (index <= 0 || index >= text.length) return index;
+  const prev = text.charCodeAt(index - 1);
+  const next = text.charCodeAt(index);
+  const splitsPair = prev >= 0xd800 && prev <= 0xdbff && next >= 0xdc00 && next <= 0xdfff;
+  if (!splitsPair) return index;
+  // Cofnięcie o 1; gdy to dałoby pusty kawałek — przesuwamy się ZA parę (postęp
+  // pętli tnącej jest ważniejszy niż mikroskopijne przekroczenie limitu).
+  return index - 1 > 0 ? index - 1 : Math.min(index + 1, text.length);
+}
+
 /** Akapit dłuższy niż maxLen: cięcie na granicy zdania ('. '), twardo w ostateczności. */
 function splitLongParagraph(text: string, maxLen: number): string[] {
   const out: string[] = [];
@@ -80,7 +120,8 @@ function splitLongParagraph(text: string, maxLen: number): string[] {
   while (rest.length > maxLen) {
     const window = rest.slice(0, maxLen);
     const sentenceEnd = window.lastIndexOf('. ');
-    const end = sentenceEnd > 0 ? sentenceEnd + 1 : maxLen; // po kropce; bez zdania — twardo
+    // po kropce; bez zdania — twardo (Math.max gwarantuje postęp pętli)
+    const end = Math.max(safeCutIndex(rest, sentenceEnd > 0 ? sentenceEnd + 1 : maxLen), 1);
     out.push(rest.slice(0, end).trimEnd());
     rest = rest.slice(end).trimStart();
   }
@@ -170,9 +211,13 @@ export function splitLongFence(fence: string, maxLen: number): string[] {
     const add = line.length + (cur.length > 0 ? 1 : 0);
     if (len + add > budget && cur.length > 0) flush();
     if (line.length > budget) {
-      // patologiczna pojedyncza linia — tnij twardo, nadal w fence'ach
-      for (let i = 0; i < line.length; i += budget) {
-        out.push(`${opening}\n${line.slice(i, i + budget)}\n${closing}`);
+      // patologiczna pojedyncza linia — tnij twardo (bez rozrywania par
+      // zastępczych), nadal w fence'ach
+      let pos = 0;
+      while (pos < line.length) {
+        const end = Math.max(safeCutIndex(line, Math.min(pos + budget, line.length)), pos + 1);
+        out.push(`${opening}\n${line.slice(pos, end)}\n${closing}`);
+        pos = end;
       }
       continue;
     }

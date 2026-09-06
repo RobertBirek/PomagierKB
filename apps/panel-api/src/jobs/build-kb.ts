@@ -1,7 +1,6 @@
 import type { ActionProgress, Db } from '@pomagierkb/shared/db';
 import { readChunkingSettings } from '../services/pipeline-settings.js';
 import {
-  clearDirty,
   findFinishedBuildJob,
   getKbOrThrow,
   getUploadRecord,
@@ -24,6 +23,8 @@ import { makeOpenSpgClient } from '../services/kb.js';
 import { runPreflightFor } from '../services/preflight.js';
 import { humanize } from '../services/messages.js';
 import { runExport, ENTITY_BY_FILE, EXPORT_FILE_ORDER, type ExportedFile } from '../pipeline/exporter.js';
+import { confirmTombstones } from '../pipeline/graph-ids.js';
+import { settleDirtyAfterBuild, snapshotDirty } from '../pipeline/kb-dirty.js';
 import { runQualityGate, type QualityGateReport } from '../pipeline/quality-gate.js';
 import { JobFailure, type JobFn } from './job-types.js';
 
@@ -93,9 +94,21 @@ export async function runBuildKb(deps: BuildKbDeps): Promise<BuildKbResult> {
 
   // 2) Eksport CSV + mirror + manifesty.
   step(2, 'export', 'Eksport zatwierdzonych szkiców do CSV');
+  // Wersja stanu inboxu W CHWILI snapshotu — promocje/withdraw wykonane PÓŹNIEJ
+  // (build trwa do 120 min) nie mogą zostać zgubione przez clearDirty (D7-04).
+  const dirtySnapshot = snapshotDirty(db, namespace);
   // Parametry chunkera z ustawień ('chunking' — wcześniej martwy klucz, limity na sztywno).
   const exp = runExport({ db, dataDir: config.dataDir }, namespace, readChunkingSettings(db));
   deps.log(`eksport #${exp.runId}: dokumentów ${exp.docCount}, chunków ${exp.chunkCount} → ${exp.dir}`);
+  for (const s of exp.superseded) {
+    deps.log(`precedencja: „${s.title}" wycofany ze stanu docelowego (zastąpiony przez ${s.by}, ${s.reason})`);
+  }
+  if (exp.tombstones.length > 0) {
+    deps.log(
+      `nagrobki: ${exp.tombstones.length} encji spoza stanu docelowego zostanie nadpisanych w grafie ` +
+        `(${exp.tombstones.slice(0, 5).map((t) => t.id).join(', ')}${exp.tombstones.length > 5 ? ' …' : ''})`,
+    );
+  }
 
   const kb = getKbOrThrow(db, namespace);
   if (kb.project_id === null) throw new JobFailure(`baza ${namespace} nie ma projektu OpenSPG`, 2);
@@ -213,9 +226,19 @@ export async function runBuildKb(deps: BuildKbDeps): Promise<BuildKbResult> {
     deps.log(`${fileName}: ${humanize(status).label} (job #${openspgJobId})`);
   }
 
-  // 6) Po plikach: dirty=0 → quality gate → progress final.
-  clearDirty(db, namespace);
-  deps.log('dirty=0 — graf zsynchronizowany ze stanem inboxu');
+  // 6) Po plikach: potwierdzenie nagrobków (są już w grafie) → warunkowe dirty=0
+  //    → quality gate → progress final.
+  const confirmed = confirmTombstones(db, namespace, exp.runId);
+  if (confirmed > 0) deps.log(`nagrobki potwierdzone w grafie: ${confirmed}`);
+  const settled = settleDirtyAfterBuild(db, dirtySnapshot);
+  if (settled.cleared) {
+    deps.log('dirty=0 — graf zsynchronizowany ze stanem inboxu');
+  } else {
+    deps.log(
+      `dirty=1 zostaje — w trakcie builda było ${settled.changedDuringBuild} zmian w Inboxie ` +
+        '(promocja/withdraw po snapshocie); uruchom build ponownie',
+    );
+  }
   step(6, 'quality', 'Kontrola jakości eksportu i grafu');
   const report = await runQualityGate({ db, namespace, client, log: deps.log });
   deps.log(`quality gate: ${report.verdict} (${humanize(report.verdict).label})`);

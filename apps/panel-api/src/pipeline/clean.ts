@@ -17,16 +17,35 @@ export interface CleanResult {
   removedRatio: number;
   /** true tylko gdy wynik LLM przeszedł guard i został użyty. */
   aiUsed: boolean;
+  /** Ostrzeżenia dla recenzenta (np. wycięto podejrzanie dużo treści). */
+  warnings: string[];
 }
 
 /** Maksymalna długość tekstu wysyłanego do LLM (spójna z wrapUntrusted). */
 export const AI_CLEAN_MAX_CHARS = 12_000;
 /** Guard: wynik LLM musi zachować ≥60% długości wejścia. */
 export const AI_CLEAN_MIN_KEEP_RATIO = 0.6;
+/**
+ * Próg ostrzeżenia dla czyszczenia REGEXOWEGO (D7-10): dotąd regex mógł wyciąć
+ * dowolny odsetek treści bez żadnego sygnału (guard 60% dotyczył wyłącznie LLM).
+ */
+export const CLEAN_REMOVED_RATIO_WARN = 0.3;
 
 function removedRatioOf(input: string, output: string): number {
   if (input.length === 0) return 0;
   return Math.max(0, Math.min(1, 1 - output.length / input.length));
+}
+
+/**
+ * Paginacja: linia z samej liczby (≤4 cyfry) SĄSIADUJĄCA z pustą linią.
+ * D7-10: bezwarunkowa reguła /^\d+$/ kasowała lata, kody i komórki tabel
+ * przełamane przez OCR/Tikę na osobne linie.
+ */
+function isPageNumberLine(lines: readonly string[], index: number): boolean {
+  if (!/^\d{1,4}$/.test(lines[index]!.trim())) return false;
+  const prevEmpty = index === 0 || lines[index - 1]!.trim() === '';
+  const nextEmpty = index === lines.length - 1 || lines[index + 1]!.trim() === '';
+  return prevEmpty || nextEmpty;
 }
 
 /**
@@ -38,15 +57,16 @@ function removedRatioOf(input: string, output: string): number {
 export function cleanContent(
   text: string,
   profileName: CleanProfileName = 'generic',
-): { text: string; profile: CleanProfileName; removedRatio: number } {
+): { text: string; profile: CleanProfileName; removedRatio: number; warnings: string[] } {
   const profile = CLEAN_PROFILES[profileName];
   const lines = text.split('\n');
   const kept: string[] = [];
 
-  for (const rawLine of lines) {
+  for (const [index, rawLine] of lines.entries()) {
     const line = rawLine.replace(/\s+$/, '');
     const trimmed = line.trim();
     if (trimmed !== '' && profile.dropLinePatterns.some((re) => re.test(trimmed))) continue;
+    if (isPageNumberLine(lines, index)) continue;
 
     let out = line;
     for (const re of profile.inlinePatterns) {
@@ -65,7 +85,15 @@ export function cleanContent(
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 
-  return { text: cleaned, profile: profileName, removedRatio: removedRatioOf(text, cleaned) };
+  const removedRatio = removedRatioOf(text, cleaned);
+  const warnings =
+    removedRatio > CLEAN_REMOVED_RATIO_WARN
+      ? [
+          `czyszczenie usunęło ${Math.round(removedRatio * 100)}% treści (profil ${profileName}) — ` +
+            'sprawdź, czy nie wycięto tabel lub danych liczbowych',
+        ]
+      : [];
+  return { text: cleaned, profile: profileName, removedRatio, warnings };
 }
 
 export interface CleanAiDeps {
@@ -90,7 +118,19 @@ export async function cleanWithOptionalAi(
   profileName: CleanProfileName,
   deps: CleanAiDeps = {},
 ): Promise<CleanResult> {
-  const regexResult = cleanContent(text, profileName);
+  return aiCleanPass(text, cleanContent(text, profileName), deps);
+}
+
+/**
+ * Sam przebieg LLM na GOTOWYM wyniku regexowym — rozdzielony od cleanContent,
+ * żeby worker mógł odrzucić za długi dokument PRZED wywołaniem LLM (D7-06).
+ */
+export async function aiCleanPass(
+  text: string,
+  regexResult: { text: string; profile: CleanProfileName; removedRatio: number; warnings: string[] },
+  deps: CleanAiDeps = {},
+): Promise<CleanResult> {
+  const profileName = regexResult.profile;
   const base: CleanResult = { ...regexResult, aiUsed: false };
 
   const llm = deps.llm ?? null;
@@ -112,6 +152,7 @@ export async function cleanWithOptionalAi(
         profile: profileName,
         removedRatio: removedRatioOf(text, aiText),
         aiUsed: true,
+        warnings: regexResult.warnings,
       };
     }
     return base; // guard nie przeszedł — bezpieczny fallback regexowy

@@ -5,9 +5,22 @@ Lekki serwer Fastify emulujący endpointy OpenSPG 0.8 używane przez
 bez pełnego stacka (Java + MySQL + Neo4j + MinIO). Zachowuje kopertę
 odpowiedzi `{success: true, result: ...}`.
 
-**Uwaga:** kształty odpowiedzi są best-effort wg `.claude/skills/openspg-api/SKILL.md`
+**Uwaga:** kształty ODPOWIEDZI są best-effort wg `.claude/skills/openspg-api/SKILL.md`
 — stub NIE jest źródłem prawdy o prawdziwym serwerze. Integrację weryfikujemy
 docelowo na żywym OpenSPG.
+
+**Kontrakt ŻĄDAŃ jest natomiast egzekwowany tak jak w produkcji** — stub, który
+przyjmuje payload odrzucany przez prawdziwy serwer, maskuje regresję w dev i CI.
+Zgodność zadeklarowana wprost dla:
+
+| Endpoint | Wymaganie (SKILL openspg-api) | Zachowanie stuba przy złamaniu |
+|---|---|---|
+| `POST /public/v1/search/text` | `projectId` WYMAGANE (int ≥1), limit to `topk` (nie `size`) | HTTP 400 `{success:false}` — jak serwer („no such fulltext schema index") |
+| `POST /public/v1/search/vector` | `projectId` WYMAGANE, limit to `topk` | HTTP 400 `{success:false}` |
+| `GET /public/v1/builder/job/list` | `start` ≥ 1 | HTTP 500 (emulacja buga SQL serwera) |
+
+Weryfikacja żywego serwera: 2026-09-02, powtórzona 2026-09-06 (wariant ze `size`
+i bez `projectId` → 400; wariant z `projectId`+`topk` → 200).
 
 ## Uruchomienie
 
@@ -43,10 +56,12 @@ Zmienne środowiskowe:
   INIT→RUNNING→FINISH w `STUB_JOB_MS`; nazwa pliku zawierająca **`fail`** wymusza `ERROR`
 - `GET /public/v1/builder/job/list` — **wymaga `start>=1`**; `start=0` zwraca 500
   (emulacja buga SQL prawdziwego serwera — klient ma to obsłużyć poprawnie)
-- `POST /public/v1/search/text` — substring match po treści chunków z CSV
-  "zbudowanych" jobem, który doszedł do FINISH
-- `POST /public/v1/search/vector` — deterministyczny pseudo-losowy ranking
-  (hash id chunka + wektora zapytania); ten sam wektor → ten sam wynik
+- `POST /public/v1/search/text` — **wymaga `projectId` i `topk`** (patrz tabela
+  zgodności wyżej); substring match po treści chunków z CSV "zbudowanych" jobem,
+  który doszedł do FINISH
+- `POST /public/v1/search/vector` — **wymaga `projectId`**; deterministyczny
+  pseudo-losowy ranking (hash id chunka + wektora zapytania); ten sam wektor →
+  ten sam wynik
 - `GET /healthz` — healthcheck samego stubu (nie istnieje w prawdziwym OpenSPG)
 
 ## Użycie w testach integracyjnych

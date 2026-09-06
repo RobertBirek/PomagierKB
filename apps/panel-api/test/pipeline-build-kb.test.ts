@@ -181,7 +181,7 @@ describe('runBuildKb — E2E na mocku OpenSPG', () => {
     expect(jobs.every((j) => j.status === 'FINISH')).toBe(true);
     expect(getKbOrThrow(db, NS).dirty).toBe(0);
     expect(result.report.verdict).toBe('OK');
-    expect(result.report.checks).toHaveLength(10);
+    expect(result.report.checks).toHaveLength(13); // 10 + graph_stale_nodes/no_literal_newlines/superseded_documents
     expect(result.report.checks.filter((c) => !c.ok)).toEqual([]);
   });
 

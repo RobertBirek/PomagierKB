@@ -51,7 +51,22 @@ export interface SubmitCsvUpsertJobParams {
   entityTypeId: number;    // sId z getSchemaGraph
 }
 
-/** Buduje DOKŁADNY payload submit (extension = ZSERIALIZOWANY JSON) — eksport dla testów. */
+/**
+ * Buduje DOKŁADNY payload submit (extension = ZSERIALIZOWANY JSON) — eksport dla testów.
+ *
+ * UWAGA (audyt D14-01): `action: 'UPSERT'` to JEDYNA operacja buildera zweryfikowana
+ * w boju. Serwer wystawia wprawdzie ścieżki kasujące (POST /public/v1/graph/writerGraph
+ * z operation:'DELETE', GET /public/v1/builder/job/delete/subgraph, DELETE /v1/projects/{id}),
+ * ale ich payloady nie zostały potwierdzone na żywym serwerze — dopóki to nie nastąpi,
+ * usunięcie treści z grafu realizujemy NAGROBKAMI: ten sam id wraca w CSV z pustymi
+ * polami i markerem `semanticType='tombstone'`, a UPSERT nadpisuje treść oraz wektory
+ * (apps/panel-api/src/pipeline/graph-ids.ts + exporter.ts).
+ *
+ * DODATKOWO (audyt D7-03/D8-02): builder importuje wartości jako zserializowany JSON —
+ * w grafie property mają LITERALNE cudzysłowy, a znak nowej linii zamienia się w dwuznak
+ * `\n`, który rozbija tokenizację indeksu tekstowego. Eksporter normalizuje więc pola
+ * indeksowane (nowe linie → spacja) PRZED wysłaniem.
+ */
 export function buildCsvUpsertJobPayload(params: SubmitCsvUpsertJobParams): Record<string, unknown> {
   const extension = {
     dataSourceConfig: {

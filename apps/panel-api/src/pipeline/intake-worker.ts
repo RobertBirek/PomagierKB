@@ -1,21 +1,25 @@
 import { readFileSync } from 'node:fs';
 import type { FastifyBaseLogger } from 'fastify';
 import type { Db } from '@pomagierkb/shared/db';
-import { createDraft, getSetting, listKbs, type DraftSourceType } from '@pomagierkb/shared/db';
+import { createDraft, DRAFT_LIMITS, getSetting, listKbs, type DraftSourceType } from '@pomagierkb/shared/db';
+import { appendAudit, sanitizeForAudit } from '@pomagierkb/shared/audit';
 import { unseal } from '@pomagierkb/shared/crypto';
 import { AppError } from '@pomagierkb/shared/errors';
-import { createLlmClient, type LlmClient } from '@pomagierkb/shared/llm';
+import { createLlmClient, recordLlmUsage, type LlmClient } from '@pomagierkb/shared/llm';
 import type { AppConfig } from '../config.js';
 import {
   nextReceivedIntake,
+  requeueStaleIntakes,
   saveBlob,
   updateIntake,
   type IntakeRow,
 } from '../services/intakes.js';
+import { readIngestLimits } from '../services/pipeline-settings.js';
 import { safeFetch, type SafeFetchDeps } from '../services/safe-http.js';
 import { extractContent, ExtractError } from './extract.js';
-import { cleanWithOptionalAi } from './clean.js';
+import { aiCleanPass, cleanContent } from './clean.js';
 import { pickProfile } from './cleanProfiles.js';
+import { parseSourceFrontmatter } from './frontmatter.js';
 import { analyzeContent } from './analyze.js';
 
 /**
@@ -45,6 +49,16 @@ interface LlmSettingsShape {
   model: string;
 }
 
+/**
+ * Etykieta kosztu per etap ingestu (GAP-05). Analiza (llm.chat) i czyszczenie AI
+ * (llm.openie) idą POZA `withBreaker`, więc bez tego wpięcia ich tokeny nie
+ * trafiały do rejestru `llm_usage` w ogóle — koszt pipeline'u był niemierzalny.
+ */
+const INGEST_PURPOSE: Record<'llm.chat' | 'llm.openie', string> = {
+  'llm.chat': 'ingest.analyze',
+  'llm.openie': 'ingest.clean',
+};
+
 /** Klient LLM z ustawień (sealed AES-GCM) — null gdy brak/uszkodzona konfiguracja. */
 export function llmFromSettings(
   db: Db,
@@ -62,7 +76,13 @@ export function llmFromSettings(
       model: typeof o['model'] === 'string' ? o['model'] : '',
     };
     if (cfg.baseUrl === '' || cfg.apiKey === '' || cfg.model === '') return null;
-    return createLlmClient(cfg);
+    return createLlmClient({
+      ...cfg,
+      // Telemetria nigdy nie wywraca pipeline'u (recordLlmUsage sam łyka wyjątki).
+      onUsage: (event) => {
+        recordLlmUsage(db, { ...event, purpose: INGEST_PURPOSE[key] });
+      },
+    });
   } catch {
     return null; // brak konfiguracji LLM nigdy nie zatrzymuje pipeline'u (fallbacki)
   }
@@ -94,6 +114,20 @@ function errorCode(err: unknown): string {
   if (err instanceof ExtractError) return err.code;
   if (err instanceof AppError) return err.code;
   return 'internal';
+}
+
+/** Maksymalna długość zapisywanej treści błędu (kolumna intakes.error_detail). */
+const ERROR_DETAIL_MAX = 300;
+
+/**
+ * Treść wyjątku do kolumny error_detail (D10-08): sam kod 'internal' bez logu
+ * (rotacja json-file) nie pozwalał ustalić przyczyny nawet operatorowi z SSH.
+ * Redakcja sekretów tym samym sanitizerem co audyt.
+ */
+export function errorDetail(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err);
+  const safe = typeof sanitizeForAudit(raw) === 'string' ? (sanitizeForAudit(raw) as string) : '';
+  return safe.replace(/sk-[A-Za-z0-9_-]{8,}/g, 'sk-[REDACTED]').slice(0, ERROR_DETAIL_MAX);
 }
 
 /**
@@ -154,7 +188,22 @@ export async function processIntake(
         ? llmFromSettings(db, config, 'llm.openie')
         : null;
   const profile = pickProfile({ mime: row.mime, sourceUrl: row.source_url });
-  const cleaned = await cleanWithOptionalAi(extracted.text, profile, {
+  const regexCleaned = cleanContent(extracted.text, profile);
+
+  // D7-06: limit długości egzekwowany TU — przed przebiegiem LLM i przed analyze.
+  // Dotąd sprawdzał go dopiero createDraft, więc dokument 40+ stron przechodził
+  // pełną kaskadę (OCR + 2 wywołania LLM), żeby na końcu paść na payload_too_large.
+  // Sufitem jest twardy limit draftu; ustawienie 'ingest.limits' może go tylko obniżyć.
+  const maxTextChars = Math.min(readIngestLimits(db).maxTextChars, DRAFT_LIMITS.contentMax);
+  if (regexCleaned.text.length > maxTextChars) {
+    throw new AppError(
+      'payload_too_large',
+      `treść po oczyszczeniu ma ${regexCleaned.text.length} znaków (limit ${maxTextChars}) — ` +
+        'podziel dokument na części i zgłoś je osobno',
+    );
+  }
+
+  const cleaned = await aiCleanPass(extracted.text, regexCleaned, {
     llm: aiClean ? openieLlm : null,
   });
   updateIntake(db, row.id, {
@@ -178,13 +227,32 @@ export async function processIntake(
     },
     { llm: chatLlm },
   );
-  const analysisRecord = { ...analysis, aiCleanUsed: cleaned.aiUsed };
+  const analysisRecord = {
+    ...analysis,
+    // Ostrzeżenia czyszczenia (D7-10) idą do recenzenta razem z analizą.
+    warnings: [...analysis.warnings, ...cleaned.warnings],
+    aiCleanUsed: cleaned.aiUsed,
+  };
   updateIntake(db, row.id, {
     status: 'analyzed',
     analysis_json: JSON.stringify(analysisRecord),
   });
 
   // ── Etap 5: draft w Inboxie (human-in-the-loop — recenzja przed grafem) ───
+  // D7-05: deadline (Promise.race) NIE anuluje tej funkcji — jeśli w międzyczasie
+  // intake został oznaczony jako failed albo wrócił do kolejki, drugi draft o tej
+  // samej treści byłby duplikatem. Sprawdzamy stan tuż przed zapisem.
+  const currentStatus = (
+    db.prepare('SELECT status FROM intakes WHERE id = ?').get(row.id) as { status: string } | undefined
+  )?.status;
+  if (currentStatus !== 'analyzed') {
+    throw new AppError(
+      'conflict',
+      `intake ${row.id} zmienił stan w trakcie przetwarzania (${currentStatus ?? 'brak'}) — szkic nie został utworzony`,
+    );
+  }
+  // GAP-03: metadane źródła (właściciel/licencja/data dokumentu) z front-mattera.
+  const sourceMeta = parseSourceFrontmatter(cleaned.text);
   const draft = createDraft(db, {
     title: analysis.title,
     content: cleaned.text,
@@ -200,13 +268,32 @@ export async function processIntake(
       extractProvider: extracted.provider,
       cleanProfile: cleaned.profile,
       createdBy: row.created_by,
+      ...(sourceMeta.owner !== null ? { sourceOwner: sourceMeta.owner } : {}),
+      ...(sourceMeta.license !== null ? { sourceLicense: sourceMeta.license } : {}),
+      ...(sourceMeta.date !== null ? { sourceDate: sourceMeta.date } : {}),
+      ...(sourceMeta.supersedes !== null ? { supersedes: sourceMeta.supersedes } : {}),
     },
     analysis: analysisRecord,
     // FK na users(id): intake może przyjść z CLI/integracji z createdBy spoza tabeli
     // users — wtedy NULL (tożsamość źródła zostaje w metadata.createdBy).
     submittedByUser: userExists(db, row.created_by) ? row.created_by : null,
   });
+  // Kolumny źródła (migracja 0027) — createDraft ich jeszcze nie przyjmuje,
+  // a mają być JEDNYM miejscem prawdy dla cytowań i kb_get_source.
+  saveDraftSourceMeta(db, draft.id, sourceMeta);
   return updateIntake(db, row.id, { status: 'drafted', draft_id: draft.id });
+}
+
+/** Zapis metadanych źródła do kolumn drafts (GAP-03) — no-op gdy brak danych. */
+function saveDraftSourceMeta(
+  db: Db,
+  draftId: string,
+  meta: { owner: string | null; license: string | null; date: string | null },
+): void {
+  if (meta.owner === null && meta.license === null && meta.date === null) return;
+  db.prepare(
+    'UPDATE drafts SET source_owner = ?, source_license = ?, source_date = ? WHERE id = ?',
+  ).run(meta.owner, meta.license, meta.date, draftId);
 }
 
 /** Twardy limit czasu jednego intake'u — wieszający się dokument nie blokuje kolejki. */
@@ -256,11 +343,38 @@ export async function tickIntakeWorker(
       await processWithDeadline(db, config, row, deps, INTAKE_DEADLINE_MS);
       log?.info({ intakeId: row.id }, 'intake przetworzony do szkicu');
     } catch (err) {
-      updateIntake(db, row.id, { status: 'failed', error: errorCode(err) });
+      updateIntake(db, row.id, { status: 'failed', error: errorCode(err), error_detail: errorDetail(err) });
       log?.warn({ intakeId: row.id, err }, 'intake zakończony błędem');
     }
     processed++;
   };
+
+  // D10-03/D7-05: intake'i zawieszone w stanie pośrednim (restart procesu w trakcie
+  // OCR/LLM) wracają do kolejki — inaczej wiszą tam na zawsze, niewidoczne ani dla
+  // workera, ani dla przycisku „Ponów".
+  const stale = requeueStaleIntakes(db, INTAKE_DEADLINE_MS * 2);
+  if (stale.requeued.length > 0 || stale.failed.length > 0) {
+    log?.warn(
+      { requeued: stale.requeued.length, failed: stale.failed.length },
+      'intake: przerwane przetwarzanie — wznowienie z kolejki',
+    );
+    // Mutacja stanu wykonana przez system — musi zostawić ślad w audycie.
+    try {
+      appendAudit(db, {
+        actor: 'system',
+        actorType: 'system',
+        action: 'intake.requeue',
+        resourceType: 'intake',
+        metadata: {
+          requeued: stale.requeued.length,
+          failed: stale.failed.length,
+          ids: [...stale.requeued, ...stale.failed].slice(0, 20),
+        },
+      });
+    } catch (err) {
+      log?.warn({ err }, 'nie udało się zapisać wpisu audytu dla wznowienia intake’ów');
+    }
+  }
 
   for (;;) {
     while (inflight.size < INTAKE_CONCURRENCY) {

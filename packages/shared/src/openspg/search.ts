@@ -1,8 +1,16 @@
 import type { OpenSpgClient } from './client.js';
 
 /**
- * Search OpenSPG — payloady NIEZWERYFIKOWANE W BOJU (SKILL.md), stąd klient defensywny:
- * normalizator wielu kształtów odpowiedzi, sonda zgodności, warn przy nieznanym kształcie.
+ * Search OpenSPG — kształt ŻĄDANIA jest ZWERYFIKOWANY W BOJU (SKILL.md „Search / reasoner":
+ * zdekompilowane DTO + potwierdzenie na żywym serwerze 2026-09-02, powtórzone 2026-09-06):
+ * `{projectId (WYMAGANE), queryString, labelConstraints, page, topk}` dla text i
+ * `{projectId, label, propertyKey, queryVector, topk, efSearch}` dla vector. Wariantu bez
+ * `projectId` (ze `size` zamiast `topk`) NIE PRZYWRACAĆ — serwer zwraca HTTP 400
+ * („no such fulltext schema index").
+ *
+ * Klient mimo to zostaje defensywny, ale z INNEGO powodu: niestabilny jest kształt
+ * ODPOWIEDZI ({success,result} | {data} | goły array). Stąd normalizator odpowiedzi,
+ * sonda zgodności i warn z surowym body przy nieznanym kształcie.
  */
 
 export type SearchShape = 'success_result' | 'data' | 'array' | 'unknown';

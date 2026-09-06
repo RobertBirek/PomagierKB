@@ -225,7 +225,7 @@ describe('openspg-stub: pełny przepływ dev', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/public/v1/search/text',
-      payload: { queryString: 'szynoprzewodu', labelConstraints: ['TestNs.Chunk'], page: 1, size: 5 },
+      payload: { projectId, queryString: 'szynoprzewodu', labelConstraints: ['TestNs.Chunk'], page: 1, topk: 5 },
     });
     const body = res.json() as Envelope<{ docId: string; score: number; fields: Record<string, string> }[]>;
     expect(body.success).toBe(true);
@@ -237,13 +237,42 @@ describe('openspg-stub: pełny przepływ dev', () => {
     const miss = await app.inject({
       method: 'POST',
       url: '/public/v1/search/text',
-      payload: { queryString: 'grawitacja kwantowa', page: 1, size: 5 },
+      payload: { projectId, queryString: 'grawitacja kwantowa', page: 1, topk: 5 },
     });
     expect((miss.json() as Envelope<unknown[]>).result).toHaveLength(0);
   });
 
+  it('search/* odrzuca stary kształt żądania tak jak produkcja (400)', async () => {
+    // Bez projectId — prawdziwy serwer: „no such fulltext schema index".
+    const noProject = await app.inject({
+      method: 'POST',
+      url: '/public/v1/search/text',
+      payload: { queryString: 'szynoprzewodu', labelConstraints: ['TestNs.Chunk'], page: 1, topk: 5 },
+    });
+    expect(noProject.statusCode).toBe(400);
+    expect((noProject.json() as Envelope).success).toBe(false);
+    expect((noProject.json() as { errorMsg: string }).errorMsg).toContain('fulltext schema index');
+
+    // `size` zamiast `topk` — pole spoza DTO.
+    const withSize = await app.inject({
+      method: 'POST',
+      url: '/public/v1/search/text',
+      payload: { projectId, queryString: 'szynoprzewodu', labelConstraints: ['TestNs.Chunk'], page: 1, size: 5 },
+    });
+    expect(withSize.statusCode).toBe(400);
+    expect((withSize.json() as { errorMsg: string }).errorMsg).toContain('topk');
+
+    // Ten sam kontrakt obowiązuje VectorSearchRequest.
+    const vectorNoProject = await app.inject({
+      method: 'POST',
+      url: '/public/v1/search/vector',
+      payload: { label: 'TestNs.Chunk', propertyKey: 'content', queryVector: [0.1], topk: 1 },
+    });
+    expect(vectorNoProject.statusCode).toBe(400);
+  });
+
   it('search/vector: deterministyczny ranking po hashu, respektuje topk', async () => {
-    const payload = { label: 'TestNs.Chunk', propertyKey: 'contentPreview', queryVector: [0.1, 0.2, 0.3], topk: 1, efSearch: 200 };
+    const payload = { projectId, label: 'TestNs.Chunk', propertyKey: 'contentPreview', queryVector: [0.1, 0.2, 0.3], topk: 1, efSearch: 200 };
     const a = await app.inject({ method: 'POST', url: '/public/v1/search/vector', payload });
     const b = await app.inject({ method: 'POST', url: '/public/v1/search/vector', payload });
     const resA = (a.json() as Envelope<{ docId: string; score: number }[]>).result;

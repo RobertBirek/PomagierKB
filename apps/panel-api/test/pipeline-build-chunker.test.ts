@@ -183,3 +183,50 @@ describe('chunker — świadomość code-fence (Faza 4 programu rozbudowy)', () 
     expect(chunks.map((c) => c.content).join('\n')).toContain('print("bez domknięcia")');
   });
 });
+
+describe('chunker — audyt D7-09 (runbooki z blokami kodu)', () => {
+  it('komentarz „# …" WEWNĄTRZ bloku kodu nie jest nagłówkiem i nie rozcina fence’a', () => {
+    const md = [
+      '# Runbook wdrożenia',
+      '',
+      '```bash',
+      '# install deps',
+      'npm ci',
+      '',
+      '# build',
+      'npm run build',
+      '```',
+      '',
+      'Koniec procedury.',
+    ].join('\n');
+    const chunks = chunkDocument(md, { maxLen: 1800 });
+    const headings = new Set(chunks.map((c) => c.sectionHeading));
+    expect(headings).not.toContain('install deps');
+    expect(headings).not.toContain('build');
+    const withFence = chunks.filter((c) => c.content.includes('```'));
+    expect(withFence).toHaveLength(1);
+    // Fence domknięty w tym samym chunku (parzysta liczba znaczników).
+    expect((withFence[0]!.content.match(/```/g) ?? []).length % 2).toBe(0);
+    expect(withFence[0]!.content).toContain('npm run build');
+  });
+
+  it('pseudo-nagłówki: SQL, ostrzeżenia i wiersze tabel nie tworzą sekcji', () => {
+    expect(isPseudoHeading('SELECT * FROM T')).toBe(false);
+    expect(isPseudoHeading('WARNING: DO NOT RUN')).toBe(false);
+    expect(isPseudoHeading('| ID | NAZWA |')).toBe(false);
+    expect(isPseudoHeading('EXPORT_DIR=/DATA')).toBe(false);
+    expect(isPseudoHeading('ROZDZIAL PIERWSZY')).toBe(true); // OCR nadal działa
+  });
+
+  it('twarde cięcie nie rozrywa pary zastępczej (emoji) — brak U+FFFD po zapisie UTF-8', () => {
+    const maxLen = 20;
+    const text = `${'a'.repeat(maxLen - 1)}😀${'b'.repeat(60)}`;
+    const chunks = chunkDocument(text, { maxLen });
+    for (const c of chunks) {
+      expect(Buffer.from(c.content, 'utf8').toString('utf8')).toBe(c.content);
+      expect(c.content).not.toContain('�');
+      expect(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(c.content)).toBe(false);
+    }
+    expect(chunks.map((c) => c.content).join('')).toContain('😀');
+  });
+});

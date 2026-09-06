@@ -14,7 +14,8 @@ import {
   REFERENCE_DOCUMENT_COLUMNS,
   TOPIC_COLUMNS,
   csvEscape,
-  docHash8,
+  docHash,
+  graphText,
   makeId,
   runExport,
   toCsv,
@@ -111,27 +112,36 @@ describe('runExport', () => {
     expect(titles).not.toContain('Szkic niezatwierdzony');
 
     const docA = records.find((r) => r['name'] === 'Szynoprzewody natynkowe — poradnik')!;
-    expect(docA['id']).toMatch(/^DOC_[0-9A-F]{8}_SZYNOPRZEWODY_NATYNKOWE_PORADNIK$/);
+    // D7-01: id = DOC_<sha1(ns|source_ref|content_hash)[:16]>, BEZ tytułu (D14-02).
+    expect(docA['id']).toMatch(/^DOC_[0-9A-F]{16}$/);
     expect(docA['semanticType']).toBe('reference_document');
     expect(docA['sourceUrl']).toBe('https://example.test/szynoprzewody');
     expect(docA['sourceTier']).toBe('official');
     expect(docA['summary']).toBe('Poradnik o szynoprzewodach.');
-    expect(docA['content']).toBe(CONTENT_A); // przecinki/cudzysłowy/nowe linie przeżyły escaping RFC
-    expect(docA['contentLength']).toBe(String(CONTENT_A.length));
+    // D7-03/D8-02: do grafu jedzie treść bez znaków nowej linii (builder serializuje
+    // property jako JSON-string, więc '\n' rozbijał tokenizację indeksu tekstowego);
+    // przecinki i cudzysłowy nadal przechodzą przez escaping RFC 4180.
+    expect(docA['content']).toBe(graphText(CONTENT_A));
+    expect(docA['content']).not.toMatch(/[\r\n]/);
+    expect(docA['content']).toContain('"cudzysłowami"');
+    expect(docA['contentLength']).toBe(String(graphText(CONTENT_A).length));
     expect((docA['topicRefIds'] ?? '').split(',')).toContain('TOPIC_LED');
   });
 
-  it('chunki: id CHUNK_<docHash8>_<NNN>, sourceDocumentRefId celuje w dokument, sekcje z nagłówków', () => {
+  it('chunki: id CHUNK_<docHash>_<NNN>, sourceDocumentRefId celuje w dokument, sekcje z nagłówków', () => {
     const file = result.files.find((f) => f.fileName === 'chunk.csv')!;
     const rows = parseCsv(readFileSync(file.path, 'utf8'));
     const header = rows[0]!;
     const records = rows.slice(1).map((r) => Object.fromEntries(header.map((c, i) => [c, r[i] ?? ''])));
     expect(records.length).toBeGreaterThanOrEqual(2);
 
-    const dh8 = docHash8(NS, { source_ref: 'https://example.test/szynoprzewody', content_hash: 'x' });
-    const chunkA = records.find((r) => (r['id'] ?? '').startsWith(`CHUNK_${dh8}_`));
+    const dh = docHash(NS, {
+      source_ref: 'https://example.test/szynoprzewody',
+      content_hash: createHash('sha256').update(CONTENT_A, 'utf8').digest('hex'),
+    });
+    const chunkA = records.find((r) => (r['id'] ?? '').startsWith(`CHUNK_${dh}_`));
     expect(chunkA).toBeDefined();
-    expect(chunkA!['id']).toMatch(/^CHUNK_[0-9A-F]{8}_\d{3}$/);
+    expect(chunkA!['id']).toMatch(/^CHUNK_[0-9A-F]{16}_\d{3}$/);
     expect(chunkA!['semanticType']).toBe('chunk');
 
     const docFile = result.files.find((f) => f.fileName === 'reference_document.csv')!;
