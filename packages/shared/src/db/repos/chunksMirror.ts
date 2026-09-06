@@ -23,6 +23,13 @@ export interface ChunkMirrorRow {
   updated_at: string;
 }
 
+/**
+ * Kolumny „prawdziwe" chunks_mirror. Migracja 0047 dołożyła kolumny GENERATED
+ * (title_folded/content_folded) na potrzeby indeksu FTS — `SELECT *` wyciągałby
+ * je do odpowiedzi API, więc wszędzie listujemy kolumny jawnie.
+ */
+const CHUNK_COLUMNS = 'id, namespace, doc_id, title, section_heading, content, source_ref, updated_at';
+
 /** Podmiana chunków dokumentu w jednej transakcji (delete+insert; triggery pilnują FTS). */
 export function replaceForDocument(db: Db, namespace: string, docId: string, chunks: ChunkInput[]): void {
   const del = db.prepare('DELETE FROM chunks_mirror WHERE namespace = ? AND doc_id = ?');
@@ -51,7 +58,7 @@ export function replaceForDocument(db: Db, namespace: string, docId: string, chu
 
 /** Pojedynczy chunk z mirrora (pełna treść — kb_get_source). */
 export function getChunk(db: Db, id: string): ChunkMirrorRow | null {
-  const row = db.prepare('SELECT * FROM chunks_mirror WHERE id = ?').get(id) as
+  const row = db.prepare(`SELECT ${CHUNK_COLUMNS} FROM chunks_mirror WHERE id = ?`).get(id) as
     | ChunkMirrorRow
     | undefined;
   return row ?? null;
@@ -60,7 +67,7 @@ export function getChunk(db: Db, id: string): ChunkMirrorRow | null {
 /** Wszystkie chunki dokumentu w kolejności id (sufiks _NNN eksportera = kolejność sekcji). */
 export function getDocumentChunks(db: Db, docId: string): ChunkMirrorRow[] {
   return db
-    .prepare('SELECT * FROM chunks_mirror WHERE doc_id = ? ORDER BY id')
+    .prepare(`SELECT ${CHUNK_COLUMNS} FROM chunks_mirror WHERE doc_id = ? ORDER BY id`)
     .all(docId) as ChunkMirrorRow[];
 }
 
@@ -115,6 +122,9 @@ export function listDocuments(
   };
 }
 
+/** Sposób dopasowania wiersza: 'and' = wszystkie rdzenie (mocne), 'or' = luźny fallback. */
+export type FtsMatchKind = 'and' | 'or';
+
 export interface FtsResult {
   id: string;
   docId: string;
@@ -122,55 +132,216 @@ export interface FtsResult {
   title: string | null;
   snippet: string;
   bm25: number;
+  /**
+   * 'or' = trafienie wyłącznie z luźnego fallbacku po rdzeniach — sygnał SŁABY,
+   * bramka odmowy (answer/verify) go nie akceptuje jako jedynego dowodu (D8-01/D8-04).
+   */
+  matchKind: FtsMatchKind;
 }
 
-/**
- * Zapytanie użytkownika → bezpieczne wyrażenie MATCH: tokeny alfanumeryczne,
- * każdy jako cytowana fraza (escapowanie '"'), łączone AND. Tokenizer trigram
- * dopasowuje podciągi, więc dłuższe tokeny przycinamy o końcówkę fleksyjną
- * (np. 'szynoprzewodów' znajdzie też 'szynoprzewodach').
- */
-// Stopwordy zapytań — jedno źródło w text/stopwords.ts (audyt: dwie rozbieżne listy).
+// ── Normalizacja tekstu (audyt D8-04) ───────────────────────────────────────
+//
+// Indeks chunks_fts używa tokenizera 'trigram remove_diacritics 1', który składa
+// ś/ż/ą/ę/ć/ń/ó/ź, ale NIE składa 'ł' (U+0142 nie dekomponuje się w NFD —
+// zweryfikowane na SQLite 3.53.4). Dlatego migracja 0047 indeksuje kolumny
+// GENERATED z 'ł'→'l', a zapytania przepuszczamy przez foldPolish() — dzięki temu
+// wejście bez ogonków ('swiatla', 'przemyslowych') trafia w treść z ogonkami.
 
-function stems(query: string): string[] {
-  const tokens = (query.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [])
-    .filter((t) => t.length >= 3 && !PL_QUERY_STOPWORDS.has(t));
-  return tokens.map((t) => (t.length >= 6 ? t.slice(0, t.length - 2) : t));
+/** Składanie polskich znaków: lowercase + 'ł'→'l' + NFD bez znaków łączących. */
+export function foldPolish(text: string): string {
+  return text
+    .toLowerCase()
+    .replaceAll('ł', 'l')
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '');
+}
+
+/** foldPolish z mapą indeksów (znak złożony → pozycja w oryginale) — do snippetów. */
+function foldWithMap(text: string): { folded: string; map: number[] } {
+  let folded = '';
+  const map: number[] = [];
+  for (let i = 0; i < text.length; i++) {
+    const f = foldPolish(text[i]!);
+    for (const ch of f) {
+      folded += ch;
+      map.push(i);
+    }
+  }
+  return { folded, map };
+}
+
+const MIN_TOKEN_LEN = 3; // tokenizer trigram nie dopasuje termu krótszego niż 3 znaki
+const MIN_STEM_LEN = 3;
+const MIN_OR_STEM_LEN = 5; // luźny OR tylko po długich rdzeniach (D8-04: 'świa' ⊄ fałszywe trafienia)
+
+/**
+ * Lekki stemmer PL: końcówki fleksyjne rzeczowników/przymiotników (po foldPolish,
+ * więc 'ów'→'ow', 'ą'→'a'). Zastępuje ślepe „utnij 2 znaki", które gubiło alternacje
+ * ('strumienia' → 'strumien' ≠ 'strumień') i formy typu 'haka' → 'hak'.
+ */
+const PL_SUFFIXES: readonly string[] = [
+  'iami', 'iach', 'iemu', 'ego', 'emu', 'ych', 'ymi', 'ich', 'imi', 'ami', 'ach',
+  'owi', 'owe', 'owa', 'iem', 'ow', 'om', 'em', 'ie', 'ia', 'ii', 'iu', 'ej', 'ym', 'im',
+  'y', 'a', 'e', 'i', 'o', 'u',
+]
+  .slice()
+  .sort((a, b) => b.length - a.length);
+
+/** Rdzeń pojedynczego (już złożonego) tokenu; tokeny z cyfrą zostają bez zmian. */
+export function stemPolish(token: string): string {
+  if (/\d/.test(token) || token.length < 4) return token;
+  for (const suffix of PL_SUFFIXES) {
+    if (token.length - suffix.length >= MIN_STEM_LEN && token.endsWith(suffix)) {
+      return token.slice(0, token.length - suffix.length);
+    }
+  }
+  return token;
 }
 
 const quote = (t: string): string => `"${t.replaceAll('"', '""')}"`;
 
-export function buildMatchExpression(query: string): string | null {
-  const s = stems(query);
-  if (s.length === 0) return null;
-  return s.map(quote).join(' AND ');
+export interface QueryTerm {
+  /** Rdzeń (do podświetlania w snippecie). */
+  stem: string;
+  /** Wyrażenie MATCH dla tego termu (cytowane; czasem grupa OR dla kodów typu „IP 65"). */
+  expr: string;
 }
 
-/** Luźniejszy wariant: OR po najdłuższych rdzeniach (fallback gdy AND = 0 trafień). */
+/**
+ * Zapytanie użytkownika → termy MATCH. Tokeny alfanumeryczne, bez stopwordów,
+ * złożone (foldPolish) i sprowadzone do rdzenia; każdy jako cytowana fraza.
+ * Sąsiadujące tokeny 2-znakowe, z których razem powstaje kod alfanumeryczny
+ * („IP 65" → ip65), zostają zachowane jako grupa OR — inaczej trigram (min. 3 znaki)
+ * gubiłby je bez śladu.
+ */
+export function queryTerms(query: string): QueryTerm[] {
+  const original = query.match(/[\p{L}\p{N}]+/gu) ?? [];
+  const folded = original.map(foldPolish);
+  const terms: QueryTerm[] = [];
+  /** Krótki token wolno scalać tylko gdy to cyfry albo KOD pisany wielkimi literami. */
+  const codeLike = (idx: number): boolean => {
+    const raw = original[idx] ?? '';
+    return /^\p{Nd}+$/u.test(raw) || raw === raw.toUpperCase();
+  };
+  for (let i = 0; i < folded.length; i++) {
+    const token = folded[i]!;
+    if (token === '') continue;
+    if (token.length >= MIN_TOKEN_LEN) {
+      if (PL_QUERY_STOPWORDS.has(token)) continue;
+      const stem = stemPolish(token);
+      if (PL_QUERY_STOPWORDS.has(stem)) continue;
+      terms.push({ stem, expr: quote(stem) });
+      continue;
+    }
+    // Token krótszy niż 3 znaki: sam w sobie nietrafialny przez trigram. Ratujemy
+    // wyłącznie parę sąsiadujących krótkich tokenów tworzącą KOD litera+cyfra
+    // pisany wielkimi literami („IP 65" → „ip65"/„ip 65"); przyimki typu „do 40"
+    // ani „lm/W" nie łapią się na ten wyjątek. Pojedynczy krótki token odrzucamy.
+    const next = folded[i + 1];
+    if (next === undefined || next === '' || next.length >= MIN_TOKEN_LEN) continue;
+    if (!codeLike(i) || !codeLike(i + 1)) continue;
+    const merged = `${token}${next}`;
+    if (merged.length < MIN_TOKEN_LEN || !/\d/.test(merged) || !/\p{L}/u.test(merged)) continue;
+    terms.push({ stem: merged, expr: `(${quote(merged)} OR ${quote(`${token} ${next}`)})` });
+    i++; // para skonsumowana
+  }
+  return terms;
+}
+
+/** Rdzenie zapytania (do podświetlania snippetów i diagnostyki). */
+export function queryStems(query: string): string[] {
+  return queryTerms(query).map((t) => t.stem);
+}
+
+export function buildMatchExpression(query: string): string | null {
+  const terms = queryTerms(query);
+  if (terms.length === 0) return null;
+  return terms.map((t) => t.expr).join(' AND ');
+}
+
+/**
+ * Luźniejszy wariant: OR po najdłuższych rdzeniach (fallback gdy AND = 0 trafień).
+ * Minimalna długość rdzenia 5 znaków — krótsze ('świa', 'syst') dawały fałszywe
+ * trafienia dla pytań spoza bazy (D8-04). Wyniki są znakowane matchKind='or'.
+ */
 export function buildOrMatchExpression(query: string, maxTerms = 4): string | null {
-  const s = [...new Set(stems(query))].sort((a, b) => b.length - a.length).slice(0, maxTerms);
-  if (s.length === 0) return null;
-  return s.map(quote).join(' OR ');
+  const stems = [...new Set(queryTerms(query).map((t) => t.stem))]
+    .filter((s) => s.length >= MIN_OR_STEM_LEN)
+    .sort((a, b) => b.length - a.length)
+    .slice(0, maxTerms);
+  if (stems.length === 0) return null;
+  return stems.map(quote).join(' OR ');
+}
+
+const SNIPPET_CHARS = 300;
+
+/**
+ * Snippet z treści chunka: okno ~300 znaków wokół pierwszego trafionego rdzenia,
+ * podświetlane CAŁE słowa. Zastępuje snippet(chunks_fts,…,16), które dla tokenizera
+ * trigram znaczyło 16 TRIGRAMÓW (~20 znaków, słowa ucięte w środku) — D8-05.
+ */
+export function buildFtsSnippet(content: string, stems: readonly string[], maxChars = SNIPPET_CHARS): string {
+  const normalized = content.replace(/\s+/g, ' ').trim();
+  if (normalized === '') return '';
+  const { folded, map } = foldWithMap(normalized);
+  let start = 0;
+  let found = -1;
+  for (const stem of stems) {
+    if (stem === '') continue;
+    const at = folded.indexOf(stem);
+    if (at >= 0 && (found < 0 || at < found)) found = at;
+  }
+  if (found >= 0) {
+    const origAt = map[found] ?? 0;
+    start = Math.max(0, origAt - Math.floor(maxChars / 3));
+  }
+  let end = Math.min(normalized.length, start + maxChars);
+  // Nie tnij słów na krawędziach okna.
+  if (start > 0) {
+    const space = normalized.indexOf(' ', start);
+    if (space >= 0 && space - start < 40) start = space + 1;
+  }
+  if (end < normalized.length) {
+    const space = normalized.lastIndexOf(' ', end);
+    if (space > start) end = space;
+  }
+  const window = normalized.slice(start, end);
+  const highlighted = window
+    .split(/(\s+)/)
+    .map((word) => {
+      if (word.trim() === '') return word;
+      const foldedWord = foldPolish(word);
+      return stems.some((s) => s !== '' && foldedWord.includes(s)) ? `<b>${word}</b>` : word;
+    })
+    .join('');
+  return `${start > 0 ? '…' : ''}${highlighted}${end < normalized.length ? '…' : ''}`;
 }
 
 export function searchFts(db: Db, query: string, namespaces: string[], limit = 8): FtsResult[] {
   if (namespaces.length === 0) return [];
   const strict = buildMatchExpression(query);
   if (!strict) return [];
-  const first = runFtsQuery(db, strict, namespaces, limit);
+  const stems = queryStems(query);
+  const first = runFtsQuery(db, strict, namespaces, limit, stems, 'and');
   if (first.length > 0) return first;
   // AND bez trafień (np. rzadki termin obok popularnych) → luźniejszy OR po rdzeniach.
   const loose = buildOrMatchExpression(query);
   if (!loose || loose === strict) return [];
-  return runFtsQuery(db, loose, namespaces, limit);
+  return runFtsQuery(db, loose, namespaces, limit, stems, 'or');
 }
 
-function runFtsQuery(db: Db, match: string, namespaces: string[], limit: number): FtsResult[] {
+function runFtsQuery(
+  db: Db,
+  match: string,
+  namespaces: string[],
+  limit: number,
+  stems: readonly string[],
+  matchKind: FtsMatchKind,
+): FtsResult[] {
   const placeholders = namespaces.map(() => '?').join(',');
   const rows = db
     .prepare(
-      `SELECT c.id, c.doc_id, c.namespace, c.title,
-              snippet(chunks_fts, 1, '<b>', '</b>', '…', 16) AS snip,
+      `SELECT c.id, c.doc_id, c.namespace, c.title, c.content,
               bm25(chunks_fts) AS score
        FROM chunks_fts
        JOIN chunks_mirror c ON c.rowid = chunks_fts.rowid
@@ -183,7 +354,7 @@ function runFtsQuery(db: Db, match: string, namespaces: string[], limit: number)
     doc_id: string;
     namespace: string;
     title: string | null;
-    snip: string;
+    content: string;
     score: number;
   }[];
   return rows.map((r) => ({
@@ -191,7 +362,8 @@ function runFtsQuery(db: Db, match: string, namespaces: string[], limit: number)
     docId: r.doc_id,
     namespace: r.namespace,
     title: r.title,
-    snippet: r.snip,
+    snippet: buildFtsSnippet(r.content, stems),
     bm25: r.score,
+    matchKind,
   }));
 }

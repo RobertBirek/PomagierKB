@@ -1,5 +1,6 @@
 import type { Db } from '../db/index.js';
-import { listKbs, searchFts, type KbRow } from '../db/index.js';
+import { foldPolish, listKbs, searchFts, type KbRow } from '../db/index.js';
+import { PL_QUERY_STOPWORDS } from '../text/stopwords.js';
 import { rrfFuse, searchText, searchVector } from '../openspg/index.js';
 import type { OpenSpgClient, RankedList, SearchHit } from '../openspg/index.js';
 import { routeNamespaces } from './routing.js';
@@ -50,7 +51,15 @@ export interface RetrievalHit {
   namespace: string;
   title?: string;
   snippet: string;
+  /** Score fuzji RRF (mierzy ZGODNOŚĆ kanałów, nie trafność — patrz vectorScore). */
   score: number;
+  /**
+   * Surowy cosinus kanału OpenSPG search/vector (0..1) — JEDYNY sygnał realnej
+   * trafności semantycznej w wyniku. Bramka odmowy (D8-01) opiera się na nim,
+   * bo RRF nie odróżnia „rank 1 wśród trafnych" od „rank 1 wśród nietrafnych".
+   * Uwaga: porównywalny WEWNĄTRZ projektu OpenSPG (zamrożony model embeddingu).
+   */
+  vectorScore?: number;
   source: RetrievalSource;
   sourceRef?: string;
 }
@@ -73,6 +82,7 @@ export interface HybridSearchParams {
 export type DegradedReason =
   | 'openspg_down' // żaden kanał OpenSPG nie zadziałał (awaria/timeout/breaker)
   | 'openspg_no_hits' // OpenSPG działał, ale nic nie znalazł, a lokalny mirror tak
+  | 'embed_failed' // embed zapytania zawiódł → kanał wektorowy pominięty (OpenSPG zdrowy!)
   | 'snippet_only' // któryś wynik bez pełnej treści (tylko 300-znakowy snippet)
   | 'kb_dirty'; // przeszukana KB ma zmiany nie wbudowane w graf (mirror może wyprzedzać)
 
@@ -82,6 +92,18 @@ export interface RetrievalResult {
   degradedReasons: DegradedReason[];
   /** Liczba kanałów, które realnie weszły do fuzji (normalizacja topScore w answer). */
   activeChannels: number;
+  /**
+   * Najwyższy surowy cosinus kanału wektorowego (null = kanał nie zadziałał).
+   * Sygnał trafności dla bramki odmowy — patrz RetrievalHit.vectorScore.
+   */
+  topVectorScore: number | null;
+  /**
+   * true = kanał FTS trafił wyrażeniem AND (wszystkie rdzenie zapytania).
+   * false = brak trafień albo tylko luźny fallback OR (słaby dowód: podciąg rdzenia
+   * potrafi trafić pytanie spoza bazy — D8-04). Bramka odmowy tego wymaga, gdy
+   * nie ma żadnego sygnału semantycznego.
+   */
+  lexicalStrict: boolean;
   /** Namespace'y wzmocnione przez routing hints (kb_registry.routing_keywords). */
   matchedRouting: string[];
   tookMs: number;
@@ -89,6 +111,12 @@ export interface RetrievalResult {
 
 const CHANNEL_TIMEOUT_MS = 5000;
 const SNIPPET_MAX = 300;
+/**
+ * Minimalny score kanału OpenSPG search/text. Kanał dopasowuje DOKŁADNE tokeny bez
+ * stopwordów, więc trafienia „stopwordowe" mają score 0.12–0.28, a merytoryczne
+ * 0.43–1.8 (audyt D8-03, evidence/D8-openspg-text-stopwords.txt).
+ */
+const OPENSPG_TEXT_MIN_SCORE = 0.3;
 
 /** Wewnętrzny, znormalizowany hit pojedynczego kanału (kolejność = ranking). */
 interface ChannelHit {
@@ -97,6 +125,8 @@ interface ChannelHit {
   title?: string;
   snippet?: string;
   sourceRef?: string;
+  /** Surowy score kanału (tylko wektorowy — do bramki trafności). */
+  score?: number;
 }
 
 function truncateSnippet(text: string): string {
@@ -143,6 +173,22 @@ export function resolveExportId(hit: SearchHit): string | null {
   return null;
 }
 
+/**
+ * Zapytanie dla kanału OpenSPG search/text (D8-03). Kanał robi dopasowanie
+ * DOKŁADNYCH tokenów bez stopwordów i stemmingu, więc każde polskie pytanie
+ * („na", „w", „do") zwracało WSZYSTKIE węzły ze score ~0.15 i wchodziło do fuzji
+ * jako rank 1. Zostawiamy tokeny ≥3 znaków spoza listy stopwordów, w oryginalnej
+ * formie (kanał nie ma stemmera — rdzeń i tak by nie trafił).
+ */
+export function buildOpenSpgTextQuery(query: string): string | null {
+  const tokens = (query.match(/[\p{L}\p{N}]+/gu) ?? []).filter((t) => {
+    if (t.length < 3) return false;
+    const folded = foldPolish(t);
+    return !PL_QUERY_STOPWORDS.has(t.toLowerCase()) && !PL_QUERY_STOPWORDS.has(folded);
+  });
+  return tokens.length > 0 ? tokens.join(' ') : null;
+}
+
 function toChannelHit(hit: SearchHit, namespace: string, resolvedId?: string): ChannelHit {
   const title = firstString(hit.fields, ['title', 'name']);
   const content = firstString(hit.fields, [
@@ -165,18 +211,27 @@ function toChannelHit(hit: SearchHit, namespace: string, resolvedId?: string): C
 /**
  * Kanał async z timeoutem 5 s: błąd/timeout → null (kanał "nie zadziałał"),
  * nigdy nie wywraca całego retrievalu.
+ *
+ * D8-10: po upływie deadline'u kanał nie tylko PRZESTAJE CZEKAĆ — `signal`
+ * realnie anuluje żądanie HTTP (OpenSpgClient.withSignal). Bez tego zerwane
+ * żądanie leciało dalej z własnym 30-sekundowym timeoutem klienta i breaker
+ * 'openspg' otwierał się dopiero po ~3×30 s zamiast po 3×5 s.
  */
 async function runChannel(
   ctx: AnswerCtx,
   name: string,
-  run: () => Promise<ChannelHit[]>,
+  run: (signal: AbortSignal) => Promise<ChannelHit[]>,
 ): Promise<ChannelHit[] | null> {
   let timer: ReturnType<typeof setTimeout> | undefined;
+  const controller = new AbortController();
   const timeout = new Promise<null>((resolve) => {
-    timer = setTimeout(() => resolve(null), CHANNEL_TIMEOUT_MS);
+    timer = setTimeout(() => {
+      controller.abort();
+      resolve(null);
+    }, CHANNEL_TIMEOUT_MS);
   });
   try {
-    const value = await Promise.race([run(), timeout]);
+    const value = await Promise.race([run(controller.signal), timeout]);
     if (value === null) ctx.log.warn({ channel: name }, 'retrieval: kanał przekroczył timeout 5s');
     return value;
   } catch (err) {
@@ -187,6 +242,9 @@ async function runChannel(
     return null;
   } finally {
     if (timer !== undefined) clearTimeout(timer);
+    // Zwycięstwo wyścigu przez `run` też kończy kanał — nie zostawiamy żywego
+    // kontrolera (żądanie i tak się już zakończyło).
+    controller.abort();
   }
 }
 
@@ -235,6 +293,8 @@ export async function hybridSearch(
       degraded: true,
       degradedReasons: ['openspg_down'],
       activeChannels: 0,
+      topVectorScore: null,
+      lexicalStrict: false,
       matchedRouting: [],
       tookMs: Date.now() - started,
     };
@@ -284,8 +344,12 @@ export async function hybridSearch(
 
   // (a) FTS5 — synchroniczny (better-sqlite3), timeout nie dotyczy; błąd → pusty kanał.
   let ftsHits: ChannelHit[] = [];
+  let lexicalStrict = false;
   try {
-    const raw = searchFts(ctx.db, textQuery, namespaces, limit).map((r) => ({
+    const ftsRows = searchFts(ctx.db, textQuery, namespaces, limit);
+    // AND = wszystkie rdzenie zapytania w chunku; OR to luźny fallback (słaby dowód).
+    lexicalStrict = ftsRows.length > 0 && ftsRows.every((r) => r.matchKind === 'and');
+    const raw = ftsRows.map((r) => ({
       id: r.id,
       namespace: r.namespace,
       snippet: r.snippet,
@@ -313,20 +377,48 @@ export async function hybridSearch(
   const vectorNamespaces = namespaces.filter((ns) => (kbMap.get(ns)?.embedding_model ?? '') !== '');
   const vectorEnabled = mode !== 'text' && openspg !== null && llm !== null && vectorNamespaces.length > 0;
   const textEnabled = mode !== 'vector' && openspg !== null;
+  const openspgTextQuery = buildOpenSpgTextQuery(textQuery);
+
+  // Embed zapytania POZA breakerem 'openspg' (D8-10): awaria/limit OpenAI nie może
+  // otwierać breakera OpenSPG i wyłączać zdrowego kanału tekstowego. Promise startuje
+  // równolegle z kanałem tekstowym (bez utraty równoległości) i NIGDY nie odrzuca.
+  let embedFailed = false;
+  const queryVectorPromise: Promise<number[] | null> =
+    vectorEnabled && llm !== null
+      ? llm.embed([params.query]).then(
+          (vectors) => {
+            const qv = vectors[0];
+            if (qv === undefined || qv.length === 0) {
+              embedFailed = true;
+              return null;
+            }
+            return qv;
+          },
+          (err: unknown) => {
+            embedFailed = true;
+            ctx.log.warn(
+              { channel: 'openspg_vector', err: err instanceof Error ? err.message : String(err) },
+              'retrieval: embed zapytania zawiódł — kanał wektorowy pominięty (OpenSPG bez zmian)',
+            );
+            return null;
+          },
+        )
+      : Promise.resolve(null);
 
   const [vectorHits, textHits] = await Promise.all([
     vectorEnabled && openspg && llm
-      ? runChannel(ctx, 'openspg_vector', () =>
-          withBreaker(ctx.db, 'openspg', async () => {
-            const [queryVector] = await llm.embed([params.query]);
-            if (!queryVector || queryVector.length === 0) {
-              throw new Error('embed zapytania zwrócił pusty wektor');
-            }
+      ? runChannel(ctx, 'openspg_vector', async (signal) => {
+          const queryVector = await queryVectorPromise;
+          // Rzucamy PRZED withBreaker → kanał „nie zadziałał", breaker 'openspg' nietknięty.
+          if (queryVector === null) throw new Error('embed zapytania niedostępny');
+          // Klient anulowany deadline'em kanału (sesja współdzielona z oryginałem).
+          const scoped = openspg.withSignal(signal);
+          return withBreaker(ctx.db, 'openspg', async () => {
             const byNs = new Map<string, ChannelHit[]>();
             for (const ns of vectorNamespaces) {
               const projectId = kbMap.get(ns)?.project_id;
               if (projectId === null || projectId === undefined) continue; // KB bez provisioningu
-              const res = await searchVector(openspg, {
+              const res = await searchVector(scoped, {
                 projectId,
                 label: `${ns}.Chunk`,
                 propertyKey: 'content',
@@ -339,29 +431,36 @@ export async function hybridSearch(
                 ns,
                 [...res.items]
                   .sort((a, b) => b.score - a.score)
-                  .map((h) => {
+                  .map((h): ChannelHit | null => {
                     const id = resolveExportId(h);
-                    return id === null ? null : toChannelHit(h, ns, id);
+                    // surowy cosinus NIESIONY dalej (bramka trafności — D8-01)
+                    return id === null ? null : { ...toChannelHit(h, ns, id), score: h.score };
                   })
                   .filter((h): h is ChannelHit => h !== null),
               );
             }
             return fusePerNamespace(byNs);
-          }),
-        )
+          });
+        })
       : Promise.resolve(null),
-    textEnabled && openspg
-      ? runChannel(ctx, 'openspg_text', () =>
-          withBreaker(ctx.db, 'openspg', async () => {
+    // Zapytanie bez stopwordów; gdy nic nie zostaje (samo „co to jest?"), kanał
+    // uznajemy za DZIAŁAJĄCY z zerem trafień — inaczej raportowałby fałszywy openspg_down.
+    !(textEnabled && openspg)
+      ? Promise.resolve(null)
+      : openspgTextQuery === null
+      ? Promise.resolve<ChannelHit[]>([])
+      : runChannel(ctx, 'openspg_text', (signal) => {
+          const scoped = openspg.withSignal(signal);
+          return withBreaker(ctx.db, 'openspg', async () => {
             // TextSearchRequest wymaga projectId — wołamy per namespace i scalamy;
             // ns znany z pętli (id eksportera to DOC_/CHUNK_ — nie niesie namespace).
             const byNs = new Map<string, ChannelHit[]>();
             for (const ns of namespaces) {
               const projectId = kbMap.get(ns)?.project_id;
               if (projectId === null || projectId === undefined) continue;
-              const res = await searchText(openspg, {
+              const res = await searchText(scoped, {
                 projectId,
-                queryString: textQuery,
+                queryString: openspgTextQuery,
                 labelConstraints: [`${ns}.Chunk`, `${ns}.ReferenceDocument`],
                 page: 1,
                 topk: limit,
@@ -369,6 +468,8 @@ export async function hybridSearch(
               byNs.set(
                 ns,
                 [...res.items]
+                  // odsiew trafień „stopwordowych" (score < 0.3) PRZED sortem — D8-03
+                  .filter((h) => h.score >= OPENSPG_TEXT_MIN_SCORE)
                   .sort((a, b) => b.score - a.score)
                   .map((h) => {
                     const id = resolveExportId(h);
@@ -378,9 +479,8 @@ export async function hybridSearch(
               );
             }
             return fusePerNamespace(byNs);
-          }),
-        )
-      : Promise.resolve(null),
+          });
+        }),
   ]);
 
   // Fuzja RRF + dedup po id (rrfFuse deduplikuje w obrębie i między listami).
@@ -404,12 +504,14 @@ export async function hybridSearch(
     const title = detail?.title ?? m?.title ?? undefined;
     const snippet = detail?.snippet ?? (m ? truncateSnippet(m.content) : '');
     const sourceRef = detail?.sourceRef ?? m?.source_ref ?? undefined;
+    const vectorScore = vectorMap.get(f.id)?.score;
     return {
       id: f.id,
       namespace,
       snippet,
       score: f.score,
       source: pickSource(f.sources),
+      ...(vectorScore !== undefined ? { vectorScore } : {}),
       ...(title !== undefined && title !== null ? { title } : {}),
       ...(sourceRef !== undefined && sourceRef !== null ? { sourceRef } : {}),
     };
@@ -424,19 +526,30 @@ export async function hybridSearch(
   const degradedReasons: DegradedReason[] = [];
   if (!openspgWorked) degradedReasons.push('openspg_down');
   else if (openspgItemCount === 0 && ftsHits.length > 0) degradedReasons.push('openspg_no_hits');
+  // embed_failed osobno od openspg_down: OpenSPG bywa zdrowy, padł tylko dostawca
+  // embeddingów (D8-10) — kokpit nie może pokazywać fałszywej awarii OpenSPG.
+  if (embedFailed) degradedReasons.push('embed_failed');
   if (snippetOnly) degradedReasons.push('snippet_only');
   if (namespaces.some((ns) => (kbMap.get(ns)?.dirty ?? 0) === 1)) degradedReasons.push('kb_dirty');
 
   const activeChannels = lists.length;
   // Kontrakt degraded (bool) bez zmian: twarde powody jak dotychczas; miękkie
-  // (snippet_only/kb_dirty) sygnalizowane TYLKO w degradedReasons.
-  const degraded = !openspgWorked || (openspgItemCount === 0 && ftsHits.length > 0);
+  // (snippet_only/kb_dirty) sygnalizowane TYLKO w degradedReasons — konsumenci
+  // (cache odpowiedzi, kokpit) czytają degradedReasons, nie sam bool.
+  const degraded =
+    !openspgWorked || embedFailed || (openspgItemCount === 0 && ftsHits.length > 0);
+
+  const vectorScores = (vectorHits ?? [])
+    .map((h) => h.score)
+    .filter((s): s is number => typeof s === 'number' && Number.isFinite(s));
 
   return {
     results,
     degraded,
     degradedReasons,
     activeChannels,
+    topVectorScore: vectorScores.length > 0 ? Math.max(...vectorScores) : null,
+    lexicalStrict,
     matchedRouting: routing.matched,
     tookMs: Date.now() - started,
   };

@@ -1,24 +1,42 @@
 #!/usr/bin/env node
-// PomagierKB — eval retrievalu na goldens (hit@1/hit@5/MRR + trafność namespace).
+// PomagierKB — eval retrievalu na goldens (hit@1/hit@5/MRR + negatywy + routing).
 // Użycie: DATA_DIR=./data node tools/eval/run-eval.mjs [plik.jsonl | katalog]
 //   bez argumentu: katalog tools/eval/goldens/ (wszystkie *.jsonl), fallback goldens.jsonl.
 // Format wiersza:
 //   {"question":"...", "expectedIds":["CHUNK_..."|"DOC_..."], "namespaces":["Ns"],
-//    "expectedNamespace":"Ns", "negative":false}
-//   negative:true = pytanie SPOZA bazy — zalicza się, gdy retrieval NIE zwraca wyniku ≥ minScore.
+//    "expectedNamespace":"Ns", "mustContain":["21000 lm"], "kind":"paraphrase",
+//    "negative":false}
+//   negative:true = pytanie SPOZA bazy — zalicza się, gdy PRODUKCYJNA bramka odmowy
+//     (packages/shared/src/answer/gate.ts) odrzuciłaby ten wynik.
+//   mustContain = fragmenty, które muszą wystąpić w treści któregoś z 5 najlepszych
+//     chunków (test „retrieval realnie wydobył fakt", nie tylko trafił id).
 // Kanały: EVAL_CHANNELS=fts (default — deterministycznie, zero kosztu, TYLKO lokalny FTS5)
 //         EVAL_CHANNELS=full (pełny hybrid: OpenSPG + embeddings z settings — na żywym stacku).
 // Raport JAWNIE mówi, który tryb mierzy — wynik 'fts' to jakość fallbacku, nie hybrydu.
+//
+// BRAMKI (D8-06): domyślnie WŁĄCZONE i kończą exit 1. Progi nadpisywalne przez
+// EVAL_MIN_HIT5 / EVAL_MIN_MRR / EVAL_MIN_NEG / EVAL_MIN_NS; EVAL_NO_GATE=1 wyłącza
+// całkowicie (tylko do eksploracji — nigdy w CI). Zbiór bez pozytywów albo bez
+// negatywów też kończy się porażką: „brak progu" nie może znaczyć „zielono".
 import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { openDb } from '@pomagierkb/shared/db';
-import { hybridSearch } from '@pomagierkb/shared/answer';
+import { evaluateRelevanceGate, hybridSearch, resolveMinRelevance } from '@pomagierkb/shared/answer';
 
 const arg = process.argv[2] ?? process.env.GOLDENS_FILE ?? null;
 const dataDir = process.env.DATA_DIR ?? './data';
 const dbPath = process.env.EVAL_DB ?? join(dataDir, 'db', 'kag.db');
-const minScore = Number(process.env.EVAL_MIN_SCORE ?? '0.01');
 const channels = process.env.EVAL_CHANNELS === 'full' ? 'full' : 'fts';
+const noGate = process.env.EVAL_NO_GATE === '1';
+const num = (env, fallback) => (process.env[env] ? Number(process.env[env]) : fallback);
+const thresholds = {
+  hit5: num('EVAL_MIN_HIT5', 0.8),
+  mrr: num('EVAL_MIN_MRR', 0.5),
+  negativeAccuracy: num('EVAL_MIN_NEG', 0.9),
+  namespaceAccuracy: num('EVAL_MIN_NS', 0.9),
+};
+// Próg trafności bramki — ta sama funkcja co produkcja (bez ustawienia = default 0.7).
+const minRelevance = resolveMinRelevance(num('EVAL_MIN_RELEVANCE', null));
 
 function goldenFiles() {
   const defaultDir = join('tools', 'eval', 'goldens');
@@ -92,23 +110,46 @@ if (channels === 'full') {
 const ctx = { db, llm, openspg, log: console };
 const allActive = db.prepare("SELECT namespace FROM kb_registry WHERE status='active'").all().map((r) => r.namespace);
 let hit1 = 0, hit5 = 0, mrrSum = 0, negOk = 0, negTotal = 0, nsChecked = 0, nsCorrect = 0;
+let contentChecked = 0, contentOk = 0;
 const misses = [];
+// Pytania z "requires":"full" mierzą zdolność kanału SEMANTYCZNEGO (angielski, literówki,
+// odległe parafrazy) — w trybie 'fts' są pomijane, bo mierzyłyby brak kanału, nie regresję.
+const skipped = [];
+/** Statystyki per rodzaj pytania (parafraza/keyword/EN/typo/bez-diakrytyków/…). */
+const perKind = {};
+const bump = (kind, field) => {
+  const k = kind ?? 'unspecified';
+  perKind[k] ??= { total: 0, hit5: 0, mrrSum: 0, negOk: 0 };
+  perKind[k][field] = (perKind[k][field] ?? 0) + 1;
+};
 
 for (const g of goldens) {
+  if (g.requires === 'full' && channels !== 'full') { skipped.push(g.question); continue; }
   const ns = g.namespaces && g.namespaces.length ? g.namespaces : allActive;
   const res = await hybridSearch(ctx, {
     query: g.question,
     namespaces: ns,
-    allowedNamespaces: ns, // eval ufa goldensom; deny-by-default zostaje w produkcyjnych ścieżkach
+    // Eval ŚWIADOMIE omija deny-by-default: goldens są artefaktem repozytorium, a nie
+    // wejściem użytkownika, więc „dozwolone" = „proszone". Deny-by-default obowiązuje
+    // w ścieżkach produkcyjnych (profil klucza MCP / role panelu) i nie jest tu mierzone.
+    allowedNamespaces: ns,
     limit: 10,
     mode: 'hybrid',
   });
   const results = res.results ?? res;
+  bump(g.kind, 'total');
   if (g.negative) {
     negTotal++;
-    const top = results[0]?.score ?? 0;
-    if (!results.length || top < minScore) negOk++;
-    else misses.push({ q: g.question, kind: 'negative-hit', top: results[0]?.id });
+    // Ta sama reguła co produkcyjna bramka odmowy — metryka mierzy TRAFNOŚĆ,
+    // a nie to, które kanały akurat działały (D8-06).
+    const gate = evaluateRelevanceGate({
+      resultCount: results.length,
+      semanticScore: res.topVectorScore ?? null,
+      lexicalStrict: res.lexicalStrict ?? false,
+      minRelevance,
+    });
+    if (!gate.pass) { negOk++; bump(g.kind, 'negOk'); }
+    else misses.push({ q: g.question, kind: 'negative-hit', top: results[0]?.id, gate });
     continue;
   }
   const expected = [...new Set(g.expectedIds ?? [])];
@@ -120,9 +161,21 @@ for (const g of goldens) {
   };
   const rank = results.findIndex(matches);
   if (rank === 0) hit1++;
-  if (rank >= 0 && rank < 5) hit5++;
-  if (rank >= 0) mrrSum += 1 / (rank + 1);
+  if (rank >= 0 && rank < 5) { hit5++; bump(g.kind, 'hit5'); }
+  if (rank >= 0) { mrrSum += 1 / (rank + 1); perKind[g.kind ?? 'unspecified'].mrrSum += 1 / (rank + 1); }
   else misses.push({ q: g.question, kind: 'miss', got: results.slice(0, 3).map((r) => r.id) });
+  // mustContain: czy treść z top-5 REALNIE zawiera fakt (antyhalucynacyjna kotwica)
+  if (Array.isArray(g.mustContain) && g.mustContain.length > 0) {
+    contentChecked++;
+    const blob = results
+      .slice(0, 5)
+      .map((r) => db.prepare('SELECT content FROM chunks_mirror WHERE id = ?').get(r.id)?.content ?? '')
+      .join('\n')
+      .toLowerCase();
+    const missing = g.mustContain.filter((frag) => !blob.includes(String(frag).toLowerCase()));
+    if (missing.length === 0) contentOk++;
+    else misses.push({ q: g.question, kind: 'must-contain', missing });
+  }
   // trafność routingu cross-KB: czy top-1 pochodzi z oczekiwanej bazy
   if (g.expectedNamespace) {
     nsChecked++;
@@ -130,24 +183,54 @@ for (const g of goldens) {
   }
 }
 
-const positives = goldens.length - negTotal;
+const evaluated = goldens.length - skipped.length;
+const positives = evaluated - negTotal;
 const report = {
   channels, // 'fts' = jakość FALLBACKU lokalnego; 'full' = produkcyjny hybrid
   files,
   goldens: goldens.length,
+  evaluated,
+  skippedRequiresFull: skipped.length,
   positives,
   negatives: negTotal,
+  minRelevance,
   hit1: positives ? +(hit1 / positives).toFixed(3) : null,
   hit5: positives ? +(hit5 / positives).toFixed(3) : null,
   mrr: positives ? +(mrrSum / positives).toFixed(3) : null,
   negativeAccuracy: negTotal ? +(negOk / negTotal).toFixed(3) : null,
   namespaceAccuracy: nsChecked ? +(nsCorrect / nsChecked).toFixed(3) : null,
+  mustContainAccuracy: contentChecked ? +(contentOk / contentChecked).toFixed(3) : null,
+  perKind: Object.fromEntries(
+    Object.entries(perKind).map(([k, v]) => [
+      k,
+      { total: v.total, hit5: v.hit5, negOk: v.negOk, mrr: v.total ? +(v.mrrSum / v.total).toFixed(3) : null },
+    ]),
+  ),
   misses,
+  skipped,
 };
 console.log(JSON.stringify(report, null, 2));
 
-const minHit5 = process.env.EVAL_MIN_HIT5 ? Number(process.env.EVAL_MIN_HIT5) : null;
-if (minHit5 !== null && report.hit5 !== null && report.hit5 < minHit5) {
-  console.error(`FAIL: hit@5 ${report.hit5} < próg ${minHit5}`);
+if (noGate) {
+  console.error('EVAL_NO_GATE=1 — bramki wyłączone, wynik NIE jest kotwicą jakości.');
+  process.exit(0);
+}
+
+const failures = [];
+// Zbiór bez pozytywów albo bez negatywów niczego nie kotwiczy — to porażka konfiguracji,
+// nie „zielony" wynik (D8-06: metryka null nie może przechodzić po cichu).
+if (positives === 0) failures.push('zbiór goldens nie zawiera ANI JEDNEGO pozytywu');
+if (negTotal === 0) failures.push('zbiór goldens nie zawiera ANI JEDNEGO negatywu (bramka odmowy niemierzona)');
+for (const [metric, min] of Object.entries(thresholds)) {
+  const value = report[metric];
+  if (value === null || value === undefined) continue; // np. namespaceAccuracy bez expectedNamespace
+  if (Number.isFinite(min) && value < min) failures.push(`${metric} ${value} < próg ${min}`);
+}
+if (report.mustContainAccuracy !== null && report.mustContainAccuracy < 1) {
+  failures.push(`mustContainAccuracy ${report.mustContainAccuracy} < 1 (retrieval nie wydobył wymaganych faktów)`);
+}
+if (failures.length > 0) {
+  console.error(`FAIL:\n - ${failures.join('\n - ')}`);
   process.exit(1);
 }
+console.error('OK: wszystkie bramki evalu spełnione.');

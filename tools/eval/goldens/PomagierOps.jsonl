@@ -1,0 +1,6 @@
+{"question":"jak wykonać backup panelu","negative":true,"namespaces":["PomagierOps"],"kind":"empty-kb"}
+{"question":"restart caddy po edycji Caddyfile","negative":true,"namespaces":["PomagierOps"],"kind":"empty-kb"}
+{"question":"jak zrotować klucz MCP","negative":true,"namespaces":["PomagierOps"],"kind":"empty-kb"}
+{"question":"procedura DR odtworzenia z backupu","negative":true,"namespaces":["PomagierOps"],"kind":"empty-kb"}
+{"question":"oprawa HighBay strumień świetlny","negative":true,"namespaces":["PomagierOps"],"kind":"cross-kb-leak"}
+{"question":"czujnik ruchu DALI-2 ściemnianie","negative":true,"namespaces":["PomagierOps"],"kind":"cross-kb-leak"}

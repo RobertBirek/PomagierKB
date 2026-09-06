@@ -3,17 +3,31 @@
  * używany przez mcp-server (kb_search/kb_answer) i panel-api (POST /api/v1/ask).
  * Kontekst zgeneralizowany: {db, llm, openspg, log} + allowedNamespaces JAWNIE.
  */
-export { hybridSearch, stripLiteralQuotes, resolveExportId } from './retrieval.js';
+export {
+  hybridSearch,
+  stripLiteralQuotes,
+  resolveExportId,
+  buildOpenSpgTextQuery,
+} from './retrieval.js';
 export type {
   AnswerCtx,
   AnswerLlm,
   AnswerLog,
+  DegradedReason,
   HybridSearchParams,
   RetrievalHit,
   RetrievalMode,
   RetrievalResult,
   RetrievalSource,
 } from './retrieval.js';
+export {
+  evaluateRelevanceGate,
+  resolveMinRelevance,
+  bestSemanticScore,
+  ANSWER_MIN_RELEVANCE_DEFAULT,
+  MIN_RELEVANCE_LEGACY_CUTOFF,
+} from './gate.js';
+export type { GateDecision, GateReason, RelevanceGateInput } from './gate.js';
 export { answerQuestion, NO_ANSWER_TEXT } from './answer.js';
 export type {
   AnswerCitation,
@@ -24,7 +38,15 @@ export type {
 export { rewriteQuery, parseRewriteResponse, clearRewriteCache } from './rewrite.js';
 export { rerankHits, cosine, parseLlmOrder } from './rerank.js';
 export type { RerankStrategy, RerankOutcome } from './rerank.js';
-export { answerCacheKey, dataVersion, getCachedAnswer, putCachedAnswer, clearAnswerCache } from './cache.js';
+export {
+  answerCacheKey,
+  chatConfigFingerprint,
+  dataVersion,
+  getCachedAnswer,
+  putCachedAnswer,
+  clearAnswerCache,
+} from './cache.js';
+export type { AnswerCacheOptions } from './cache.js';
 export { verifyClaim, parseVerdict } from './verify.js';
 export type { ClaimStatus, VerifyClaimResult, VerifyClaimParams } from './verify.js';
 export { extractClaims } from './claims.js';

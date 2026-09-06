@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createKb, replaceForDocument, type Db } from '../src/db/index.js';
-import { hybridSearch } from '../src/answer/index.js';
+import { ANSWER_MIN_RELEVANCE_DEFAULT, evaluateRelevanceGate, hybridSearch } from '../src/answer/index.js';
 import type { AnswerCtx } from '../src/answer/index.js';
 import { testDb } from './helpers.js';
 
@@ -9,6 +9,10 @@ import { testDb } from './helpers.js';
  * kosztu: llm/openspg = null → mierzy kanał FTS5, przez który przechodzi każda
  * zmiana rankingu/fuzji). Bramki: hit@5 ≥ 0.8, MRR ≥ 0.5, negatywy odmówione.
  * Realny eval hybrydowy (z OpenSPG) — tools/eval/run-eval.mjs na żywej bazie.
+ *
+ * D8-06: dawna asercja negatywów (`top < 1/61 + 1e-9`) była zawsze prawdziwa przy
+ * jednym kanale (max możliwy top = 1/61), więc szum FTS przechodził niezauważony.
+ * Teraz negatywy sprawdzamy TĄ SAMĄ regułą co produkcyjna bramka odmowy.
  */
 
 interface Golden {
@@ -62,9 +66,16 @@ const GOLDENS: Golden[] = [
   { query: 'kiedy złożyć wniosek urlopowy', expectedId: 'CHUNK_proc01_001', expectedNamespace: NS_PROC },
   { query: 'dieta delegacja krajowa', expectedId: 'CHUNK_proc01_002', expectedNamespace: NS_PROC },
   { query: 'zgłoszenie awarii komputera helpdesk', expectedId: 'CHUNK_proc02_001', expectedNamespace: NS_PROC },
-  // negatywy — wiedza spoza korpusu ma dawać 0 wyników albo bardzo słaby top
+  // negatywy — wiedza spoza korpusu ma być ODMÓWIONA przez bramkę
   { query: 'przepis na sernik z rodzynkami', negative: true },
   { query: 'harmonogram ligi mistrzów w piłce nożnej', negative: true },
+  // ADWERSARIALNE: dzielą słownictwo/podciągi z korpusem (audyt D8-06,
+  // evidence/D8-fixture-negative-gate.json — pod starą asercją przechodziły)
+  { query: 'maksymalne stawki podatku od nieruchomości', negative: true },
+  { query: 'systemy operacyjne w komputerach osobistych', negative: true },
+  { query: 'test wiedzy o historii Polski', negative: true },
+  { query: 'ile urządzeń mieści się w windzie towarowej', negative: true },
+  { query: 'kto wygrał mistrzostwa świata w piłce nożnej', negative: true },
 ];
 
 function makeCtx(db: Db): AnswerCtx {
@@ -99,10 +110,41 @@ describe('eval retrievalu na fixturach (bramka regresji CI)', () => {
 
     for (const g of GOLDENS.filter((x) => x.negative === true)) {
       const res = await hybridSearch(ctx, { query: g.query, allowedNamespaces: allowed, limit: 10 });
-      // FTS trigram bywa szumny — dopuszczamy śladowe trafienia, ale nie mocny top
-      const top = res.results[0]?.score ?? 0;
-      expect(top, `negatyw '${g.query}' ma podejrzanie mocny top`).toBeLessThan(1 / 61 + 1e-9);
+      // Ta sama reguła co produkcja: bez OpenSPG nie ma sygnału semantycznego,
+      // więc negatyw przechodzi TYLKO gdyby trafił AND-em (czego trafić nie może).
+      const gate = evaluateRelevanceGate({
+        resultCount: res.results.length,
+        semanticScore: res.topVectorScore,
+        lexicalStrict: res.lexicalStrict,
+        minRelevance: ANSWER_MIN_RELEVANCE_DEFAULT,
+      });
+      expect(gate.pass, `negatyw '${g.query}' przeszedł bramkę odmowy`).toBe(false);
     }
+  });
+
+  it('bramka nie jest „zawsze nie": większość pozytywów przechodzi nawet w trybie FTS-only', async () => {
+    const db = testDb();
+    seedCorpus(db);
+    const ctx = makeCtx(db);
+    const allowed = [NS_LIGHT, NS_PROC];
+    const positives = GOLDENS.filter((x) => x.negative !== true);
+    const refused: string[] = [];
+    for (const g of positives) {
+      const res = await hybridSearch(ctx, { query: g.query, allowedNamespaces: allowed, limit: 10 });
+      const gate = evaluateRelevanceGate({
+        resultCount: res.results.length,
+        semanticScore: res.topVectorScore,
+        lexicalStrict: res.lexicalStrict,
+        minRelevance: ANSWER_MIN_RELEVANCE_DEFAULT,
+      });
+      if (!gate.pass) refused.push(g.query);
+    }
+    // Uwaga: ten scenariusz to NAJSUROWSZY wariant bramki — bez OpenSPG i bez LLM
+    // nie ma żadnego sygnału semantycznego, więc parafrazy trafiające tylko luźnym
+    // OR są odrzucane z premedytacją (na produkcji ratuje je kanał wektorowy albo
+    // rerank embed). Bramka musi jednak przepuszczać zdecydowaną większość.
+    const passRate = (positives.length - refused.length) / positives.length;
+    expect(passRate, `bramka odrzuciła zbyt wiele pozytywów: ${refused.join(' | ')}`).toBeGreaterThanOrEqual(0.75);
   });
 
   it('cross-KB: wyniki z obu baz są osiągalne w jednym wyszukiwaniu', async () => {

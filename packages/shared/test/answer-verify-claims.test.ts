@@ -95,7 +95,7 @@ describe('verifyClaim', () => {
     expect(gaps).toBe(1);
   });
 
-  it('nieparsowalny werdykt LLM → insufficient bez luki (defensywnie)', async () => {
+  it('nieparsowalny werdykt LLM → insufficient ORAZ luka wiedzy (D8-10)', async () => {
     const db = testDb();
     const ctx = seededCtx(db, 'przepraszam, nie mogę');
     const res = await verifyClaim(ctx, {
@@ -104,7 +104,10 @@ describe('verifyClaim', () => {
       source: 'mcp',
     });
     expect(res.status).toBe('insufficient');
-    expect(res.gapRecorded).toBe(false);
+    // Awaria sędziego nie może znikać bez śladu z pętli uczenia.
+    expect(res.gapRecorded).toBe(true);
+    const gap = db.prepare('SELECT metadata_json FROM learning_gaps').get() as { metadata_json: string };
+    expect(gap.metadata_json).toContain('claim_verify_unparsable');
   });
 });
 

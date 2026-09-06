@@ -1,20 +1,27 @@
 import type { Db } from '../db/index.js';
-import { recordAnswer, recordGap } from '../db/index.js';
+import { getSettingModelName, recordAnswer, recordGap } from '../db/index.js';
 import { AppError } from '../errors.js';
 import { wrapUntrusted } from '../llm/index.js';
 import { hybridSearch } from './retrieval.js';
-import type { AnswerCtx, RetrievalHit } from './retrieval.js';
+import type { AnswerCtx, DegradedReason, RetrievalHit } from './retrieval.js';
 import { rewriteQuery } from './rewrite.js';
 import { rerankHits, type RerankStrategy } from './rerank.js';
-import { answerCacheKey, dataVersion, getCachedAnswer, putCachedAnswer } from './cache.js';
+import { answerCacheKey, chatConfigFingerprint, dataVersion, getCachedAnswer, putCachedAnswer } from './cache.js';
 import { extractClaims, type AnswerClaim } from './claims.js';
+import {
+  bestSemanticScore,
+  evaluateRelevanceGate,
+  resolveMinRelevance,
+  type GateDecision,
+} from './gate.js';
 
 /**
  * Pipeline odpowiedzi z cytowaniami (backend-mcp §7.6 + PLAN) — WSPÓLNY dla
  * kb_answer (MCP) i POST /api/v1/ask (panel):
  *  1. retrieval hybrid z limitem maxSources*2,
- *  2. BRAMKA ODMOWY przed chat_llm: 0 wyników lub top score < 'answer.minScore'
- *     → no_answer po polsku + luka wiedzy, ZERO kosztu LLM,
+ *  2. BRAMKA ODMOWY przed chat_llm (gate.ts): 0 wyników, cosinus trafności poniżej
+ *     'answer.minScore' albo — bez sygnału semantycznego — brak leksykalnego trafienia
+ *     AND → no_answer po polsku + luka wiedzy, ZERO kosztu chat_llm,
  *  3. kontekst ≤6000 tokenów (~4 zn./token; przycinanie per chunk do 1200 tokenów),
  *  4. chat z systemem PL (tylko źródła, cytuj [n], wymuszona linia CONFIDENCE:),
  *  5. walidacja cytowań post-hoc (hallucynacje usuwane; brak cytowań → słaba odpowiedź),
@@ -60,6 +67,12 @@ export interface AnswerResult {
   confidence: number;
   model: string | null;
   degraded: boolean;
+  /**
+   * CO dokładnie jest zdegradowane (D8-03/D8-10) — sam bool nie mówi operatorowi
+   * ani agentowi, czy padł OpenSPG, czy tylko zabrakło pełnej treści w mirrorze.
+   * Pole DODANE obok `degraded`; kontrakt boola pozostaje bez zmian.
+   */
+  degradedReasons: DegradedReason[];
   gapRecorded: boolean;
   noAnswer: boolean;
   answerId: string;
@@ -71,14 +84,6 @@ const CONTEXT_CHAR_BUDGET = 6000 * CHARS_PER_TOKEN;
 const CHUNK_CHAR_LIMIT = 1200 * CHARS_PER_TOKEN;
 /** Teoretyczny top RRF pojedynczego kanału: 1/(60+1) — do normalizacji top score. */
 const RRF_TOP1 = 1 / 61;
-/**
- * Próg bramki odmowy na ZNORMALIZOWANYM topie (topScore / (activeChannels*RRF_TOP1)):
- * 1.0 = rank 1 we wszystkich działających kanałach. 0.2 ≈ rank 5 pojedynczego kanału.
- * (Stara semantyka surowego RRF przepuszczała wszystko: rank 1 = 1/61 > 0.01.)
- */
-const ANSWER_MIN_SCORE_DEFAULT = 0.2;
-/** Wartości legacy sprzed normalizacji (surowe RRF, <0.05) traktujemy jak brak ustawienia. */
-const ANSWER_MIN_SCORE_LEGACY_CUTOFF = 0.05;
 const LEARNING_THRESHOLD_DEFAULT = 0.45;
 
 export const NO_ANSWER_TEXT =
@@ -108,8 +113,16 @@ function readNumberSetting(db: Db, key: string, fallback: number): number {
   return fallback;
 }
 
-/** Nazwa modelu chatu — tylko gdy 'llm.chat' jest zapisane jawnie (sekret → null). */
+/**
+ * Nazwa modelu chatu z konfiguracji (GAP-05). Pierwszy wybór: jawna kolumna
+ * settings.model_name (migracja 0060) — działa TAKŻE dla zapieczętowanego
+ * 'llm.chat', przez co dotąd answers.model było NULL w 100 % wierszy. Fallback:
+ * wartość jawna sprzed migracji. Nazwa realnie użytego modelu i tak przychodzi
+ * z ChatResult.model — to jest wyłącznie zapas na odmowę/cache.
+ */
 function readChatModelName(db: Db): string | null {
+  const explicit = getSettingModelName(db, 'llm.chat');
+  if (explicit !== null && explicit !== '') return explicit;
   try {
     const row = db
       .prepare('SELECT value_json, is_secret FROM settings WHERE key = ?')
@@ -272,22 +285,62 @@ export async function answerQuestion(ctx: AnswerCtx, params: AnswerParams): Prom
   const usedNamespaces =
     params.namespaces && params.namespaces.length > 0 ? params.namespaces : params.allowedNamespaces;
 
+  // Parametry wpływające na TREŚĆ odpowiedzi — wszystkie muszą wejść do klucza
+  // cache, inaczej pytanie zadane po angielsku dostaje polską odpowiedź z cache,
+  // a zmiana progu/strategii w Ustawieniach nie unieważnia niczego przez godzinę (D8-11).
+  const strategyRaw = readStringSetting(ctx.db, 'answer.rerank', 'embed');
+  const strategy: RerankStrategy = (['off', 'embed', 'llm'] as const).includes(
+    strategyRaw as RerankStrategy,
+  )
+    ? (strategyRaw as RerankStrategy)
+    : 'embed';
+  const rewriteOn = readBoolSetting(ctx.db, 'answer.rewrite', false);
+  const minRelevance = resolveMinRelevance(
+    readNumberSetting(ctx.db, 'answer.minScore', Number.NaN),
+  );
+
   // ── Cache odpowiedzi: klucz zawiera wersję danych (max export_runs.id) —
   // rebuild bazy naturalnie unieważnia; trafienie = zero retrievalu i LLM. ──
   const model0 = readChatModelName(ctx.db);
   const cacheKey = answerCacheKey(
     params.question,
     usedNamespaces,
-    model0,
+    // odcisk konfiguracji chatu zamiast samej nazwy modelu: 'llm.chat' bywa sealed
+    // (is_secret=1 → model NULL w 100 % wierszy answers), a odcisk zmienia się przy
+    // KAŻDEJ edycji ustawienia i nie ujawnia sekretu (sha256 zapieczętowanego blobu).
+    chatConfigFingerprint(ctx.db),
     dataVersion(ctx.db, usedNamespaces),
+    { language, maxSources, minRelevance, rerank: strategy, rewrite: rewriteOn },
   );
   const cached = getCachedAnswer(cacheKey);
-  if (cached !== null) return { ...cached, warnings: [...cached.warnings] };
+  if (cached !== null) {
+    // Trafienie cache też jest ODPOWIEDZIĄ: bez wiersza w answers wolumen jest
+    // zaniżony, a feedback z MCP trafiałby do cudzego wiersza (D8-11).
+    const cachedRow = recordAnswer(ctx.db, {
+      question: params.question,
+      namespaces: usedNamespaces,
+      citations: cached.citations.map((c) => ({ n: c.n, id: c.id, namespace: c.namespace })),
+      confidence: cached.confidence,
+      model: cached.model,
+      degraded: cached.degraded,
+      noAnswer: cached.noAnswer,
+      source: params.source,
+      apiKeyId,
+      userId,
+      tookMs: Date.now() - started,
+      // Treść trafienia cache jest tą samą odpowiedzią — sędzia jakości musi ją
+      // widzieć tak samo jak świeżą (D8-08); from_cache odróżnia jedno od drugiego
+      // (D8-11), więc koszt chat_llm per odpowiedź da się wreszcie policzyć.
+      answerText: cached.answer,
+      fromCache: true,
+    });
+    return { ...cached, answerId: cachedRow.id, warnings: [...cached.warnings] };
+  }
 
   // ── Query rewriting (setting 'answer.rewrite', default off): fraza dla kanałów
   // tekstowych; wektor embeduje oryginał. Błąd/timeout → oryginał (rewrite.ts). ──
   let textQuery: string | undefined;
-  if (ctx.llm !== null && readBoolSetting(ctx.db, 'answer.rewrite', false)) {
+  if (ctx.llm !== null && rewriteOn) {
     const rw = await rewriteQuery(ctx.llm, params.question);
     const suffix = rw.keywords.length > 0 ? ` ${rw.keywords.join(' ')}` : '';
     textQuery = `${rw.rewritten}${suffix}`.trim();
@@ -303,23 +356,30 @@ export async function answerQuestion(ctx: AnswerCtx, params: AnswerParams): Prom
     ...(params.namespaces !== undefined ? { namespaces: params.namespaces } : {}),
   });
   const topScore = retrieval.results[0]?.score ?? 0;
-  // topNorm: 1.0 = rank 1 we WSZYSTKICH kanałach, które weszły do fuzji (bez saturacji
-  // przy zgodzie 2 kanałów i bez inflacji przy jednym) — wspólny dla bramki i confidence.
+  // topNorm: 1.0 = rank 1 we WSZYSTKICH kanałach, które weszły do fuzji. UWAGA:
+  // to miara ZGODNOŚCI kanałów, nie trafności — służy już tylko jako zapasowy
+  // składnik confidence, NIE jako bramka odmowy (D8-01).
   const activeChannels = Math.max(retrieval.activeChannels, 1);
   const topNorm = clamp01(topScore / (activeChannels * RRF_TOP1));
-  const minScoreRaw = readNumberSetting(ctx.db, 'answer.minScore', ANSWER_MIN_SCORE_DEFAULT);
-  const minScore =
-    minScoreRaw < ANSWER_MIN_SCORE_LEGACY_CUTOFF ? ANSWER_MIN_SCORE_DEFAULT : minScoreRaw;
 
-  // ── Bramka odmowy: słaby retrieval → no_answer + luka, BEZ wywołania chat_llm ──
-  if (retrieval.results.length === 0 || topNorm < minScore) {
+  /** Odmowa: luka wiedzy + wiersz answers, ZERO kosztu chat_llm. */
+  const refuse = (decision: GateDecision, semanticScore: number | null): AnswerResult => {
     recordGap(ctx.db, {
       question: params.question,
       source: params.source,
       kbNamespace: usedNamespaces[0] ?? null,
       confidence: 0,
       apiKeyId,
-      metadata: { reason: 'no_answer_gate', topScore, topNorm, minScore },
+      metadata: {
+        reason: 'no_answer_gate',
+        gateReason: decision.reason,
+        gateSignal: decision.signal,
+        semanticScore,
+        lexicalStrict: retrieval.lexicalStrict,
+        minRelevance,
+        topScore,
+        topNorm,
+      },
     });
     const answerRow = recordAnswer(ctx.db, {
       question: params.question,
@@ -333,6 +393,10 @@ export async function answerQuestion(ctx: AnswerCtx, params: AnswerParams): Prom
       apiKeyId,
       userId,
       tookMs: Date.now() - started,
+      // Odmowa ma stałą treść (NO_ANSWER_TEXT) — nie ma czego utrwalać, a wiersz
+      // i tak niesie no_answer=1 (sędzia rozpoznaje odmowę po tej fladze).
+      answerText: null,
+      fromCache: false,
     });
     return {
       answer: NO_ANSWER_TEXT,
@@ -341,11 +405,29 @@ export async function answerQuestion(ctx: AnswerCtx, params: AnswerParams): Prom
       confidence: 0,
       model: null,
       degraded: retrieval.degraded,
+      degradedReasons: retrieval.degradedReasons,
       gapRecorded: true,
       noAnswer: true,
       answerId: answerRow.id,
       warnings,
     };
+  };
+
+  // ── Bramka odmowy, faza 1 (przed JAKIMKOLWIEK wywołaniem LLM): sygnał z kanału
+  // wektorowego OpenSPG, a bez niego wymóg leksykalnego trafienia AND. ──
+  const gate1 = evaluateRelevanceGate({
+    resultCount: retrieval.results.length,
+    semanticScore: retrieval.topVectorScore,
+    lexicalStrict: retrieval.lexicalStrict,
+    minRelevance,
+  });
+  // Odmowę „tylko luźny OR" odraczamy, jeśli rerank embed jest w stanie dostarczyć
+  // sygnał semantyczny (tryb zdegradowany + skonfigurowany LLM): parafraza spoza
+  // dosłownego brzmienia korpusu zasługuje na ocenę cosinusem, a nie na odmowę
+  // z powodu samego trybu FTS. Bez LLM zostaje twarde wymaganie AND.
+  const canCheckSemantics = ctx.llm !== null && strategy === 'embed';
+  if (!gate1.pass && !(gate1.reason === 'lexical_fallback_only' && canCheckSemantics)) {
+    return refuse(gate1, retrieval.topVectorScore);
   }
 
   if (ctx.llm === null) {
@@ -354,16 +436,19 @@ export async function answerQuestion(ctx: AnswerCtx, params: AnswerParams): Prom
 
   // ── Rerank top-k PO bramce (nie płacimy za embed odrzuconych zapytań);
   // strategia z 'answer.rerank' (default embed — patrz rerank.ts). ──
-  const strategy = readStringSetting(ctx.db, 'answer.rerank', 'embed');
-  const rerank = await rerankHits(
-    ctx.db,
-    ctx.llm,
-    (['off', 'embed', 'llm'] as const).includes(strategy as RerankStrategy)
-      ? (strategy as RerankStrategy)
-      : 'embed',
-    params.question,
-    retrieval.results,
-  );
+  const rerank = await rerankHits(ctx.db, ctx.llm, strategy, params.question, retrieval.results);
+
+  // ── Bramka odmowy, faza 2 (przed chat_llm, po tanim reranku embed): cosinus
+  // policzony NASZYM modelem na pełnej treści z mirrora to drugi, niezależny głos.
+  // Bierzemy LEPSZY z sygnałów — odmawiamy dopiero, gdy żaden nie widzi trafności. ──
+  const semanticScore = bestSemanticScore(retrieval.topVectorScore, rerank.topCosine);
+  const gate2 = evaluateRelevanceGate({
+    resultCount: rerank.hits.length,
+    semanticScore,
+    lexicalStrict: retrieval.lexicalStrict,
+    minRelevance,
+  });
+  if (!gate2.pass) return refuse(gate2, semanticScore);
 
   // ── Kontekst [1..n] w budżecie tokenów ──
   const { sources, snippetFallbacks } = buildContext(ctx.db, rerank.hits, maxSources);
@@ -386,7 +471,10 @@ export async function answerQuestion(ctx: AnswerCtx, params: AnswerParams): Prom
 
   params.onPhase?.('generating');
   const chatResult = await ctx.llm.chat({ system: systemPrompt(language), user });
-  const model = model0;
+  // GAP-05: nazwa modelu z WYNIKU wywołania — konfiguracja 'llm.chat' bywa
+  // zapieczętowana (is_secret=1) i model0 był wtedy NULL, przez co answers.model
+  // było puste w 100 % wierszy. model0 zostaje wyłącznie jako zapas.
+  const model = chatResult.model !== undefined && chatResult.model !== '' ? chatResult.model : model0;
 
   // ── Parsowanie CONFIDENCE + walidacja cytowań post-hoc ──
   const { answer: withoutConfidence, llmSelf } = parseConfidenceLine(chatResult.text);
@@ -409,8 +497,8 @@ export async function answerQuestion(ctx: AnswerCtx, params: AnswerParams): Prom
     }));
 
   // ── confidence = 0.5*llmSelf + 0.3*sygnał_trafności + 0.2*coverage; sygnał =
-  // cosinus topu z reranku embed (realna trafność), fallback: topNorm z fuzji. ──
-  const relevanceSignal = rerank.topCosine !== null ? clamp01(rerank.topCosine) : topNorm;
+  // najlepszy cosinus trafności (rerank/kanał wektorowy), fallback: topNorm z fuzji. ──
+  const relevanceSignal = semanticScore !== null ? clamp01(semanticScore) : topNorm;
   const coverage = sources.length > 0 ? cited.length / sources.length : 0;
   let confidence =
     llmSelf !== null
@@ -452,6 +540,11 @@ export async function answerQuestion(ctx: AnswerCtx, params: AnswerParams): Prom
     apiKeyId,
     userId,
     tookMs: Date.now() - started,
+    // D8-08: TREŚĆ odpowiedzi utrwalona dla KAŻDEJ odpowiedzi, nie tylko tych
+    // poniżej progu pewności (dotąd jedynym śladem był learning_gaps.answer_preview,
+    // więc sędzia LLM mierzył wyłącznie próbkę obciążoną w dół).
+    answerText: answer,
+    fromCache: false,
   });
 
   const result: AnswerResult = {
@@ -461,12 +554,17 @@ export async function answerQuestion(ctx: AnswerCtx, params: AnswerParams): Prom
     confidence,
     model,
     degraded: retrieval.degraded,
+    degradedReasons: retrieval.degradedReasons,
     gapRecorded,
     noAnswer: false,
     answerId: answerRow.id,
     warnings,
   };
   // Cache tylko pewnych, niezdegradowanych odpowiedzi (rebuild i tak unieważnia klucz).
-  if (!result.degraded && confidence >= threshold) putCachedAnswer(cacheKey, result);
+  // kb_dirty jest MIĘKKIM powodem degradacji (poza boolem degraded), ale w tym oknie
+  // mirror wyprzedza graf — odpowiedź policzona wtedy nie może żyć w cache przez TTL (D8-11).
+  const cacheable =
+    !result.degraded && !retrieval.degradedReasons.includes('kb_dirty') && confidence >= threshold;
+  if (cacheable) putCachedAnswer(cacheKey, result);
   return result;
 }

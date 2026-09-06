@@ -1,0 +1,40 @@
+{
+  "$comment": [
+    "REFERENCYJNY baseline retrievalu — artefakt audytu D8 (pomiar 2026-09-06 na żywym stacku).",
+    "Służy do porównania po zmianach w retrievalu/fuzji/FTS: regresja = pogorszenie o >20 % p95",
+    "albo spadek hit@5/MRR. NIE jest bramką CI (pomiar wymaga żywego OpenSPG + embeddingów) —",
+    "bramki deterministyczne siedzą w packages/shared/test/eval-retrieval-fixture.test.ts i w",
+    "tools/eval/run-eval.mjs. Odtworzenie: EVAL_CHANNELS=full npm run eval na produkcyjnej bazie."
+  ],
+  "measuredAt": "2026-09-06",
+  "corpus": {
+    "StagingSmoke": { "documents": 1, "chunks": 2 },
+    "PomagierOps": { "documents": 0, "chunks": 0 },
+    "note": "Metryki jakości są przy tym korpusie DETEKTOREM REGRESJI, nie dowodem jakości rankingu."
+  },
+  "queries": 52,
+  "latencyMs": {
+    "hybrid": { "cold": { "p50": 282, "p95": 456, "p99": 533 }, "warm": { "p50": 196, "p95": 291, "p99": 444 } },
+    "text": { "p50": 31, "p95": 52, "p99": 82 },
+    "vector": { "p50": 180, "p95": 270, "p99": 330 }
+  },
+  "quality": {
+    "hit1": 0.95,
+    "hit5": 1.0,
+    "mrr": 0.975
+  },
+  "gateCalibration": {
+    "$comment": "Surowe score kanału OpenSPG search/vector (evidence/D8-vector-raw-scores.json) — podstawa progu 0.7 w answer/gate.ts.",
+    "onTopic": [0.871, 0.789, 0.778],
+    "offTopic": [0.635, 0.609, 0.515],
+    "chosenThreshold": 0.7,
+    "marginAbove": 0.078,
+    "marginBelow": 0.065
+  },
+  "knownRegressionsAccepted": {
+    "$comment": "Świadome kompromisy wprowadzone przy naprawie D8-01/D8-04 — mierzone w trybie fts.",
+    "ftsOnlyEnglishQueries": "0 trafień (korpus polski; kanał wektorowy je obsługuje) — w goldens oznaczone requires:full",
+    "ftsOnlyTypos": "część literówek gubi luźny OR po zaostrzeniu rdzenia do ≥5 znaków — requires:full",
+    "degradedModeParaphrases": "bez OpenSPG i bez LLM bramka wymaga trafienia AND, więc odległe parafrazy dostają uczciwą odmowę"
+  }
+}

@@ -1,0 +1,6 @@
+{"question":"strumień świetlny oprawy HighBay LED 150W","expectedIds":["CHUNK_EF8A5D4D_000"],"namespaces":["StagingSmoke","PomagierOps"],"expectedNamespace":"StagingSmoke","kind":"routing"}
+{"question":"sterowanie DALI-2 i czujnik ruchu w oprawie","expectedIds":["CHUNK_EF8A5D4D_001"],"namespaces":["StagingSmoke","PomagierOps"],"expectedNamespace":"StagingSmoke","kind":"routing"}
+{"question":"oprawa przemyslowa do magazynu wysokiego skladowania","expectedIds":["CHUNK_EF8A5D4D_000"],"namespaces":["StagingSmoke","PomagierOps"],"expectedNamespace":"StagingSmoke","kind":"routing"}
+{"question":"stopień ochrony IP65 i odporność IK08 oprawy","expectedIds":["CHUNK_EF8A5D4D_000"],"namespaces":["StagingSmoke","PomagierOps"],"expectedNamespace":"StagingSmoke","kind":"routing"}
+{"question":"procedura odtworzenia panelu z kopii zapasowej","negative":true,"namespaces":["StagingSmoke","PomagierOps"],"kind":"routing-negative"}
+{"question":"jak zrotować klucz API serwera MCP","negative":true,"namespaces":["StagingSmoke","PomagierOps"],"kind":"routing-negative"}

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   answerCacheKey,
+  chatConfigFingerprint,
   clearAnswerCache,
   cosine,
   dataVersion,
@@ -105,6 +106,40 @@ describe('cache odpowiedzi', () => {
     putCachedAnswer(k1, answer, t0);
     expect(getCachedAnswer(k1, t0 + 1000)?.answerId).toBe('ans_x');
     expect(getCachedAnswer(k1, t0 + 61 * 60 * 1000)).toBeNull(); // po TTL 1 h
+  });
+
+  it('klucz rozróżnia language/maxSources/próg/rerank/rewrite (D8-11)', () => {
+    const opts = {
+      language: 'pl' as const,
+      maxSources: 6,
+      minRelevance: 0.7,
+      rerank: 'embed',
+      rewrite: false,
+    };
+    const base = answerCacheKey('Pytanie?', ['A'], 'm', 5, opts);
+    // to samo pytanie po angielsku NIE MOŻE oddać polskiej odpowiedzi z cache
+    expect(answerCacheKey('Pytanie?', ['A'], 'm', 5, { ...opts, language: 'en' })).not.toBe(base);
+    expect(answerCacheKey('Pytanie?', ['A'], 'm', 5, { ...opts, maxSources: 10 })).not.toBe(base);
+    expect(answerCacheKey('Pytanie?', ['A'], 'm', 5, { ...opts, minRelevance: 0.85 })).not.toBe(base);
+    expect(answerCacheKey('Pytanie?', ['A'], 'm', 5, { ...opts, rerank: 'off' })).not.toBe(base);
+    expect(answerCacheKey('Pytanie?', ['A'], 'm', 5, { ...opts, rewrite: true })).not.toBe(base);
+    expect(answerCacheKey('Pytanie?', ['A'], 'm', 5, { ...opts })).toBe(base); // deterministyczny
+  });
+
+  it('chatConfigFingerprint zmienia się przy edycji llm.chat i nie ujawnia sekretu', () => {
+    const db = testDb();
+    expect(chatConfigFingerprint(db)).toBe(''); // brak ustawienia
+    db.prepare(
+      `INSERT INTO settings (key, value_json, is_secret, updated_at) VALUES ('llm.chat', ?, 1, ?)`,
+    ).run(JSON.stringify({ sealed: 'AAAA-tajne' }), '2026-01-01T00:00:00.000Z');
+    const f1 = chatConfigFingerprint(db);
+    expect(f1).toMatch(/^[0-9a-f]{16}$/);
+    expect(f1).not.toContain('tajne');
+    db.prepare(`UPDATE settings SET value_json = ?, updated_at = ? WHERE key = 'llm.chat'`).run(
+      JSON.stringify({ sealed: 'BBBB-inne' }),
+      '2026-01-02T00:00:00.000Z',
+    );
+    expect(chatConfigFingerprint(db)).not.toBe(f1);
   });
 
   it('dataVersion: max id udanego eksportu w ns; brak eksportów = 0', () => {

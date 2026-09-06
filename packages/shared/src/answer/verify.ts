@@ -4,6 +4,7 @@ import { wrapUntrusted } from '../llm/index.js';
 import { hybridSearch } from './retrieval.js';
 import type { AnswerCtx } from './retrieval.js';
 import type { AnswerCitation } from './answer.js';
+import { evaluateRelevanceGate, resolveMinRelevance } from './gate.js';
 
 /**
  * Weryfikacja tezy względem bazy wiedzy (kb_claim_verify — raport MCP §claim_verify):
@@ -30,10 +31,27 @@ export interface VerifyClaimResult {
   gapRecorded: boolean;
 }
 
-const RRF_TOP1 = 1 / 61;
-const MIN_TOP_NORM = 0.2; // spójnie z bramką odmowy answer
 const EVIDENCE_LIMIT = 8;
 const CHUNK_CHARS = 3000;
+
+/** Próg trafności z ustawień — ta sama semantyka i default co w answer.ts (gate.ts). */
+function readMinRelevance(ctx: AnswerCtx): number {
+  try {
+    const row = ctx.db
+      .prepare("SELECT value_json, is_secret FROM settings WHERE key = 'answer.minScore'")
+      .get() as { value_json: string; is_secret: number } | undefined;
+    if (!row || row.is_secret === 1) return resolveMinRelevance(null);
+    const parsed: unknown = JSON.parse(row.value_json);
+    if (typeof parsed === 'number') return resolveMinRelevance(parsed);
+    if (parsed !== null && typeof parsed === 'object') {
+      const v = (parsed as Record<string, unknown>)['value'];
+      if (typeof v === 'number') return resolveMinRelevance(v);
+    }
+  } catch {
+    /* default poniżej */
+  }
+  return resolveMinRelevance(null);
+}
 
 const SYSTEM = [
   'Jesteś surowym weryfikatorem faktów. Oceniasz TEZĘ wyłącznie na podstawie dostarczonych źródeł.',
@@ -91,22 +109,28 @@ export async function verifyClaim(ctx: AnswerCtx, params: VerifyClaimParams): Pr
   });
   const usedNs =
     params.namespaces && params.namespaces.length > 0 ? params.namespaces : params.allowedNamespaces;
-  const topNorm =
-    (retrieval.results[0]?.score ?? 0) / (Math.max(retrieval.activeChannels, 1) * RRF_TOP1);
 
-  const recordInsufficiencyGap = (): void => {
+  const recordInsufficiencyGap = (reason = 'claim_verify_insufficient'): void => {
     recordGap(ctx.db, {
       question: params.claim,
       source: params.source,
       kbNamespace: usedNs[0] ?? null,
       confidence: 0,
       apiKeyId: params.apiKeyId ?? null,
-      metadata: { reason: 'claim_verify_insufficient' },
+      metadata: { reason },
     });
   };
 
   // Bramka: bez sensownych dowodów nie palimy LLM — uczciwe insufficient + luka.
-  if (retrieval.results.length === 0 || topNorm < MIN_TOP_NORM) {
+  // TA SAMA reguła co bramka odmowy answer (gate.ts) — dawny MIN_TOP_NORM 0.2 na
+  // znormalizowanym RRF był matematycznie martwy (D8-01).
+  const gate = evaluateRelevanceGate({
+    resultCount: retrieval.results.length,
+    semanticScore: retrieval.topVectorScore,
+    lexicalStrict: retrieval.lexicalStrict,
+    minRelevance: readMinRelevance(ctx),
+  });
+  if (!gate.pass) {
     recordInsufficiencyGap();
     return {
       status: 'insufficient',
@@ -130,12 +154,15 @@ export async function verifyClaim(ctx: AnswerCtx, params: VerifyClaimParams): Pr
   });
   const verdict = parseVerdict(chat.text);
   if (verdict === null) {
+    // Nieparsowalny werdykt to też „nie wiemy" — luka wiedzy MUSI powstać, inaczej
+    // awaria sędziego znika bez śladu z pętli uczenia i z raportów jakości (D8-10).
+    recordInsufficiencyGap('claim_verify_unparsable');
     return {
       status: 'insufficient',
       explanation: 'Nie udało się uzyskać jednoznacznego werdyktu — potraktuj tezę jako niezweryfikowaną.',
       citations: [],
       degraded: retrieval.degraded,
-      gapRecorded: false,
+      gapRecorded: true,
     };
   }
 
