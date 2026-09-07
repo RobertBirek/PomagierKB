@@ -218,7 +218,9 @@ services:
     volumes:
       - ${DATA_ROOT:?DATA_ROOT is required}/edge/kuma:/app/data
     healthcheck:
-      test: ["CMD", "node", "extra/healthcheck.js"]
+      # Kuma 2.x dostarcza skompilowany `extra/healthcheck` i sam go deklaruje w obrazie;
+      # wariant `node extra/healthcheck.js` z 1.x nadal istnieje, ale upstream go porzucił.
+      test: ["CMD", "extra/healthcheck"]
       interval: 60s
       timeout: 10s
       retries: 3
