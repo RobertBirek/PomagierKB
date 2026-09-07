@@ -42,25 +42,46 @@ przy odtwarzaniu (procedura: `disaster-recovery.md`, krok 0b).
 
 > Bez klucza prywatnego kopii off-site NIE DA SIĘ odczytać. Nie ma odzysku, nie ma resetu.
 
-**2. Skonfiguruj remote rclone.** Backblaze B2 ma 10 GB darmo, a snapshot waży ~6,5 MB/noc:
+**2. Skonfiguruj remote rclone na Contabo Object Storage.** Snapshot waży ~6,5 MB/noc,
+więc najmniejszy pakiet z zapasem wystarcza na lata.
 
 ```bash
-rclone config
-#  n) new remote
-#  name> b2-kag
-#  Storage> b2                       (Backblaze B2; dla innego S3 wybierz "s3")
-#  account> <Key ID z B2>            Application Key, NIE master key
-#  key>     <applicationKey>
-#  (reszta domyślnie, y) yes this is OK
-rclone mkdir b2-kag:pomagierkb-backups
-rclone lsd b2-kag:                   # kontrola: bucket widoczny
-```
-Załóż w B2 klucz aplikacyjny ograniczony **do tego jednego bucketa**. Włącz w buckecie
-*Object Lock* / wersjonowanie, jeśli chcesz odporność na ransomware — inaczej ktoś z tym
-kluczem może skasować kopie tak samo jak lokalne.
+# UWAGA na ścieżkę configu — patrz pułapka niżej. Klucze wpisujesz w promptach,
+# nie w argumentach: inaczej wylądują w historii powłoki i w /proc/<pid>/cmdline.
+sudo RCLONE_CONFIG=/etc/kag/rclone.conf rclone config
+#  n) New remote
+#  name> contabo
+#  Storage> 5            (Amazon S3 Compliant Storage Providers)
+#  provider> 4           (Ceph — to wskazuje dokumentacja Contabo dla ich S3)
+#  env_auth> 1           (wpiszę poświadczenia poniżej)
+#  access_key_id>        <Access Key z panelu Contabo>
+#  secret_access_key>    <Secret Key>
+#  region>               (Enter — pomiń)
+#  endpoint>             https://eu2.contabostorage.com   ← weź „S3 URL" ze swojego panelu;
+#                        region bywa inny (eu2 / usc1 / sin1 …), a zły endpoint = 403
+#  location_constraint / acl / server_side_encryption / sse_kms_key_id>  (Enter — pomiń)
+#  y) Yes this is OK → q) Quit
 
-Potem zgłoś — dopiszę `BACKUP_OFFSITE_TARGET=rclone://b2-kag:pomagierkb-backups` do
-`/etc/kag/alerts.env` i wymuszę jeden przebieg kontrolny.
+sudo RCLONE_CONFIG=/etc/kag/rclone.conf rclone mkdir contabo:pomagierkb-backups
+sudo RCLONE_CONFIG=/etc/kag/rclone.conf rclone lsd contabo:      # kontrola: bucket widoczny
+```
+
+> **Pułapka, która wysypałaby to co noc (sprawdzona empirycznie 2026-09-07):**
+> `kag-backup.service` ma `ProtectHome=true`, więc `/root/.config/rclone/rclone.conf` jest dla
+> niego **niewidoczny** — rclone szuka wtedy `/root/.rclone.conf`, nie znajduje i startuje
+> „z defaultów", czyli z **zerem remote'ów**. Każda nocna wysyłka kończyłaby się
+> `offsite.status: failed`. Dlatego config ma leżeć w `/etc/kag/rclone.conf` (0600, `/etc`
+> jest czytalne pod `ProtectSystem=full`), a `RCLONE_CONFIG=/etc/kag/rclone.conf` jest już
+> wpisane w `/etc/kag/alerts.env`. Pusty plik jest utworzony i czeka na `rclone config`.
+
+W panelu Contabo załóż **osobne poświadczenia** tylko do backupu, jeśli Twój plan na to
+pozwala, i rozważ włączenie wersjonowania bucketa — bez tego ktoś, kto przejmie ten host,
+skasuje kopie off-site tak samo łatwo jak lokalne.
+
+Gdy oba ruchy będą gotowe, zgłoś — dopiszę
+`BACKUP_OFFSITE_TARGET=rclone://contabo:pomagierkb-backups` do `/etc/kag/alerts.env`
+i wymuszę jeden przebieg kontrolny (`systemctl start kag-backup.service`), sprawdzając
+w manifeście `offsite: {status: "ok", encryption: "age"}` oraz obecność artefaktu w buckecie.
 
 **Kolejność względem A2:** rotacja klucza OpenAI **przed** włączeniem celu, żeby nowy klucz
 nie wszedł do obiegu, w którym stary już jest.
