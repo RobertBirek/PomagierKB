@@ -116,7 +116,14 @@ for img in "${IMAGES[@]}"; do
   # Klucz zostaje referencją obrazu (stabilny dla porównania z baseline), a `name` służy
   # wyłącznie do wyświetlania.
   name="$(docker image inspect "${img}" --format '{{if .RepoTags}}{{index .RepoTags 0}}{{else}}{{if .RepoDigests}}{{index .RepoDigests 0}}{{else}}{{.Id}}{{end}}{{end}}' 2>/dev/null || printf '%s' "${img}")"
-  printf '%s' "${scan_json}" | jq -c --arg img "${img}" --arg name "${name}" '
+  # KLUCZ do porównania z baseline MUSI być stabilny. `docker ps` zwraca dla obrazów bez
+  # użytecznego tagu KRÓTKI ID, który zmienia się przy odtworzeniu kontenera z pinu
+  # digestowego — po deployu 2026-09-06 te same obrazy dostały inne klucze i skan zgłosił
+  # 161 „nowych" podatności, których nie było. Bierzemy więc RepoDigest (stabilny dla
+  # obrazów firm trzecich przypiętych digestem), a dla obrazów budowanych u nas —
+  # repo:tag (`kag-panel:local`), bo tam przyrost między buildami JEST informacją.
+  key="$(docker image inspect "${img}" --format '{{if .RepoDigests}}{{index .RepoDigests 0}}{{else}}{{if .RepoTags}}{{index .RepoTags 0}}{{else}}{{.Id}}{{end}}{{end}}' 2>/dev/null || printf '%s' "${img}")"
+  printf '%s' "${scan_json}" | jq -c --arg img "${key}" --arg name "${name}" '
     {
       image: $img,
       name: $name,
