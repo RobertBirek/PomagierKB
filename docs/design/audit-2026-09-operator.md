@@ -281,27 +281,39 @@ Poprawki wdrożone w kodzie są **fail-closed**: kilka z nich świadomie NIE dzi
 operator nie dostarczy brakującego elementu. To zamierzone — cichy fallback do poprzedniego,
 niebezpiecznego zachowania byłby gorszy niż jawna odmowa.
 
-### F1. Konto testowe dla narzędzi UX (D4-02)
-`tools/ux-audit/e2e.mjs` **nie uruchomi się** do czasu wykonania tego kroku — kończy się
-kodem 2 z instrukcją. Dotąd logował się hasłem superusera Authentika czytanym wprost
-z `deploy/edge/.env`; teraz odmawia startu przy `E2E_USER=akadmin`, a także przy włączonym
-debugowaniu Playwrighta (`DEBUG=pw:*`), bo tryb ten utrwaliłby hasło wpisywane znak po znaku.
+### F1. Konto testowe dla narzędzi UX (D4-02) — ✅ WYKONANE 2026-09-07
 
-```
-Authentik → Users → Create → kag-e2e
-           → grupa kag-admin, ale NIE „authentik Admins"
-           → wyklucz z polityki MFA (osobna grupa poza stage'em MFA)
-```
+Konto `kag-e2e` założone w Authentiku: aktywne, **nie** superuser, wyłącznie w grupie
+`kag-admin` (rola admin jest wymagana — E2E dotyka kluczy MCP, ustawień i audytu).
+Poświadczenia w `/etc/kag/e2e.env` (0600, root), hasło wygenerowane w kontenerze
+i przechwycone wprost do pliku — nie przeszło przez ekran ani przez `argv`.
+
+Weryfikacja: `node tools/ux-audit/e2e.mjs` → **10/10 PASS**. Zabezpieczenia fail-closed
+potwierdzone empirycznie: `E2E_USER=akadmin` → odmowa startu (exit 2),
+`DEBUG=pw:api` → odmowa startu (exit 2, bo utrwaliłoby hasło w artefakcie Playwrighta).
+
+**Uwaga na kolejność z A3 (MFA):** po wymuszeniu MFA dla `kag-admin` to konto musi trafić
+do grupy wyłączonej z polityki MFA, inaczej E2E przestanie działać.
+
+Odtworzenie konta (gdyby hasło trzeba było zrotować) — hasło nie pojawia się w `argv`:
 ```bash
-install -d -m 700 /etc/kag
-printf 'E2E_USER=kag-e2e\nE2E_PASSWORD=%s\n' "$(openssl rand -base64 24)" > /etc/kag/e2e.env
-chmod 600 /etc/kag/e2e.env
-# ustaw to samo hasło użytkownikowi kag-e2e w Authentiku, potem:
-node /kag/tools/ux-audit/e2e.mjs
+docker exec -i edge-authentik-server ak shell -c "$(cat <<'SCRIPT'
+import secrets
+from authentik.core.models import User, Group
+u = User.objects.get(username="kag-e2e")
+pw = secrets.token_urlsafe(32)
+u.set_password(pw); u.save()
+u.ak_groups.set([Group.objects.get(name="kag-admin")]); u.save()
+print("E2E_PASSWORD=" + pw)
+SCRIPT
+)" 2>/dev/null | sed 's/^>*[[:space:]]*//' | grep '^E2E_PASSWORD=' > /tmp/pw.$$
+umask 077; { echo "E2E_USER=kag-e2e"; cat /tmp/pw.$$; } > /etc/kag/e2e.env
+chmod 600 /etc/kag/e2e.env; shred -u /tmp/pw.$$
 ```
 
-Uwaga na kolejność z A3: po wymuszeniu MFA dla `kag-admin` konto E2E musi zostać w grupie
-wyłączonej z MFA, inaczej narzędzie przestanie działać.
+Uwaga do `ak shell`: tryb interaktywny (bez `-c`) gubi bloki wielolinijkowe — skrypt
+z `if/else` po cichu się nie wykona. Zawsze `-c`, a wyjście filtruj, bo konsola
+poprzedza je znakami `>>> `.
 
 ### F2. Klucz szyfrowania kopii off-site (D5-03, warunek dla A1)
 Sam `BACKUP_OFFSITE_TARGET` **nie wystarczy** — bez odbiorcy szyfrowania wysyłka jest
