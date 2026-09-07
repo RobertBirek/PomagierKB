@@ -286,11 +286,20 @@ else
   warn "brak katalogu ${DATA_ROOT}/edge/caddy/data — pomijam certy"
 fi
 
-# --- 6b. Uptime Kuma (monitoring: konto admina, monitory, powiadomienia, historia) ---
+# --- 6b. Uptime Kuma (monitoring: konto admina, monitory, powiadomienia, historia, pliki) ---
 # Konfiguracja Kumy żyje WYŁĄCZNIE w tym SQLite. Bez niego odtworzenie hosta przywraca
 # platformę i zostawia monitoring pusty — czyli stan sprzed ustalenia D10-01, w którym
 # cicha awaria backupu była niewidoczna. `deploy/scripts/kuma_seed_monitors.sh` odtworzy
 # same monitory, ale nie konto admina ani historii; ten artefakt odtwarza wszystko.
+#
+# Katalogi z plikami wymienione są JAWNIE, a nie brane hurtem — do archiwum nie mogą trafić
+# `kuma.db-wal`/`-shm` (dokleiłyby się do spójnej kopii bazy przy odtworzeniu i cofnęły ją
+# do stanu sprzed `.backup`) ani katalog roboczy tego skryptu. Skutek uboczny listy jest
+# taki, że nowy podkatalog Kumy trzeba tu dopisać ręcznie — dlatego stoi w jednym miejscu.
+# `docker-tls/` (certy klienckie do monitorów typu „Docker host") świadomie POZA listą:
+# jest pusty, a wpuszczenie kluczy prywatnych do snapshotu chcemy mieć jako decyzję,
+# nie jako efekt uboczny. Dopisz go, gdy zaczniesz monitorować hosty dockerowe po TLS.
+KUMA_FILE_DIRS=(upload screenshots)
 backup_kuma() {
   local dir="${DATA_ROOT}/edge/kuma"
   local staging="${dir}/.backup-staging"
@@ -316,7 +325,14 @@ backup_kuma() {
     # db-config.json mówi Kumie 2.x, którego backendu użyć; bez niego po odtworzeniu
     # wraca kreator wyboru bazy, mimo że baza jest na miejscu.
     [[ -f "${dir}/db-config.json" ]] && cp "${dir}/db-config.json" "${staging}/db-config.json"
-    if tar --zstd -cf "${SNAP}/kuma.tar.zst" -C "${staging}" .; then
+    # Pliki wrzucone przez użytkownika (ikony monitorów, zrzuty stron) dokładamy PROSTO
+    # z katalogu danych — nie ma sensu ich kopiować dwa razy. Brakujący katalog wypada
+    # z listy zamiast wywalić tar-a.
+    local extra=() d
+    for d in "${KUMA_FILE_DIRS[@]}"; do
+      [[ -d "${dir}/${d}" ]] && extra+=(-C "${dir}" "${d}")
+    done
+    if tar --zstd -cf "${SNAP}/kuma.tar.zst" -C "${staging}" . "${extra[@]+"${extra[@]}"}"; then
       chmod 600 "${SNAP}/kuma.tar.zst"
     else
       rm -f "${SNAP}/kuma.tar.zst"

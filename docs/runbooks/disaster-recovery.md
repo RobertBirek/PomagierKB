@@ -34,7 +34,7 @@ prawdy) i cotygodniowy `verify_backup.sh` (check `docs_artifacts`). Potwierdź w
 | `panel-audit.tar.zst` | audyt JSONL panelu (hash-chain) |
 | `authentik-pg.sql.zst` | całe SSO (pg_dump, BEZ `CREATE DATABASE`) |
 | `caddy-data.tar.zst` | certy Let's Encrypt (oszczędza limity LE) |
-| `kuma.tar.zst` | Uptime Kuma: konto admina, monitory, powiadomienia, historia (`kuma.db` + `db-config.json`) |
+| `kuma.tar.zst` | Uptime Kuma: konto admina, monitory, powiadomienia, historia, pliki (`kuma.db` + `db-config.json` + `upload/`, `screenshots/`) |
 | `env-edge.env`, `env-kag.env` | sekrety — bez nich reszta backupu jest bezużyteczna |
 | `repo-state.txt` | SHA commitu, na którym stał system (do `git checkout`) |
 | `edge-compose.yaml`, `kag-compose.yaml`, `*-compose.ps.txt` | stan stacków w chwili backupu |
