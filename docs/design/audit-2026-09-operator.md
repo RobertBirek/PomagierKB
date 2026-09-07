@@ -84,11 +84,13 @@ Po instalacji: usuń wpis `npm` z `.github/dependabot.yml` (zostaw `github-actio
 dublować PR-ów. Instrukcja jest w komentarzu obu plików.
 
 Osobno — żywy `.env` odstaje od `.env.example`: `KUMA_IMAGE` i `STIRLING_IMAGE` to **ruchome tagi**
-mimo polityki pinowania digestów. Digesty poniżej to obrazy **aktualnie działające**, więc
-przypięcie niczego nie zmienia w runtime:
+mimo polityki pinowania digestów.
+
+> **Nieaktualne 2026-09-07:** `KUMA_IMAGE` zostało przypięte przy aktualizacji do 2.5.3
+> (`@sha256:3e24e96c…`) — digest 1.x, który tu wcześniej stał, **cofnąłby** Kumę do wersji 1
+> na katalogu danych po migracji do schematu 2.x. Nie wklejaj go. Zostaje tylko Stirling:
 
 ```
-KUMA_IMAGE=louislam/uptime-kuma@sha256:3d632903e6af34139a37f18055c4f1bfd9b7205ae1138f1e5e8940ddc1d176f9
 STIRLING_IMAGE=docker.io/stirlingtools/stirling-pdf@sha256:3b3670fce70b396ec56ba380a3cc7858e0abf83fe13f31c88f7737847763a396
 ```
 
@@ -97,11 +99,11 @@ Dopisz też tagi linii wydań, żeby miesięczny `update_check.sh` nie zgadywał
 
 ```
 # deploy/edge/.env
-CADDY_IMAGE_CHECK_TAG=2.10
+CADDY_IMAGE_CHECK_TAG=2          # 2026-09-07: Caddy jest na 2.11.4, linia wydań to `2`
 AUTHENTIK_IMAGE_CHECK_TAG=2025.8
 POSTGRES_IMAGE_CHECK_TAG=16-alpine
 REDIS_IMAGE_CHECK_TAG=7-alpine
-KUMA_IMAGE_CHECK_TAG=1
+KUMA_IMAGE_CHECK_TAG=2          # 2026-09-07: już ustawione w żywym .env
 # deploy/kag/.env
 TIKA_IMAGE_CHECK_TAG=3.3.1.0
 STIRLING_IMAGE_CHECK_TAG=latest
@@ -258,10 +260,19 @@ SCRIPT
 )"
 ```
 
-**Co zostało do zrobienia w przeglądarce:** Uptime Kuma 2.5.3 czeka na kreatorze wyboru bazy
-(`Waiting for user action`). Wejdź na `https://status.ilovelighting.sanok.pl/`, zaloguj się
-kontem z grupy `kag-admin`, wybierz backend (SQLite wystarczy) i załóż konto administratora
-Kumy. Dopiero potem monitory — patrz A4.
+**Co zostało do zrobienia w przeglądarce:** wejdź na `https://status.ilovelighting.sanok.pl/`,
+zaloguj się kontem z grupy `kag-admin` i **załóż konto administratora Kumy**. Dopiero potem
+monitory — patrz A4.
+
+Krok „Konfigurowanie bazy danych" był zablokowany do 2026-09-07: wybór SQLite kończył się
+pętlą restartów z `EPERM: operation not permitted, copyfile './db/kuma.db' -> 'data/kuma.db'`.
+Przyczyna była w naszym compose, nie w Kumie — `cap_add: [SETUID, SETGID, CHOWN]` zostało tam
+dla entrypointu 1.x (setpriv). W 2.x entrypoint to `dumb-init -- node server/server.js` i proces
+zostaje rootem, a samo **CAP_CHOWN psuło kopiowanie**: libuv po skopiowaniu pliku ustawia na nim
+właściciela źródła (`node`, uid 1000), a dopiero potem tryb — i `fchmod` na pliku, którego proces
+po chownie już nie jest właścicielem, wymaga `CAP_FOWNER`, którego (słusznie) nie ma. Usunięcie
+całego `cap_add` naprawia start i jednocześnie zaostrza hardening (`cap_drop: ALL`, zero dodatków).
+Baza `data/kuma.db` powstała, migracje przeszły, kontener `healthy`.
 
 ### D3. Konto testowe dla narzędzi UX (D4-02, P1 — część operatorska)
 Narzędzia `tools/ux-audit/*` logowały się **hasłem superusera Authentika**, czytanym wprost
