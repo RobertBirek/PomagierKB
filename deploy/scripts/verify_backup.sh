@@ -367,6 +367,37 @@ verify_authentik_pg() {
   docker rm -f "${ctr}" >/dev/null 2>&1 || true
 }
 
+# --- 7b. Uptime Kuma: integralność bazy ORAZ to, czy monitoring w niej faktycznie jest ---
+#     Sam integrity_check przeszedłby na bazie świeżo po kreatorze: technicznie poprawnej,
+#     ale z zerem monitorów. Po odtworzeniu takiego pliku monitoring wróciłby pusty
+#     i nikt by się o tym nie dowiedział aż do pierwszej niezauważonej awarii.
+verify_kuma() {
+  local dir="${WORK}/kuma" image res
+  [[ -s "${SNAP}/kuma.tar.zst" ]] || { check "kuma_restore" false "brak kuma.tar.zst — monitoring nie jest w tym snapshocie"; return; }
+  image="$(docker inspect edge-uptime-kuma --format '{{.Config.Image}}' 2>/dev/null)" || image=""
+  if [[ -z "${image}" ]]; then
+    check "kuma_restore" false "nie znam obrazu Uptime Kumy (kontener nie istnieje) — brak czym otworzyć bazę"
+    return
+  fi
+  mkdir -p "${dir}"
+  if ! zstd -dc "${SNAP}/kuma.tar.zst" | tar -C "${dir}" -x 2>/dev/null; then
+    rm -rf "${dir}"; check "kuma_restore" false "rozpakowanie kuma.tar.zst nie powiodło się"; return
+  fi
+  res=$(docker run --rm --network none -v "${dir}:/verify" --entrypoint sh "${image}" -c '
+    printf "integrity=%s " "$(sqlite3 /verify/kuma.db "PRAGMA integrity_check;" 2>&1 | head -1)"
+    printf "monitors=%s "  "$(sqlite3 /verify/kuma.db "SELECT COUNT(*) FROM monitor;" 2>&1 | head -1)"
+    printf "users=%s "     "$(sqlite3 /verify/kuma.db "SELECT COUNT(*) FROM user;" 2>&1 | head -1)"
+    printf "notifications=%s" "$(sqlite3 /verify/kuma.db "SELECT COUNT(*) FROM notification;" 2>&1 | head -1)"
+  ' 2>&1) || res="run-failed: ${res}"
+  rm -rf "${dir}"
+  # Zero użytkowników = baza sprzed kreatora; zero monitorów = monitoring, który niczego nie pilnuje.
+  if [[ "${res}" == integrity=ok\ * && "${res}" != *"monitors=0"* && "${res}" != *"users=0"* ]]; then
+    check "kuma_restore" true "${res}"
+  else
+    check "kuma_restore" false "${res:0:300}"
+  fi
+}
+
 # --- 8. SQLite panelu: integralność PLIKU + warstwa APLIKACYJNA (migracje, rejestr KB, audyt) ---
 #     Sam integrity_check nie wychwyci backupu, który jest technicznie poprawną, ale PUSTĄ
 #     bazą (dokładnie to zdarzyło się 2026-09-03) ani zerwanego łańcucha audytu.
@@ -445,8 +476,9 @@ if [[ ${DEEP} -eq 1 ]]; then
   verify_neo4j
   verify_minio
   verify_authentik_pg
+  verify_kuma
 else
-  log "--quick: pomijam odtworzenia Neo4j/MinIO/Postgres"
+  log "--quick: pomijam odtworzenia Neo4j/MinIO/Postgres/Kumy"
 fi
 
 # --- 10. Raport JSON ---

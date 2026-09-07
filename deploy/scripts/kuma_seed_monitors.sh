@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 # kuma_seed_monitors.sh — odtwarza komplet monitorów i kanał powiadomień w Uptime Kumie.
 #
-# Dlaczego istnieje: konfiguracja Kumy żyje wyłącznie w jej SQLite (`/app/data/kuma.db`),
-# a ten plik NIE wchodzi do nocnego snapshotu (`backup.sh` kopiuje z edge tylko certy Caddy).
-# Po odtworzeniu hosta monitoring wróciłby pusty — czyli dokładnie w stan sprzed ustalenia
-# D10-01. Ten skrypt jest więc jedynym trwałym zapisem tej konfiguracji; traktuj go jak
-# źródło prawdy, a klikanie w UI jako rzecz do odzwierciedlenia tutaj.
+# Dlaczego istnieje: konfiguracja Kumy żyje wyłącznie w jej SQLite (`/app/data/kuma.db`).
+# Od 2026-09-07 ten plik wchodzi do nocnego snapshotu (`kuma.tar.zst`, odtwarzany przez
+# `restore.sh --only kuma`), więc pełne odtworzenie hosta przywraca też konto admina
+# i historię — czego ten skrypt NIE zrobi. Skrypt zostaje z dwóch powodów: jest czytelnym
+# zapisem tego, CO ma być monitorowane (snapshot jest nieczytelny bez otwierania SQLite),
+# i ratuje sytuację, gdy backup Kumy zawiódł albo stawiasz instancję od zera.
+# Traktuj go jak źródło prawdy o zestawie monitorów, a klikanie w UI jako rzecz
+# do odzwierciedlenia tutaj.
 #
 # Idempotentny: monitory i powiadomienie dopasowuje po NAZWIE — istniejące aktualizuje
 # (zachowując id, tokeny push i historię beatów), brakujące zakłada. Bezpiecznie uruchamiać

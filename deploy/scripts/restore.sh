@@ -14,6 +14,7 @@
 # Komponenty (--only):
 #   env            kopie .env obu stacków -> /kag/deploy/{edge,kag}/.env         (0600)
 #   caddy          caddy-data.tar.zst     -> ${DATA_ROOT}/edge/caddy/data        (certy LE)
+#   kuma           kuma.tar.zst           -> ${DATA_ROOT}/edge/kuma              (kontener STOP)
 #   authentik-pg   authentik-pg.sql.zst   -> działający kontener edge-postgres
 #   neo4j          neo4j-data.tar.zst     -> ${DATA_ROOT}/kag/neo4j/data         (kontener STOP)
 #   minio          minio.tar.zst          -> ${DATA_ROOT}/kag/minio              (kontener STOP)
@@ -23,7 +24,7 @@
 #   mysql          mysql.sql.zst          -> działający kontener release-openspg-mysql
 #   images         ${DATA_ROOT}/backups/images/*.tar.zst -> docker load
 #
-# Kolejność przy --all jest obowiązkowa: images, env, caddy, neo4j, minio, panel-*,
+# Kolejność przy --all jest obowiązkowa: images, env, caddy, kuma, neo4j, minio, panel-*,
 # authentik-pg, mysql. Wolumeny datastores przywracaj PRZED pierwszym startem ich kontenerów;
 # dumpy SQL — do kontenerów już działających.
 #
@@ -51,7 +52,7 @@ DRY=0
 FORCE=0
 ASSUME_YES=0
 COMPONENTS=()
-ALL_COMPONENTS=(images env caddy neo4j minio panel-sqlite panel-files panel-audit authentik-pg mysql)
+ALL_COMPONENTS=(images env caddy kuma neo4j minio panel-sqlite panel-files panel-audit authentik-pg mysql)
 
 log()  { echo "[restore] $*"; }
 warn() { echo "[restore][UWAGA] $*" >&2; }
@@ -170,6 +171,19 @@ restore_caddy() {
   run "zstd -dc '${SNAP}/caddy-data.tar.zst' | tar -C '${DATA_ROOT}/edge/caddy' -x"
 }
 
+restore_kuma() {
+  [[ -s "${SNAP}/kuma.tar.zst" ]] || { warn "brak kuma.tar.zst — monitoring NIE wróci (monitory odtworzy deploy/scripts/kuma_seed_monitors.sh, konta i historii nie)"; return 0; }
+  # Kontener MUSI stać: Kuma trzyma bazę otwartą, a nadpisanie pliku pod działającym procesem
+  # daje bazę uszkodzoną, nie przywróconą.
+  require_stopped edge-uptime-kuma
+  stash_dir "${DATA_ROOT}/edge/kuma"
+  run "mkdir -p '${DATA_ROOT}/edge/kuma'"
+  log "przywracam Uptime Kumę -> ${DATA_ROOT}/edge/kuma"
+  run "zstd -dc '${SNAP}/kuma.tar.zst' | tar -C '${DATA_ROOT}/edge/kuma' -x"
+  # WAL/SHM po starej bazie muszą zniknąć — SQLite dokleiłby je do przywróconego pliku.
+  run "rm -f '${DATA_ROOT}/edge/kuma/kuma.db-wal' '${DATA_ROOT}/edge/kuma/kuma.db-shm'"
+}
+
 restore_neo4j() {
   need_file neo4j-data.tar.zst
   require_stopped release-openspg-neo4j
@@ -265,6 +279,7 @@ for c in "${ALL_COMPONENTS[@]}"; do
     images)       restore_images ;;
     env)          restore_env ;;
     caddy)        restore_caddy ;;
+    kuma)         restore_kuma ;;
     neo4j)        restore_neo4j ;;
     minio)        restore_minio ;;
     panel-sqlite) restore_panel_sqlite ;;

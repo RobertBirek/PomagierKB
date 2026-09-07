@@ -286,6 +286,49 @@ else
   warn "brak katalogu ${DATA_ROOT}/edge/caddy/data — pomijam certy"
 fi
 
+# --- 6b. Uptime Kuma (monitoring: konto admina, monitory, powiadomienia, historia) ---
+# Konfiguracja Kumy żyje WYŁĄCZNIE w tym SQLite. Bez niego odtworzenie hosta przywraca
+# platformę i zostawia monitoring pusty — czyli stan sprzed ustalenia D10-01, w którym
+# cicha awaria backupu była niewidoczna. `deploy/scripts/kuma_seed_monitors.sh` odtworzy
+# same monitory, ale nie konto admina ani historii; ten artefakt odtwarza wszystko.
+backup_kuma() {
+  local dir="${DATA_ROOT}/edge/kuma"
+  local staging="${dir}/.backup-staging"
+  [[ -f "${dir}/kuma.db" ]] || { warn "brak ${dir}/kuma.db — pomijam Uptime Kumę"; return 0; }
+  rm -rf "${staging}"; mkdir -p "${staging}"
+
+  # `.backup` sqlite3, nie `cp`: Kuma dopisuje heartbeaty co kilkanaście sekund, więc zwykła
+  # kopia łapie bazę w połowie transakcji i daje plik, który wygląda poprawnie aż do pierwszej
+  # próby odczytu. Na hoście nie ma binarki sqlite3 — jest w obrazie Kumy, i stamtąd ją bierzemy.
+  local image ok=0
+  image="$(docker inspect edge-uptime-kuma --format '{{.Config.Image}}' 2>/dev/null)" || image=""
+  if ctr_running edge-uptime-kuma; then
+    docker exec edge-uptime-kuma sqlite3 /app/data/kuma.db ".backup '/app/data/.backup-staging/kuma.db'" && ok=1
+  elif [[ -n "${image}" ]]; then
+    # Kuma zatrzymana — ten sam obraz jednorazowo, bez sieci (czyta wyłącznie plik).
+    docker run --rm --network none -v "${dir}:/data" --entrypoint sh "${image}" \
+      -c 'sqlite3 /data/kuma.db ".backup '"'"'/data/.backup-staging/kuma.db'"'"'"' && ok=1
+  else
+    warn "Uptime Kuma nie działa i nie znam jej obrazu — pomijam monitoring"
+  fi
+
+  if [[ ${ok} -eq 1 && -s "${staging}/kuma.db" ]]; then
+    # db-config.json mówi Kumie 2.x, którego backendu użyć; bez niego po odtworzeniu
+    # wraca kreator wyboru bazy, mimo że baza jest na miejscu.
+    [[ -f "${dir}/db-config.json" ]] && cp "${dir}/db-config.json" "${staging}/db-config.json"
+    if tar --zstd -cf "${SNAP}/kuma.tar.zst" -C "${staging}" .; then
+      chmod 600 "${SNAP}/kuma.tar.zst"
+    else
+      rm -f "${SNAP}/kuma.tar.zst"
+      warn "archiwizacja bazy Uptime Kumy nie powiodła się"
+    fi
+  else
+    warn "spójna kopia bazy Uptime Kumy nie powiodła się — monitoring NIE jest w tym snapshocie"
+  fi
+  rm -rf "${staging}"
+}
+backup_kuma
+
 # --- 7. Kopie .env (sekrety stacków; 0600 wymusza też umask 077) ---
 if [[ -f "${EDGE_ENV}" ]]; then cp "${EDGE_ENV}" "${SNAP}/env-edge.env" && chmod 600 "${SNAP}/env-edge.env"; else warn "brak ${EDGE_ENV}"; fi
 if [[ -f "${KAG_ENV}"  ]]; then cp "${KAG_ENV}"  "${SNAP}/env-kag.env"  && chmod 600 "${SNAP}/env-kag.env";  else warn "brak ${KAG_ENV}"; fi

@@ -15,7 +15,10 @@ To sygnał **komplementarny** do `OnFailure`: alert systemd łapie „unit wysta
 push-monitor łapie „unit w ogóle nie wystartował" — timer wyłączony, host padł, `flock` po
 zawieszonym biegu. URL-e (`BACKUP_PING_URL`, `VERIFY_PING_URL`) są w `/etc/kag/alerts.env`
 (0600), ładowanym przez oba unity. Konfigurację monitorów odtwarza
-`deploy/scripts/kuma_seed_monitors.sh` — baza Kumy NIE wchodzi do snapshotu.
+`deploy/scripts/kuma_seed_monitors.sh`; sama baza Kumy wchodzi do snapshotu jako
+`kuma.tar.zst` (odtwarzanie: `restore.sh --only kuma`), a cotygodniowa weryfikacja
+sprawdza ją checkiem `kuma_restore` — nie tylko integralność pliku, ale i to, czy są
+w nim monitory i konto (pusta baza po kreatorze też przeszłaby `integrity_check`).
 
 ## Szybka diagnoza
 
