@@ -10,26 +10,66 @@ Kolejność w sekcjach = kolejność wykonania.
 
 ## A. Wymaga decyzji i pieniędzy (P0/P1)
 
-### A1. Kopia off-site (D5-02, P0)
-Dziś wszystkie snapshoty i archiwum obrazów leżą **na tym samym dysku co dane produkcyjne**.
-Awaria dysku, pomyłkowe `rm -rf` albo ransomware kasują jednocześnie system i wszystkie kopie.
-Backup jest sprawdzony (pełny drill DR przeszedł), ale nie przetrwa utraty hosta.
+### A1. Kopia off-site (D5-02, P0) — maszyneria GOTOWA 2026-09-07, zostają dwa ruchy operatora
+Wszystkie snapshoty i archiwum obrazów leżą **na tym samym dysku co dane produkcyjne**. Awaria
+dysku, pomyłkowe `rm -rf` albo ransomware kasują jednocześnie system i wszystkie kopie. Backup
+jest sprawdzony (pełny drill DR przeszedł), ale nie przetrwa utraty hosta.
 
-Wymagane: cel off-site (S3-compatible, Backblaze B2, inny VPS, NAS) + `rclone` na hoście
-(dziś **brak**) + hasło szyfrowania w `/etc/kag/backup.env`.
+**Co zostało zrobione:**
+
+- `age` i `rclone` zainstalowane (wcześniej nie było żadnego z nich);
+- para kluczy `age` wygenerowana; klucz **publiczny** wpisany jako `BACKUP_AGE_RECIPIENT`
+  w `/etc/kag/alerts.env` (0600) — to ten plik ładują unity systemd, nie `deploy/kag/.env`;
+- cała ścieżka przetestowana **realnym uruchomieniem `backup.sh`** na tymczasowym celu
+  lokalnym: manifest zapisał `offsite: {status: ok, encryption: age}`, artefakt
+  `<STAMP>.tar.age` (6,5 MB) odszyfrowany kluczem prywatnym i rozpakowany — 17 plików,
+  sumy sha256 co do bajtu zgodne z oryginałem, a bez klucza prywatnego `age` odmawia.
+  Cel testowy usunięty; `BACKUP_OFFSITE_TARGET` celowo zostawiony pusty.
+
+Uwaga o kształcie artefaktów: off-site jedzie **zaszyfrowany tar** oraz **jawny sidecar**
+`<STAMP>._manifest.json`. To celowe — manifest (nazwy plików, rozmiary, sumy, ostrzeżenia)
+pozwala sprawdzić stan kopii bez klucza prywatnego. Sekretów nie zawiera; `SHA256SUMS` do
+weryfikacji integralności jest **w środku** zaszyfrowanego archiwum.
+
+**Zostają dwa ruchy — oba wymagają Ciebie:**
+
+**1. Wynieś klucz prywatny z hosta.** Leży w `/root/kag-backup-age.key` (0600). Dopóki tam
+jest, kopia off-site jest odszyfrowywalna przez każdego, kto przejmie ten host — czyli
+szyfrowanie nie daje nic dokładnie w scenariuszu, dla którego istnieje. Skopiuj plik do
+menedżera haseł albo na nośnik offline, potem zgłoś — plik zostanie wymazany (`shred -u`).
+Klucz publiczny w `alerts.env` wystarczy do robienia kopii; prywatny jest potrzebny **tylko**
+przy odtwarzaniu (procedura: `disaster-recovery.md`, krok 0b).
+
+> Bez klucza prywatnego kopii off-site NIE DA SIĘ odczytać. Nie ma odzysku, nie ma resetu.
+
+**2. Skonfiguruj remote rclone.** Backblaze B2 ma 10 GB darmo, a snapshot waży ~6,5 MB/noc:
 
 ```bash
-apt-get install -y rclone
-rclone config                       # utwórz remote, np. "offsite"
-# dopisz do deploy/kag/.env:
-#   BACKUP_OFFSITE_TARGET=offsite:pomagierkb-backups
-#   BACKUP_OFFSITE_PASSPHRASE_FILE=/etc/kag/backup-passphrase
-install -m 600 /dev/null /etc/kag/backup-passphrase   # wpisz hasło (menedżer haseł!)
+rclone config
+#  n) new remote
+#  name> b2-kag
+#  Storage> b2                       (Backblaze B2; dla innego S3 wybierz "s3")
+#  account> <Key ID z B2>            Application Key, NIE master key
+#  key>     <applicationKey>
+#  (reszta domyślnie, y) yes this is OK
+rclone mkdir b2-kag:pomagierkb-backups
+rclone lsd b2-kag:                   # kontrola: bucket widoczny
 ```
+Załóż w B2 klucz aplikacyjny ograniczony **do tego jednego bucketa**. Włącz w buckecie
+*Object Lock* / wersjonowanie, jeśli chcesz odporność na ransomware — inaczej ktoś z tym
+kluczem może skasować kopie tak samo jak lokalne.
 
-**Uwaga krytyczna:** snapshot zawiera `env-edge.env`, `env-kag.env` i wyrenderowany
-`kag-compose.config.yaml` — czyli **komplet sekretów platformy**. Kopia off-site bez szyfrowania
-przeniosłaby je do cudzej infrastruktury. Szyfrowanie musi wejść **razem** z wysyłką, nie po niej.
+Potem zgłoś — dopiszę `BACKUP_OFFSITE_TARGET=rclone://b2-kag:pomagierkb-backups` do
+`/etc/kag/alerts.env` i wymuszę jeden przebieg kontrolny.
+
+**Kolejność względem A2:** rotacja klucza OpenAI **przed** włączeniem celu, żeby nowy klucz
+nie wszedł do obiegu, w którym stary już jest.
+
+**Dlaczego to w ogóle jest krytyczne:** snapshot zawiera `env-edge.env`, `env-kag.env`
+i wyrenderowany `kag-compose.yaml` — **komplet sekretów platformy**. Kopia bez szyfrowania
+przeniosłaby je do cudzej infrastruktury. Dlatego `backup.sh` jest fail-closed: bez
+`BACKUP_AGE_RECIPIENT` (albo `BACKUP_GPG_RECIPIENT`) odmawia wysyłki i wpisuje
+`blocked_no_encryption` do manifestu.
 
 ### A2. Rotacja klucza API OpenAI (D6-01, P1)
 Klucz leży **jawnym tekstem** w MariaDB `openspg.kg_user_model.config.api_key`, a więc
