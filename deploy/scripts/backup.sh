@@ -35,8 +35,31 @@ env_get() { local v; v=$(grep -E "^$2=" "$1" 2>/dev/null | tail -n1 | cut -d= -f
 
 DATA_ROOT="${DATA_ROOT:-$(env_get "${KAG_ENV}" DATA_ROOT /srv/kag-data)}"
 BACKUP_ROOT="${BACKUP_ROOT:-${DATA_ROOT}/backups/nightly}"
-RETENTION_DAYS=14
-MONTHLY_KEEP_DAYS=186   # ~6 miesięcy dla pierwszego snapshotu miesiąca
+# Parametry retencji i off-site pochodzą z PANELU (/settings ➜ strona /backup), który
+# zapisuje je do ${DATA_ROOT}/kag/panel/backup-config.json. Panel jest źródłem prawdy dla
+# rzeczy NIESEKRETNYCH; sekrety (cel rclone, klucz age, URL-e push-monitorów) zostają
+# w /etc/kag/alerts.env i panel ich nie widzi. Kolejność pierwszeństwa:
+#   zmienna środowiskowa  >  plik z panelu  >  wartość domyślna.
+# Brak pliku, uszkodzony JSON albo bzdurna wartość = wartość domyślna, nigdy błąd:
+# backup ma się wykonać nawet wtedy, gdy panel leży.
+PANEL_CONFIG="${DATA_ROOT}/kag/panel/backup-config.json"
+cfg_get() { # cfg_get <klucz> <domyślna>
+  local v=""
+  if [[ -f "${PANEL_CONFIG}" ]] && command -v jq >/dev/null 2>&1; then
+    v="$(jq -r --arg k "$1" '.[$k] // empty' "${PANEL_CONFIG}" 2>/dev/null)" || v=""
+  fi
+  printf '%s' "${v:-$2}"
+}
+cfg_int() { # cfg_int <klucz> <domyślna> <min> <max>
+  local v; v="$(cfg_get "$1" "$2")"
+  [[ "${v}" =~ ^[0-9]+$ ]] && [[ ${v} -ge $3 ]] && [[ ${v} -le $4 ]] || v="$2"
+  printf '%s' "${v}"
+}
+RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-$(cfg_int retentionDays 14 2 365)}"
+MONTHLY_RETENTION_MONTHS="${BACKUP_MONTHLY_MONTHS:-$(cfg_int monthlyRetentionMonths 6 0 120)}"
+MONTHLY_KEEP_DAYS=$(( MONTHLY_RETENTION_MONTHS * 31 ))   # pierwszy snapshot miesiąca
+OFFSITE_ENABLED="$(cfg_get offsiteEnabled true)"
+COLD_NEO4J_ENABLED="$(cfg_get coldNeo4jEnabled true)"
 STAMP="$(date +%Y-%m-%d_%H%M%S)"
 SNAP="${BACKUP_ROOT}/${STAMP}"
 PANEL_DB_IN_CONTAINER="${PANEL_DB_IN_CONTAINER:-/data/db/kag.db}"
@@ -44,6 +67,12 @@ NEO4J_SERVICE="${NEO4J_SERVICE:-neo4j}"
 NEO4J_CONTAINER="${NEO4J_CONTAINER:-release-openspg-neo4j}"
 COLD_NEO4J=0
 [[ "${1:-}" == "--cold-neo4j" ]] && COLD_NEO4J=1
+# Zimny snapshot zatrzymuje Neo4j — jeśli operator wyłączył to w panelu, comiesięczny
+# timer ma zrobić kopię GORĄCĄ, a nie nie zrobić żadnej.
+if [[ ${COLD_NEO4J} -eq 1 && "${COLD_NEO4J_ENABLED}" != "true" ]]; then
+  COLD_NEO4J=0
+  warn "zimny snapshot Neo4j wyłączony w konfiguracji panelu — robię snapshot gorący"
+fi
 
 # Artefakty WYMAGANE — bez któregokolwiek snapshot jest niekompletny (ok:false, exit 1).
 # Ta sama lista rządzi promocją snapshotu miesięcznego (sekcja 13) i jest kontraktem dla
@@ -363,7 +392,10 @@ offsite_put_dir() { # offsite_put_dir <katalog-snapshotu> — tylko tryb plainte
   fi
 }
 
-if [[ -z "${OFFSITE_TARGET}" ]]; then
+if [[ "${OFFSITE_ENABLED}" != "true" ]]; then
+  OFFSITE_STATUS="disabled"
+  warn "kopia off-site WYŁĄCZONA w konfiguracji panelu — snapshot zostaje wyłącznie na tym dysku"
+elif [[ -z "${OFFSITE_TARGET}" ]]; then
   warn "BACKUP_OFFSITE_TARGET pusty — brak kopii off-site (parametr do wypełnienia)"
 elif [[ -z "${BACKUP_AGE_RECIPIENT:-}" && -z "${BACKUP_GPG_RECIPIENT:-}" ]]; then
   if [[ "${BACKUP_OFFSITE_ALLOW_PLAINTEXT:-}" == "true" ]]; then
@@ -547,6 +579,10 @@ STATUS_FILE="${DATA_ROOT}/kag/panel/backup-status.json"
 } > "${STATUS_FILE}.tmp" && mv "${STATUS_FILE}.tmp" "${STATUS_FILE}"
 chmod 644 "${STATUS_FILE}"
 chown 10001:10001 "${STATUS_FILE}" 2>/dev/null || true
+
+# Stan dla strony /backup — świadomie PRZED `die`, żeby panel zobaczył także bieg
+# nieudany. Awaria publikacji nie może wywrócić samego backupu, więc tylko ostrzegamy.
+"${REPO_ROOT}/deploy/scripts/backup_state.sh" --quiet || warn "nie udało się opublikować stanu dla panelu"
 
 if [[ "${OK}" != "true" ]]; then
   die "snapshot NIEKOMPLETNY — brakuje artefaktów wymaganych: ${MISSING_REQUIRED[*]:-brak żadnego}"

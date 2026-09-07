@@ -1,0 +1,30 @@
+# kag-backup-state.service — publikuje dla panelu obraz stanu backupu (bez sekretów).
+# Kontener panelu nie widzi katalogu kopii ani systemd; ten unit jest jedynym mostem.
+# Jeśli repo leży gdzie indziej niż /kag — popraw WorkingDirectory i ExecStart.
+[Unit]
+Description=PomagierKB — publikacja stanu backupu dla panelu
+After=docker.service
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+WorkingDirectory=/kag
+Environment=DATA_ROOT=/srv/kag-data
+ExecStart=/kag/deploy/scripts/backup_state.sh --quiet
+TimeoutStartSec=2min
+Nice=10
+IOSchedulingClass=idle
+UMask=0077
+
+# Hardening: skrypt czyta katalog kopii, /etc/kag/alerts.env i pyta systemd o timery;
+# pisze WYŁĄCZNIE do katalogu danych panelu.
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+ReadWritePaths=/srv/kag-data/kag/panel

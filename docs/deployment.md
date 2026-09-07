@@ -316,6 +316,19 @@ oraz `kag-egress-guard.service` (blokada pivotu `kag-egress` → usługi hosta):
 sudo systemctl enable --now kag-egress-guard.service
 systemctl is-enabled kag-egress-guard.service    # oczekiwane: enabled
 ```
+
+oraz `kag-backup-request.path` — bez niego strona `/backup` w panelu **działa, ale bez
+przycisków**: pokazuje stan i przyjmuje konfigurację, natomiast żądania „zrób snapshot teraz"
+nie ma kto odebrać (panel wykrywa to sam i zamiast przycisku pokazuje wyjaśnienie):
+
+```bash
+sudo systemctl enable --now kag-backup-request.path
+systemctl is-active kag-backup-request.path      # oczekiwane: active
+```
+
+`kag-backup-state.timer` włącza się razem z pozostałymi timerami wyżej. To on publikuje
+`backup-state.json` do katalogu danych panelu — bez niego strona `/backup` powie „host nie
+raportuje stanu", bo kontener panelu z zasady nie widzi katalogu kopii ani systemd.
 Uruchom pierwszy backup ręcznie i obejrzyj manifest:
 
 ```bash

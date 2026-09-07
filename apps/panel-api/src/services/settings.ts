@@ -4,6 +4,7 @@ import { seal as sealAesGcm, unseal as unsealAesGcm } from '@pomagierkb/shared/c
 import { AppError } from '@pomagierkb/shared/errors';
 import { createLlmClient, withBreaker, type LlmClient } from '@pomagierkb/shared/llm';
 import type { AppConfig } from '../config.js';
+import { coerceBackupConfig, exportBackupConfig } from './backup.js';
 
 /**
  * Serwis ustawień: odczyt zamaskowany (sekrety nigdy w pełnej postaci w API),
@@ -85,6 +86,16 @@ export function putSetting(
       }
     }
     toStore = obj;
+  }
+
+  // Parametry backupu czytają SKRYPTY HOSTA, które nie mają dostępu do SQLite (na hoście
+  // nie ma nawet binarki sqlite3). Eksport pliku musi więc wisieć TU, przy jedynym miejscu
+  // zapisu ustawień — inaczej zapis przez inną trasę rozjechałby panel z hostem po cichu.
+  if (key === 'backup') {
+    const normalized = coerceBackupConfig(toStore);
+    setSetting(db, key, normalized, { isSecret: false, seal, updatedBy });
+    exportBackupConfig(config, normalized);
+    return maskForApi(db, key);
   }
 
   setSetting(db, key, toStore, { isSecret: secret, seal, updatedBy });

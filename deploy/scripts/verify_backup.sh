@@ -495,6 +495,10 @@ if [[ -d "${DATA_ROOT}/kag/panel" ]]; then
   chown 10001:10001 "${STATUS_FILE}" 2>/dev/null || true
 fi
 
+# Stan dla strony /backup — przed `die`, żeby nieudana weryfikacja też była widoczna
+# w panelu, a nie tylko w alercie systemd.
+"${REPO_ROOT}/deploy/scripts/backup_state.sh" --quiet || echo "[verify][UWAGA] nie udało się opublikować stanu dla panelu" >&2
+
 if [[ "${ALL_OK}" != "true" ]]; then
   die "weryfikacja backupu NIE przeszła — szczegóły w ${REPORT}"
 fi

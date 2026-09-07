@@ -20,6 +20,10 @@ export const SETTINGS_KEYS = [
   'answer.rewrite',
   'learning.autoDraft',
   'retention',
+  // Parametry backupu WIDOCZNE i edytowalne z panelu (retencja, off-site on/off,
+  // cold Neo4j). Sekretów backupu tu nie ma — poświadczenia rclone, klucz age i URL-e
+  // push-monitorów żyją w /etc/kag/alerts.env i panel ich nie widzi.
+  'backup',
 ] as const;
 
 export type SettingsKey = (typeof SETTINGS_KEYS)[number];

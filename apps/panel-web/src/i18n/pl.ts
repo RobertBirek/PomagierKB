@@ -12,9 +12,12 @@ export const pl = {
   'nav.kb': 'Bazy wiedzy',
   'nav.mcp': 'MCP',
   'nav.settings': 'Ustawienia',
+  'nav.backup': 'Kopie zapasowe',
 
   // ── shell: wspólne ──
   'common.save': 'Zapisz',
+  'common.yes': 'tak',
+  'common.no': 'nie',
   'common.cancel': 'Anuluj',
   'common.close': 'Zamknij',
   'common.confirm': 'Potwierdź',
@@ -873,6 +876,118 @@ export const pl = {
   'system.breakers.resetC2': 'Jeśli przyczyna ({reason}) nie ustąpiła, awarie wrócą.',
   'system.breakers.resetConfirm': 'Wznów ruch',
   'system.health.refresh': 'Odśwież stan',
+
+  // ── /backup (agent strony kopii zapasowych: 'backup.*') ──────────────────────
+  'backup.title': 'Kopie zapasowe i odtwarzanie',
+  'backup.subtitle':
+    'Stan kopii, harmonogram, retencja i procedura odtworzenia. Backup wykonuje host — panel go widzi, konfiguruje i wyzwala.',
+  'backup.generatedAt': 'Stan opublikowany przez host: {when}',
+
+  'backup.tabs.state': 'Stan',
+  'backup.tabs.snapshots': 'Snapshoty',
+  'backup.tabs.config': 'Konfiguracja',
+  'backup.tabs.recovery': 'Odtwarzanie',
+
+  'backup.state.missingTitle': 'Host nie raportuje stanu backupu',
+  'backup.state.missingBody':
+    'Brakuje pliku ze stanem. Sprawdź na hoście jednostkę kag-backup-state.timer — dopóki nie działa, ta strona nie ma skąd wziąć danych.',
+  'backup.state.staleTitle': 'Dane mogą być nieaktualne',
+  'backup.state.staleBody':
+    'Host publikuje stan co 10 minut, a ostatni raz zrobił to {when}. Poniższe wartości są archiwalne, nie bieżące.',
+
+  'backup.tile.lastBackup': 'Ostatni snapshot',
+  'backup.tile.verify': 'Weryfikacja odtwarzania',
+  'backup.tile.offsite': 'Kopia off-site',
+  'backup.tile.disk': 'Wolne miejsce',
+  'backup.tile.diskHint': 'zajęte {used}%, snapshotów: {snapshots}',
+
+  'backup.alert.incompleteTitle': 'Ostatni snapshot jest NIEKOMPLETNY',
+  'backup.alert.incompleteBody':
+    'Brakuje artefaktów wymaganych: {missing}. Taki snapshot wygląda jak sukces, ale nie da się z niego odtworzyć systemu — to gorsze niż brak kopii.',
+  'backup.alert.verifyFailedTitle': 'Weryfikacja odtwarzania NIE przeszła',
+  'backup.alert.warningsTitle': 'Ostrzeżenia z ostatniego biegu',
+
+  'backup.run.title': 'Uruchom teraz',
+  'backup.run.backup': 'Zrób snapshot',
+  'backup.run.verify': 'Zweryfikuj odtwarzanie',
+  'backup.run.hint': 'Bieg startuje na hoście w ciągu kilku sekund; postęp zobaczysz po odświeżeniu stanu.',
+  'backup.run.pending': 'Poprzednie żądanie czeka na odebranie przez host…',
+  'backup.run.queuedBackup': 'Żądanie snapshotu przekazane hostowi',
+  'backup.run.queuedVerify': 'Żądanie weryfikacji przekazane hostowi',
+  'backup.run.unavailableTitle': 'Wyzwalanie z panelu jest wyłączone',
+  'backup.run.unavailableBody':
+    'Jednostka kag-backup-request.path nie jest aktywna, więc nikt nie odebrałby żądania. Uruchom ją na hoście albo użyj systemctl start kag-backup.service.',
+
+  'backup.schedule.title': 'Harmonogram',
+  'backup.schedule.empty': 'Host nie zaraportował żadnych timerów.',
+  'backup.schedule.enabled': 'włączony',
+  'backup.schedule.disabled': 'wyłączony',
+  'backup.schedule.nextLast': 'następny: {next} · ostatni: {last}',
+  'backup.schedule.pingHint':
+    'Dead-man\'s switch (push-monitor Uptime Kumy): backup — {backup}, weryfikacja — {verify}. Cisza po stronie monitora = alert, nawet gdy timer w ogóle nie wystartuje.',
+
+  'backup.offsite.title': 'Kopia poza hostem',
+  'backup.offsite.target': 'Cel',
+  'backup.offsite.noTarget': 'nie ustawiony',
+  'backup.offsite.encryption': 'Szyfrowanie',
+  'backup.offsite.artifact': 'Ostatni artefakt',
+  'backup.offsite.rclone': 'Remote’y rclone',
+  'backup.offsite.noRclone': 'brak',
+  'backup.offsite.secretsHint':
+    'Poświadczenia rclone, klucz szyfrowania i adresy push-monitorów są na hoście (/etc/kag/alerts.env, 0600). Panel ich nie widzi i nie zapisuje — pokazuje wyłącznie fakt konfiguracji.',
+
+  'backup.snapshots.title': 'Snapshoty na dysku',
+  'backup.snapshots.desc':
+    'Retencja: {days} dni dla snapshotów dziennych, {months} mies. dla pierwszego kompletnego snapshotu każdego miesiąca.',
+  'backup.snapshots.emptyTitle': 'Brak snapshotów',
+  'backup.snapshots.emptyBody': 'Host nie zaraportował żadnego snapshotu w katalogu kopii.',
+  'backup.snapshots.colWhen': 'Kiedy',
+  'backup.snapshots.colState': 'Stan',
+  'backup.snapshots.colSize': 'Rozmiar',
+  'backup.snapshots.colStamp': 'Stempel',
+  'backup.snapshots.monthly': 'miesięczny',
+  'backup.snapshots.cold': 'zimny',
+  'backup.snapshots.complete': 'kompletny',
+  'backup.snapshots.incomplete': 'niekompletny',
+  'backup.snapshots.unknown': 'nieznany',
+
+  'backup.config.retentionTitle': 'Retencja',
+  'backup.config.retentionDesc':
+    'Ile trzymać kopie. Snapshot waży kilka MB, więc dłuższa retencja kosztuje głównie miejsce — a krótka kosztuje możliwość cofnięcia się przed incydent, który zauważono późno.',
+  'backup.config.retentionDays': 'Snapshoty dzienne (dni)',
+  'backup.config.monthlyMonths': 'Snapshoty miesięczne (miesiące)',
+  'backup.config.offsiteTitle': 'Kopia off-site',
+  'backup.config.offsiteDesc':
+    'Włącznik wysyłki. Cel i klucz szyfrowania ustawia operator na hoście — bez klucza backup.sh odmówi wysyłki, bo snapshot zawiera komplet sekretów platformy.',
+  'backup.config.offsiteEnabled': 'Wysyłaj kopię poza host',
+  'backup.config.offsiteOffTitle': 'Wszystkie kopie zostaną na tym dysku',
+  'backup.config.offsiteOffBody':
+    'Awaria dysku, pomyłkowe rm -rf albo ransomware skasują jednocześnie system i wszystkie jego kopie.',
+  'backup.config.coldTitle': 'Miesięczny snapshot Neo4j',
+  'backup.config.coldDesc':
+    'Snapshot „zimny” zatrzymuje bazę grafu na czas archiwizacji i daje spójny punkt w czasie. Wyłączony — comiesięczny bieg zrobi kopię gorącą, bez przerwy w działaniu, ale i bez gwarancji spójności.',
+  'backup.config.coldEnabled': 'Zatrzymuj Neo4j przy snapshocie miesięcznym',
+  'backup.config.secretsTitle': 'Czego nie ustawisz z panelu',
+  'backup.config.secretsBody':
+    'Celu wysyłki, poświadczeń rclone, klucza szyfrowania i adresów push-monitorów. Zawierają sekrety, więc mieszkają wyłącznie w /etc/kag/alerts.env na hoście (0600, root) — panel nie ma do nich dostępu ani w odczycie, ani w zapisie.',
+  'backup.config.appliesNextRun': 'Zmiana zadziała przy następnym biegu backupu.',
+  'backup.config.saved': 'Konfiguracja zapisana',
+
+  'backup.recovery.noButtonTitle': 'Odtwarzanie uruchamiasz na hoście, nie stąd',
+  'backup.recovery.noButtonBody':
+    'restore.sh zatrzymuje oba stacki i nadpisuje wszystkie magazyny naraz. Jedno kliknięcie przez pomyłkę kosztowałoby cały stan produkcyjny, więc panel podaje dokładne komendy, a uruchamia je człowiek.',
+  'backup.recovery.keyCustodyTitle': 'Klucz prywatny musi być POZA tym hostem',
+  'backup.recovery.keyCustodyBody':
+    'Kopia off-site jest szyfrowana. Jeśli klucz prywatny leży na tym samym hoście, szyfrowanie nie chroni przed niczym w scenariuszu, dla którego powstało — a bez klucza kopii nie da się odczytać. Nie ma odzysku ani resetu.',
+  'backup.recovery.pickTitle': 'Wybierz snapshot',
+  'backup.recovery.pickDesc':
+    'Wszystkie artefakty bierz z JEDNEGO snapshotu — mieszanie dat daje bazę i graf, które nie widziały siebie nawzajem.',
+  'backup.recovery.incompletePickTitle': 'Ten snapshot jest niekompletny',
+  'backup.recovery.incompletePickBody':
+    'Brakuje w nim artefaktów wymaganych. Weź starszy, kompletny — odtwarzanie z takiego zniszczy stan bieżący i nie da nic w zamian.',
+  'backup.recovery.runbookTitle': 'Pełna procedura',
+  'backup.recovery.runbookBody':
+    'Powyżej jest ścieżka typowa. Odbudowa hosta od zera (system, docker, sieci, certy, kolejność startu) to docs/runbooks/disaster-recovery.md w repozytorium.',
 } as const;
 
 export type PlKey = keyof typeof pl;

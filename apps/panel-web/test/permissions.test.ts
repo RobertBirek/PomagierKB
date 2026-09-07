@@ -41,7 +41,7 @@ describe('can()', () => {
 describe('PAGE_PERMISSION', () => {
   it('pokrywa wszystkie strony shellu', () => {
     expect(Object.keys(PAGE_PERMISSION).sort()).toEqual(
-      ['/add', '/ask', '/inbox', '/kb', '/mcp', '/overview', '/settings'],
+      ['/add', '/ask', '/backup', '/inbox', '/kb', '/mcp', '/overview', '/settings'],
     );
   });
 

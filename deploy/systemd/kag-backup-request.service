@@ -1,0 +1,26 @@
+# kag-backup-request.service — waliduje znacznik z panelu i startuje właściwą jednostkę.
+# Znacznik niesie WYŁĄCZNIE `kind` z dwuelementowego enuma; nazwa jednostki powstaje tutaj,
+# po stronie hosta. To nie jest kanał zdalnego wykonania poleceń i nie ma się nim stać.
+# Jeśli repo leży gdzie indziej niż /kag — popraw WorkingDirectory i ExecStart.
+[Unit]
+Description=PomagierKB — obsługa żądania backupu z panelu
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+WorkingDirectory=/kag
+Environment=DATA_ROOT=/srv/kag-data
+ExecStart=/kag/deploy/scripts/backup_request.sh
+TimeoutStartSec=1min
+UMask=0077
+
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+ReadWritePaths=/srv/kag-data/kag/panel

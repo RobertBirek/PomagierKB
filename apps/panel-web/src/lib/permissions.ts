@@ -19,11 +19,12 @@ export type Permission =
   | 'gaps' // zarządzanie lukami wiedzy
   | 'kb-create' // tworzenie/provisioning nowych KB
   | 'mcp' // klucze API i profile MCP
-  | 'settings'; // ustawienia (LLM, progi, audyt, system)
+  | 'settings' // ustawienia (LLM, progi, audyt, system)
+  | 'backup'; // kopie zapasowe i odtwarzanie (stan, retencja, wyzwalanie biegu)
 
 const VIEWER_PERMS: readonly Permission[] = ['ask', 'feedback', 'propose'];
 const OPERATOR_PERMS: readonly Permission[] = [...VIEWER_PERMS, 'inbox', 'content', 'kb-build', 'gaps'];
-const ADMIN_PERMS: readonly Permission[] = [...OPERATOR_PERMS, 'kb-create', 'mcp', 'settings'];
+const ADMIN_PERMS: readonly Permission[] = [...OPERATOR_PERMS, 'kb-create', 'mcp', 'settings', 'backup'];
 
 const ROLE_PERMISSIONS: Record<Role, ReadonlySet<Permission>> = {
   viewer: new Set(VIEWER_PERMS),
@@ -47,4 +48,5 @@ export const PAGE_PERMISSION: Record<string, Permission> = {
   '/kb': 'kb-build',
   '/mcp': 'mcp',
   '/settings': 'settings',
+  '/backup': 'backup',
 };

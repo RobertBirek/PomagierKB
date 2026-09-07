@@ -26,6 +26,7 @@ import { InboxPage } from './routes/InboxPage';
 import { KbPage } from './routes/KbPage';
 import { McpPage } from './routes/McpPage';
 import { SettingsPage } from './routes/SettingsPage';
+import { BackupPage } from './routes/BackupPage';
 
 /** head() trasy — tytuł dokumentu z rejestru nawigacji (shell/nav.ts). */
 function routeHead(path: string) {
@@ -183,6 +184,28 @@ export interface SettingsSearch {
   outcome?: string;
 }
 
+/** Zakładki strony /backup — domyślna ('state') nie jest serializowana do URL-a. */
+export type BackupTab = 'state' | 'snapshots' | 'config' | 'recovery';
+const BACKUP_TAB_VALUES: readonly BackupTab[] = ['state', 'snapshots', 'config', 'recovery'];
+
+export interface BackupSearch {
+  tab?: BackupTab;
+}
+
+const backupRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/backup',
+  validateSearch: (search: Record<string, unknown>): BackupSearch => {
+    const tab = search['tab'];
+    if (typeof tab === 'string' && tab !== 'state' && (BACKUP_TAB_VALUES as readonly string[]).includes(tab)) {
+      return { tab: tab as BackupTab };
+    }
+    return {};
+  },
+  head: routeHead('/backup'),
+  component: BackupPage,
+});
+
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/settings',
@@ -213,6 +236,7 @@ const routeTree = rootRoute.addChildren([
   kbRoute,
   mcpRoute,
   settingsRoute,
+  backupRoute,
 ]);
 
 export const router = createRouter({

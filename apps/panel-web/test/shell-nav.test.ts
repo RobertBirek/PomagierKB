@@ -30,7 +30,7 @@ describe('visibleSections()', () => {
     expect(paths(visibleSections('admin'))).toEqual([
       { section: 'nav.section.work', items: ['/overview', '/ask', '/add', '/inbox'] },
       { section: 'nav.section.resources', items: ['/kb', '/mcp'] },
-      { section: 'nav.section.system', items: ['/settings'] },
+      { section: 'nav.section.system', items: ['/backup', '/settings'] },
     ]);
   });
 

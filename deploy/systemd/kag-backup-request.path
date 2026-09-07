@@ -1,0 +1,14 @@
+# kag-backup-request.path — nasłuchuje znacznika żądania backupu złożonego przez panel.
+#
+# PathExists, nie PathChanged: panel zapisuje plik atomowo (tmp + rename), a handler kasuje
+# go od razu po odczycie. PathExists uzbraja się ponownie dopiero po zniknięciu pliku, więc
+# ta para daje dokładnie jedno uruchomienie na jeden znacznik.
+[Unit]
+Description=PomagierKB — nasłuch żądań backupu z panelu
+
+[Path]
+PathExists=/srv/kag-data/kag/panel/backup-request.json
+Unit=kag-backup-request.service
+
+[Install]
+WantedBy=paths.target

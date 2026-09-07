@@ -1,0 +1,15 @@
+# kag-backup-state.timer — odświeża stan dla strony /backup co 10 minut.
+# Próg „dane zwietrzałe" w panelu to 45 minut (STATE_STALE_SECONDS), więc trzy pominięte
+# biegi z rzędu są widoczne w interfejsie jako ostrzeżenie, a nie jako cisza.
+[Unit]
+Description=PomagierKB — timer publikacji stanu backupu
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=10min
+AccuracySec=1min
+Persistent=false
+Unit=kag-backup-state.service
+
+[Install]
+WantedBy=timers.target

@@ -183,6 +183,9 @@ Zasady: route = schema + wywołanie serwisu; serwis = czysta logika na db; plugi
 | GET | `/settings` | admin | — | — | sekrety maskowane: `{configured:true,preview:"sk-…4f2a"}` |
 | PUT | `/settings/:key` | admin | ✓ | `settings.update` | klucz z białej listy; wartości sekretne sealowane AES-GCM |
 | POST | `/settings/test-llm` | admin | ✓ | `settings.test_llm` | `{target:'chat'`\|`'openie'`\|`'embeddings'}`; 502/504 przy błędzie |
+| GET | `/backup/state` | admin | — | — | stan publikowany przez host (`backup_state.sh`) + werdykty + konfiguracja; brak pliku = `state:null`, nie błąd |
+| PUT | `/backup/config` | admin | ✓ | `backup.config.update` | WYŁĄCZNIE parametry niesekretne (retencja, off-site on/off, cold Neo4j); zapis eksportuje plik dla skryptów hosta |
+| POST | `/backup/run` | admin | ✓ | `backup.run.request` | `{kind:'backup'`\|`'verify'}` → plik-znacznik odbierany przez `kag-backup-request.path`; 409 gdy poprzedni nieobsłużony |
 | GET | `/users` | admin | — | — | użytkownicy OIDC + serwisowi |
 | POST | `/users` | admin | ✓ | `user.create` | tylko `kind:'service'` (tożsamości dla kluczy MCP) |
 | PATCH | `/users/:id` | admin | ✓ | `user.update` | enable/disable; disable kaskadowo dezaktywuje klucze |

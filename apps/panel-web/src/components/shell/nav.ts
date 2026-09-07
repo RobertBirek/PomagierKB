@@ -4,6 +4,7 @@
  * testy w test/shell-nav.test.ts.
  */
 import {
+  DatabaseBackup,
   FilePlus2,
   Inbox,
   LayoutDashboard,
@@ -50,7 +51,10 @@ export const NAV_SECTIONS: readonly NavSection[] = [
   },
   {
     labelKey: 'nav.section.system',
-    items: [{ path: '/settings', labelKey: 'nav.settings', icon: Settings }],
+    items: [
+      { path: '/backup', labelKey: 'nav.backup', icon: DatabaseBackup },
+      { path: '/settings', labelKey: 'nav.settings', icon: Settings },
+    ],
   },
 ];
 

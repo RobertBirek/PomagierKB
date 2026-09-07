@@ -13,6 +13,7 @@ import draftsRoutes from './drafts.js';
 import learningRoutes from './learning.js';
 import askRoutes from './ask.js';
 import contentRoutes from './content.js';
+import backupRoutes from './backup.js';
 
 /**
  * CENTRALNY REJESTR MODUŁÓW TRAS. Agenci modułów DOPISUJĄ tutaj swoje importy
@@ -40,4 +41,5 @@ export default async function registerRoutes(app: FastifyInstance): Promise<void
   await app.register(askRoutes, { prefix: '/api/v1' }); // routes/ask.ts (pytania SSE + historia + feedback)
   await app.register(mcpAdminRoutes, { prefix: '/api/v1' }); // routes/mcp-admin.ts (profiles/keys/snippets)
   await app.register(settingsRoutes, { prefix: '/api/v1' }); // routes/settings.ts
+  await app.register(backupRoutes, { prefix: '/api/v1' }); // routes/backup.ts (stan/konfiguracja/wyzwalanie)
 }
