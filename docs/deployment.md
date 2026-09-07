@@ -326,6 +326,11 @@ sudo systemctl enable --now kag-backup-request.path
 systemctl is-active kag-backup-request.path      # oczekiwane: active
 ```
 
+`kag-selfcheck.timer` (co 6 h) uruchamia `smoke.sh` i `drift_check.sh`, a przy porażce
+któregokolwiek wysyła alert przez `OnFailure=kag-alert@`. Oba skrypty ROBIĄ `docker exec`
+na kontenerach i czytają lokalne `.env`, więc w CI biegać nie mogą — tam stoi tylko bramka
+statyczna (`shell-scripts`: składnia, shellcheck, bit wykonywalności).
+
 `kag-backup-state.timer` włącza się razem z pozostałymi timerami wyżej. To on publikuje
 `backup-state.json` do katalogu danych panelu — bez niego strona `/backup` powie „host nie
 raportuje stanu", bo kontener panelu z zasady nie widzi katalogu kopii ani systemd.

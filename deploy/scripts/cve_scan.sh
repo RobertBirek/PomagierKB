@@ -24,8 +24,6 @@
 set -uo pipefail
 umask 077
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 DATA_ROOT="${DATA_ROOT:-/srv/kag-data}"
 OUT_DIR="${DATA_ROOT}/security/cve"

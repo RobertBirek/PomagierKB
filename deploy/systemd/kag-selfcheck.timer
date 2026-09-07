@@ -1,0 +1,17 @@
+# kag-selfcheck.timer — co 6 godzin, z przesunięciem po starcie.
+# Dlaczego 6 h, a nie co godzinę: te checki wykrywają dryf konfiguracji i skutki wdrożeń,
+# a nie niedostępność — od niedostępności jest Uptime Kuma z sondą co 60 s. Alert co godzinę
+# z tego samego powodu nauczyłby tylko ignorowania alertów.
+[Unit]
+Description=PomagierKB — timer smoke testu i kontroli dryfu
+
+[Timer]
+OnBootSec=15min
+OnUnitActiveSec=6h
+RandomizedDelaySec=5m
+AccuracySec=1min
+Persistent=true
+Unit=kag-selfcheck.service
+
+[Install]
+WantedBy=timers.target

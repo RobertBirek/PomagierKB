@@ -242,6 +242,46 @@ jobs:
             fi
           done
 
+  # Statyczna bramka na skrypty operacyjne. Same skrypty (smoke.sh, drift_check.sh,
+  # backup.sh, restore.sh…) URUCHOMIĆ się tu nie da — robią `docker exec` na konkretnych
+  # kontenerach i czytają lokalne sieci, więc na runnerze GitHuba nie mają czego badać
+  # i wypluwałyby FAIL-e bez związku ze zmianą. Biegają na hoście z `kag-selfcheck.timer`
+  # (alert `OnFailure` → ntfy). CI pilnuje tego, co da się sprawdzić bez produkcji —
+  # i akurat te trzy rzeczy wysypały nas naprawdę:
+  #  * bit wykonywalności — `egress_guard.sh` wszedł jako 100644 i systemd dostał 203/EXEC;
+  #  * składnia — literówka w skrypcie ujawnia się dopiero w nocnym biegu;
+  #  * shellcheck — `smoke.sh` przerwał się w podstawieniu poleceń przez `pipefail`.
+  # Bramka stoi na poziomie `warning` i jest ZEROWA: gate „raportuje, nie blokuje" ludzie
+  # ignorują (mamy na to dowód — 42 czerwone przebiegi przeżyły bez reakcji).
+  shell-scripts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Bit wykonywalności w indeksie gita
+        run: |
+          bad=$(git ls-files -s deploy/scripts/*.sh .githooks/* | awk '$1 != "100755" { print $1" "$4 }')
+          if [ -n "$bad" ]; then
+            echo "Skrypty bez bitu wykonywalności (systemd zwróci 203/EXEC):"
+            echo "$bad"
+            echo "Napraw: git update-index --chmod=+x <plik>"
+            exit 1
+          fi
+          echo "OK — wszystkie skrypty 100755."
+
+      - name: Składnia (bash -n)
+        run: |
+          fail=0
+          for f in deploy/scripts/*.sh .githooks/*; do
+            bash -n "$f" || { echo "BŁĄD składni: $f"; fail=1; }
+          done
+          exit $fail
+
+      - name: ShellCheck (poziom warning, zero tolerancji)
+        run: |
+          shellcheck --version | head -2
+          shellcheck --severity=warning deploy/scripts/*.sh .githooks/*
+
   gitleaks:
     runs-on: ubuntu-latest
     permissions:

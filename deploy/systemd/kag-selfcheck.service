@@ -1,0 +1,30 @@
+# kag-selfcheck.service — cykliczny smoke + kontrola dryfu na hoście.
+# W CI została tylko bramka statyczna tych skryptów (składnia, shellcheck, bit wykonywalności):
+# runner GitHuba nie ma kontenerów ani plików .env, więc nie ma czego sprawdzać.
+# Jeśli repo leży gdzie indziej niż /kag — popraw WorkingDirectory i ExecStart.
+[Unit]
+Description=PomagierKB — cykliczny smoke test i kontrola dryfu
+After=docker.service
+OnFailure=kag-alert@%n.service
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+WorkingDirectory=/kag
+Environment=DATA_ROOT=/srv/kag-data
+ExecStart=/kag/deploy/scripts/selfcheck.sh
+TimeoutStartSec=10min
+Nice=10
+IOSchedulingClass=idle
+UMask=0077
+
+# Hardening: skrypty czytają .env obu stacków i rozmawiają z dockerem; niczego nie zapisują.
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true

@@ -137,7 +137,7 @@ done
 
 # --- 4. Restore MySQL do efemerycznego kontenera + zliczenie tabel ---
 verify_mysql() {
-  local ctr="kag-verify-mysql-$$" pw="verify-tmp-$$" i tables
+  local ctr="kag-verify-mysql-$$" pw="verify-tmp-$$" tables
   [[ -s "${SNAP}/mysql.sql.zst" ]] || { check "mysql_restore" false "brak dumpu"; return; }
   [[ -n "${MYSQL_IMAGE}" ]] || { check "mysql_restore" false "brak OPENSPG_MYSQL_IMAGE w ${KAG_ENV}"; return; }
   log "startuję efemeryczny kontener MariaDB (${MYSQL_IMAGE})..."
@@ -157,7 +157,7 @@ verify_mysql() {
   # `docker exec` dostaje 137. TCP nasłuchuje dopiero na serwerze FINALNYM — po "MySQL init
   # process done" / drugim "ready for connections" — więc jest jedyną wiarygodną bramką.
   local ready=false
-  for i in $(seq 1 90); do
+  for _ in $(seq 1 90); do
     if docker exec -e MYSQL_PWD="${pw}" "${ctr}" \
          mysql -h127.0.0.1 --protocol=tcp -uroot -N -e 'SELECT 1' >/dev/null 2>&1; then
       ready=true; break
@@ -210,7 +210,7 @@ fi
 #     wystartowanie bazy i sprawdzenie, że wszystkie bazy są `online`.
 verify_neo4j() {
   local ctr="kag-verify-neo4j-$$" host="kagverifyneo4j" img user pass dir="${WORK}/neo4j" \
-        i err dbs offline db name counts=() n bad=""
+        err dbs offline db name counts=() n bad=""
   [[ -s "${SNAP}/neo4j-data.tar.zst" ]] || { check "neo4j_restore" false "brak archiwum neo4j-data.tar.zst"; return; }
   img="$(env_get "${KAG_ENV}" OPENSPG_NEO4J_IMAGE "")"
   user="$(env_get "${KAG_ENV}" OPENSPG_NEO4J_USER "")"
@@ -239,7 +239,7 @@ verify_neo4j() {
     return
   fi
   local ready=false
-  for i in $(seq 1 90); do
+  for _ in $(seq 1 90); do
     if docker exec -e NEO4J_USERNAME="${user}" -e NEO4J_PASSWORD="${pass}" "${ctr}" \
          cypher-shell "RETURN 1;" >/dev/null 2>&1; then ready=true; break; fi
     [[ "$(docker inspect -f '{{.State.Running}}' "${ctr}" 2>/dev/null)" == "true" ]] \
@@ -281,7 +281,7 @@ verify_neo4j() {
 
 # --- 6. MinIO: start z tara + zliczenie obiektów przez mc (obraz zawiera mc i curl) ---
 verify_minio() {
-  local ctr="kag-verify-minio-$$" img user pass dir="${WORK}/minio" i err expected got
+  local ctr="kag-verify-minio-$$" img user pass dir="${WORK}/minio" err expected got
   [[ -s "${SNAP}/minio.tar.zst" ]] || { check "minio_restore" false "brak archiwum minio.tar.zst"; return; }
   img="$(env_get "${KAG_ENV}" OPENSPG_MINIO_IMAGE "")"
   user="$(env_get "${KAG_ENV}" MINIO_ROOT_USER "")"
@@ -304,7 +304,7 @@ verify_minio() {
     return
   fi
   local ready=false
-  for i in $(seq 1 30); do
+  for _ in $(seq 1 30); do
     if docker exec "${ctr}" curl -sf -m 3 http://127.0.0.1:9000/minio/health/live >/dev/null 2>&1; then ready=true; break; fi
     [[ "$(docker inspect -f '{{.State.Running}}' "${ctr}" 2>/dev/null)" == "true" ]] \
       || { check "minio_restore" false "kontener testowy padł: $(docker logs "${ctr}" 2>&1 | tail -n 3 | head -c 400)"; return; }
@@ -325,7 +325,7 @@ verify_minio() {
 
 # --- 7. Authentik: pg_dump wgrany do efemerycznego Postgresa + liczba użytkowników ---
 verify_authentik_pg() {
-  local ctr="kag-verify-pg-$$" img user db pw="verify-tmp-$$" i imp_err imp_rc users
+  local ctr="kag-verify-pg-$$" img user db pw="verify-tmp-$$" imp_err imp_rc users
   [[ -s "${SNAP}/authentik-pg.sql.zst" ]] || { check "authentik_pg_restore" false "brak dumpu authentik-pg.sql.zst"; return; }
   img="$(env_get "${EDGE_ENV}" POSTGRES_IMAGE "")"
   user="$(env_get "${EDGE_ENV}" AUTHENTIK_PG_USER "")"
@@ -343,7 +343,7 @@ verify_authentik_pg() {
   # jak w MySQL: entrypoint Postgresa najpierw stawia serwer tymczasowy z listen_addresses='',
   # więc gotowość sprawdzamy WYŁĄCZNIE po TCP — inaczej import trafiłby w okno inicjalizacji.
   local ready=false
-  for i in $(seq 1 60); do
+  for _ in $(seq 1 60); do
     if docker exec "${ctr}" pg_isready -h 127.0.0.1 -U "${user}" -d "${db}" >/dev/null 2>&1; then ready=true; break; fi
     [[ "$(docker inspect -f '{{.State.Running}}' "${ctr}" 2>/dev/null)" == "true" ]] \
       || { check "authentik_pg_restore" false "kontener testowy padł przed gotowością: $(docker logs "${ctr}" 2>&1 | tail -n 3 | head -c 400)"; return; }

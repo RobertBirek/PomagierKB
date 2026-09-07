@@ -57,6 +57,8 @@ ALL_COMPONENTS=(images env caddy kuma neo4j minio panel-sqlite panel-files panel
 log()  { echo "[restore] $*"; }
 warn() { echo "[restore][UWAGA] $*" >&2; }
 die()  { echo "[restore][BŁĄD] $*" >&2; exit 1; }
+# shellcheck disable=SC2294  # eval celowy: komendy są stringami, żeby --dry-run drukował
+# dokładnie to, co wykona prawdziwy bieg — tablica rozjechałaby te dwie ścieżki.
 run()  { if [[ ${DRY} -eq 1 ]]; then echo "[restore][dry-run] $*"; else eval "$@"; fi; }
 ctr_running() { [[ "$(docker inspect -f '{{.State.Running}}' "$1" 2>/dev/null)" == "true" ]]; }
 
@@ -242,8 +244,8 @@ restore_authentik_pg() {
   need_file authentik-pg.sql.zst
   require_running edge-postgres
   log "czekam na gotowość edge-postgres (TCP)..."
-  local i ok=0
-  for i in $(seq 1 60); do
+  local ok=0
+  for _ in $(seq 1 60); do
     if [[ ${DRY} -eq 1 ]]; then ok=1; break; fi
     if docker exec edge-postgres sh -c 'pg_isready -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' >/dev/null 2>&1; then ok=1; break; fi
     sleep 2
@@ -260,8 +262,8 @@ restore_mysql() {
   # z --skip-networking i wykonuje na nim własne skrypty init. Import w tym oknie kończy się
   # `ERROR 1050 Table 'kg_app' already exists` i ubiciem kontenera (lekcja z verify_backup.sh).
   log "czekam na gotowość release-openspg-mysql (TCP, serwer finalny)..."
-  local i ok=0
-  for i in $(seq 1 90); do
+  local ok=0
+  for _ in $(seq 1 90); do
     if [[ ${DRY} -eq 1 ]]; then ok=1; break; fi
     if docker exec release-openspg-mysql sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql -h127.0.0.1 --protocol=tcp -uroot -N -e "SELECT 1"' >/dev/null 2>&1; then ok=1; break; fi
     sleep 2

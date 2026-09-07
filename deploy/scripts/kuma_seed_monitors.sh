@@ -46,6 +46,7 @@ IMAGE="$(docker inspect "${CONTAINER}" --format '{{.Config.Image}}' 2>/dev/null)
 # --- sekrety: temat ntfy + tokeny push -------------------------------------------------
 # shellcheck disable=SC1090
 NTFY_SERVER=""; NTFY_TOPIC=""
+# shellcheck source=/dev/null  # plik operatora, poza repo
 webhook="$(. "${ALERTS_ENV}"; printf '%s' "${ALERT_WEBHOOK_URL:-}")"
 if [[ -n "${webhook}" ]]; then
   NTFY_SERVER="$(printf '%s' "${webhook}" | sed -E 's#^(https?://[^/]+).*#\1#')"
@@ -57,6 +58,7 @@ gen_token() { LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 32; }
 
 # Token bierzemy z istniejącego *_PING_URL, żeby nie unieważnić działającego pingu.
 token_from() {  # $1 = nazwa zmiennej
+  # shellcheck source=/dev/null  # plik operatora, poza repo
   (. "${ALERTS_ENV}"; printf '%s' "${!1:-}") | sed -E 's#.*/##'
 }
 PUSH_BASE="https://${STATUS_HOST}/api/push"
