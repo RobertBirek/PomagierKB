@@ -57,20 +57,44 @@ Authentik → Policies → wymuś MFA dla grupy kag-admin
 Zalecane dodatkowo: utworzyć **osobne** konto administracyjne panelu (nie superusera IdP)
 i zejść `akadmin` do roli break-glass z hasłem w sejfie.
 
-### A4. Monitoring zewnętrzny i dead-man's switch (D10-01, D10-02, P1)
-Dziś **nie ma żadnego** automatycznego wykrywania niedostępności: Uptime Kuma jest pusta
-(0 użytkowników, 0 monitorów, 0 powiadomień), `status.*` zwraca 404, brak sond spoza hosta.
-Backup nie ma pingu sukcesu — cicha awaria harmonogramu byłaby niewidoczna do następnego
-odtworzenia. To dokładnie ta klasa problemu, która pozwoliła czerwonemu CI przeżyć 42 commity.
+### A4. Monitoring zewnętrzny i dead-man's switch (D10-01, D10-02, P1) — ✅ WYKONANE 2026-09-07 (poza p. 4)
+Stan zastany: Uptime Kuma pusta (0 użytkowników, 0 monitorów, 0 powiadomień), `status.*` 404,
+backup bez pingu sukcesu. To dokładnie ta klasa problemu, która pozwoliła czerwonemu CI
+przeżyć 42 commity.
 
-1. Napraw `status.*` (patrz D2-02 niżej) albo używaj Kumy z zewnątrz przez tunel.
-2. W Kumie: monitor HTTP na `https://kag.ilovelighting.sanok.pl/healthz` co 60 s,
-   powiadomienie ntfy/e-mail.
-3. Push monitor („heartbeat") dla backupu → skopiuj URL do `deploy/kag/.env`:
-   `BACKUP_PING_URL=<url push-monitora>` oraz `VERIFY_PING_URL=<url drugiego push-monitora>`.
-   Skrypty wołają je **tylko przy sukcesie**, więc brak pingu = alarm.
-4. Sonda **spoza hosta** (bezpłatny plan UptimeRobot/Healthchecks.io) — monitoring działający
-   na monitorowanym hoście nie wykryje jego awarii.
+Skonfigurowane **8 monitorów**, wszystkie podpięte do jednego kanału ntfy (temat z
+`ALERT_WEBHOOK_URL`, ten sam, na który idą alerty `OnFailure` z systemd):
+
+| # | Monitor | Co sprawdza | Interwał |
+|---|---|---|---|
+| 1 | Panel — przez ingress | `https://kag…/healthz`, słowo kluczowe `"ok":true` (+ ważność certu) | 60 s |
+| 2 | Panel — bezpośrednio (edge-net) | `http://kag-panel:8080/healthz` — odróżnia awarię Caddy od awarii aplikacji | 60 s |
+| 3 | MCP — readyz (edge-net) | `http://kag-mcp:3001/readyz` — baza, migracje, profile | 60 s |
+| 4 | Authentik — liveness | `https://auth…/-/health/live/` | 60 s |
+| 5 | Authentik — readiness (edge-net) | `/-/health/ready/` — Postgres i Redis Authentika | 60 s |
+| 6 | Bramka SSO na status.* | oczekuje **302** przy `maxredirects=0`; 200 = monitoring stoi otworem | 300 s |
+| 7 | Backup nocny — dead-man's switch | push, cisza > 26 h | — |
+| 8 | Weryfikacja odtwarzania — dead-man's switch | push, cisza > 8 dni | — |
+
+`BACKUP_PING_URL` i `VERIFY_PING_URL` trafiły do **`/etc/kag/alerts.env`** (0600), nie do
+`deploy/kag/.env` — bo to ten plik ładują unity systemd. `kag-backup-verify.service` nie miał
+wcześniej `EnvironmentFile` i nigdy by tej zmiennej nie zobaczył; dopisane.
+
+Przy okazji trzeba było zmienić dwie rzeczy w ingresie:
+- **`/api/push/*` na `status.*` omija SSO** (Caddyfile) — skrypty z crona nie mają sesji
+  przeglądarkowej. Uwierzytelnia token w ścieżce, trzymany w `alerts.env`.
+- **`status.ilovelighting.sanok.pl` dopisany do aliasów sieciowych Caddy'ego** — bez tego
+  nazwa rozwiązywała się z kontenerów na publiczny adres hosta i monitor nr 6 wisiał
+  do timeoutu (brak NAT reflection). `kag.*` i `auth.*` miały ten alias od początku.
+
+Konfiguracja Kumy żyje w jej SQLite, którego **nie ma w nocnym snapshocie**. Odtwarza ją
+idempotentnie `deploy/scripts/kuma_seed_monitors.sh` (dopasowanie po nazwie, zachowuje id,
+tokeny i historię). Po każdej zmianie monitorów w UI — odzwierciedl ją w tym skrypcie.
+
+**Zostaje p. 4 — sonda spoza hosta.** Monitoring działający na monitorowanym hoście nie wykryje
+jego awarii: gdy padnie host, padnie i Kuma, i nikt się o tym nie dowie. Załóż bezpłatne konto
+(UptimeRobot / Healthchecks.io / betterstack) i skieruj je na `https://kag.ilovelighting.sanok.pl/healthz`.
+To jedyny brakujący element D10-01.
 
 ### A5. Renovate i wywiad o zależnościach (D11-02, D1-05, D1-03, P1)
 `renovate.json` jest poprawny (naprawiony w tym audycie), ale **aplikacja nie jest zainstalowana** —

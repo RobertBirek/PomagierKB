@@ -80,6 +80,10 @@ services:
         aliases:
           - auth.ilovelighting.sanok.pl
           - kag.ilovelighting.sanok.pl
+          # status.* dołączony 2026-09-07: bez aliasu monitor Uptime Kumy pilnujący
+          # bramki SSO rozwiązywał nazwę na PUBLICZNY adres hosta i wisiał do timeoutu
+          # (brak NAT reflection dla ruchu kontener→własny adres publiczny).
+          - status.ilovelighting.sanok.pl
 
   authentik-server:
     <<: [*security_defaults, *logging]

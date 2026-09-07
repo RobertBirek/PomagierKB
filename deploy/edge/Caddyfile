@@ -113,6 +113,15 @@ status.ilovelighting.sanok.pl {
 			header_up Host {host}
 		}
 	}
+	# Push-monitory (dead-man's switch backupu i weryfikacji odtwarzania) MUSZĄ omijać SSO:
+	# wołają je `backup.sh`/`verify_backup.sh` z hosta, z crona, bez sesji przeglądarkowej.
+	# Uwierzytelnieniem jest 32-znakowy token w ścieżce — dokładnie model, dla którego ten
+	# endpoint powstał (healthchecks.io działa tak samo). Tokeny trzymamy w /etc/kag/alerts.env
+	# (0600); ich wyciek pozwala co najwyżej sfałszować „backup się udał", więc traktujemy je
+	# jak sekret. Ścieżka jest wąska: /api/push/* i nic więcej — reszta Kumy zostaje za Authentikiem.
+	handle /api/push/* {
+		reverse_proxy edge-uptime-kuma:3001
+	}
 	handle {
 		forward_auth edge-authentik-server:9000 {
 			uri /outpost.goauthentik.io/auth/caddy

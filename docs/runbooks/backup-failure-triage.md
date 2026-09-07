@@ -3,6 +3,20 @@
 Sygnały: alert `kag-alert@kag-backup.service` / `…verify.service`, kokpit panelu
 „Backup (świeżość)" na żółto/czerwono, cisza push-monitora Kumy.
 
+**Push-monitory istnieją od 2026-09-07** (wcześniej ten runbook obiecywał sygnał, którego nie
+było — Kuma miała 0 monitorów). Są dwa, oba w Uptime Kumie:
+
+| Monitor | Pinguje | Okno ciszy | Co znaczy alarm |
+|---|---|---|---|
+| `Backup nocny — dead-man's switch` | `backup.sh` przy `ok:true` | 26 h | backup nie wystartował, zawisł, albo padł przed zapisem statusu |
+| `Weryfikacja odtwarzania — dead-man's switch` | `verify_backup.sh` przy `ok:true` | 8 dni | tygodniowa weryfikacja nie biegła albo nie przeszła |
+
+To sygnał **komplementarny** do `OnFailure`: alert systemd łapie „unit wystartował i padł",
+push-monitor łapie „unit w ogóle nie wystartował" — timer wyłączony, host padł, `flock` po
+zawieszonym biegu. URL-e (`BACKUP_PING_URL`, `VERIFY_PING_URL`) są w `/etc/kag/alerts.env`
+(0600), ładowanym przez oba unity. Konfigurację monitorów odtwarza
+`deploy/scripts/kuma_seed_monitors.sh` — baza Kumy NIE wchodzi do snapshotu.
+
 ## Szybka diagnoza
 
 ```bash

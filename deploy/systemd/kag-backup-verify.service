@@ -15,6 +15,10 @@ User=root
 Group=root
 WorkingDirectory=/kag
 Environment=DATA_ROOT=/srv/kag-data
+# VERIFY_PING_URL — push-monitor Kumy „Weryfikacja odtwarzania". Bez tego wpisu skrypt
+# nigdy nie zobaczyłby zmiennej i dead-man's switch milczałby na zawsze (kag-backup.service
+# ładował ten plik od początku, ten unit nie).
+EnvironmentFile=-/etc/kag/alerts.env
 ExecStart=/kag/deploy/scripts/verify_backup.sh
 TimeoutStartSec=45min
 Nice=10
