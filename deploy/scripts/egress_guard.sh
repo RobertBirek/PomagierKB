@@ -45,7 +45,7 @@ remove_rules() {
     [[ -z "${rule}" ]] && continue
     # shellcheck disable=SC2086
     iptables -D DOCKER-USER ${rule#-A DOCKER-USER } 2>/dev/null && removed=$((removed + 1))
-  done < <(iptables -S DOCKER-USER 2>/dev/null | grep -F -- "--comment \"${TAG}\"" || true)
+  done < <(iptables -S DOCKER-USER 2>/dev/null | grep -F -- "--comment ${TAG} " || true)
   log "usunięto reguł: ${removed}"
 }
 
@@ -55,7 +55,7 @@ if [[ "${MODE}" == "remove" ]]; then
 fi
 
 if [[ "${MODE}" == "check" ]]; then
-  n=$(iptables -S DOCKER-USER 2>/dev/null | grep -c -F -- "--comment \"${TAG}\"" || true)
+  n=$(iptables -S DOCKER-USER 2>/dev/null | grep -c -F -- "--comment ${TAG} " || true)
   log "aktywnych reguł: ${n}"
   [[ "${n}" -ge 1 ]] || exit 1
   exit 0
