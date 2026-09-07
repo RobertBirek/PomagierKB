@@ -34,8 +34,9 @@ Kluczowa własność systemu: **SQLite panelu jest źródłem prawdy o treści**
    INSERT OR IGNORE INTO drafts       SELECT * FROM old.drafts       WHERE namespace='<Ns>';
    INSERT OR IGNORE INTO chunks_mirror SELECT * FROM old.chunks_mirror WHERE namespace='<Ns>';
    ```
-   (przez `docker exec kag-panel node -e …` albo host z sqlite3; panel na czas operacji
-   zatrzymany: `docker stop kag-panel kag-mcp`).
+   Wyłącznie przez `docker exec kag-panel node -e …` (better-sqlite3) — na tym hoście
+   NIE MA binarki `sqlite3` ani w systemie, ani w kontenerze panelu (`command -v sqlite3`
+   → brak). Panel na czas operacji zatrzymany: `docker stop kag-panel kag-mcp`.
 3. Start paneli, potem **A** (force build).
 4. Posprzątaj kopię roboczą: `sudo rm -f /srv/kag-data/kag/panel/backup-staging/panel-restore.sqlite`
    (zawiera zapieczętowane klucze LLM i hashe kluczy MCP z dnia snapshotu).

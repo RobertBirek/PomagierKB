@@ -19,8 +19,10 @@ w recenzji można ją zmienić.
 ## 2. Recenzja Inboxu (/inbox)
 
 - **Zatwierdź** — szkic wejdzie do bazy przy najbliższym buildzie (baza dostaje
-  znacznik „zmiany oczekują"); **Odrzuć** wymaga powodu; **Wycofaj** usuwa
-  zatwierdzony wcześniej wpis (wymaga builda).
+  znacznik „zmiany oczekują"); **Odrzuć** wymaga powodu; **Wycofaj** cofa
+  zatwierdzony wcześniej wpis (wymaga builda). Uwaga: wycofanie + build sprawia,
+  że treść przestaje być wyszukiwalna, ale NIE kasuje węzła z grafu — builder
+  działa w trybie UPSERT. Fizyczne usunięcie: `docs/runbooks/purge-document.md`.
 - Filtr **Lekcje** pokazuje wpisy zgłoszone przez agentów z sesji (konwencja:
   `docs/lessons-convention.md`) — mają chip rodzaju (lekcja/decyzja/runbook) i projekt.
 - Masowe operacje: zaznacz → pasek na dole (najpierw dry-run z raportem).
@@ -69,9 +71,18 @@ Ocena odpowiedzi LLM-sędzią (budżetowana): `node tools/eval/judge.mjs`.
 
 - LLM (chat/embeddings/openie) — klucze sealowane, podgląd maskowany;
 - progi: `learning.threshold` (kiedy powstaje luka), `answer.minScore` (kiedy
-  system odmawia zamiast zgadywać — znormalizowany top wyszukiwania);
+  system odmawia zamiast zgadywać — **minimalny cosinus trafności** najlepszego
+  wyniku, zakres 0,5–0,99, domyślnie 0,7). Semantyka ZMIENIŁA SIĘ 2026-09-06:
+  poprzedni próg liczony na znormalizowanej zgodności kanałów był matematycznie
+  martwy i nigdy nie odrzucał. Wartości poniżej 0,5 backend traktuje jak brak
+  ustawienia i używa 0,7 — nie da się nimi „poluzować" bramki;
 - `answer.rerank` (off/embed/llm), `answer.rewrite` (on/off), `drafts.limits`,
-  `chunking`, `ingest.limits`, `retention` — wartości JSON, działają bez restartu.
+  `chunking`, `ingest.limits` — wartości JSON, działają bez restartu;
+- `retention` — **osobna kategoria: ten klucz steruje workerem, który KASUJE dane**
+  nieodwracalnie i bez kosza (m.in. pytania w `answers`, `feedback`, zamknięte luki,
+  oryginały udanych intake'ów, katalogi eksportu — po 30 dniach nie da się powtórzyć
+  builda z gotowego CSV). Skrócenie okresu działa wstecz przy najbliższym biegu.
+  Zakres i wartości: `docs/data-governance.md` §2.
 
 Klucz `retention` (domyślnie: logi akcji 90 dni, usage MCP 180, eksporty CSV 30,
 bloby nieudanych intake'ów 30) — pełne znaczenie i zakres: `docs/data-governance.md` §2.

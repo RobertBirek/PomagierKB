@@ -11,6 +11,12 @@ jest niezmienialny (`vector_model_id` w rejestrze + preflight).
 - Poprawki bezpieczeństwa OpenSPG nie przychodzą; mitygacja: port 8887 nigdy na
   hoście, wydzielona sieć wewnętrzna `kag-datastores` (patrz §Mitygacja sieciowa),
   dostęp tylko z `kag-panel` i `kag-mcp`.
+- Skala ryzyka jest ZMIERZONA, nie szacowana: audyt 2026-09-06 znalazł **653 podatności
+  HIGH/CRITICAL** w czterech obrazach OpenSPG. Rutyna kontroli: `deploy/scripts/cve_scan.sh`
+  + `kag-cve-scan.timer` (poniedziałki 03:10). Alarmuje **wyłącznie na PRZYROST** wobec
+  `baseline.json` — stały licznik zamrożenia po tygodniu przestałby cokolwiek znaczyć,
+  a nowa krytyczna podatność w obrazie, którego nie możemy podnieść, jest decyzją
+  operacyjną (kontrola kompensująca albo świadomy wyjątek).
 - **Klucz API modelu embeddingu leży w MariaDB jawnym tekstem** (`kg_user_model`;
   jasypt w tym buildzie nic nie szyfruje — zweryfikowane 2026-09-06). Dump MySQL,
   snapshot backupu i zrzut diagnostyczny = bezpośredni wyciek klucza LLM. Rotacja:
