@@ -66,13 +66,28 @@ services:
       TZ: ${TZ:-Europe/Warsaw}
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD is required}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-openspg}
+      # Audyt 2026-09-06 (D6-07): entrypoint obrazu domyślnie zakłada `root@'%'`
+      # (docker-entrypoint.sh: `file_env 'MYSQL_ROOT_HOST' '%'`), czyli konto roota
+      # z pełnymi uprawnieniami osiągalne z KAŻDEGO kontenera w sieci kag-datastores.
+      # Zawężamy do pętli zwrotnej. `root@localhost` (po sockecie) powstaje niezależnie
+      # od tej zmiennej, więc `mysqldump` w backup.sh działa bez zmian, a healthcheck
+      # niżej łączy się po TCP na 127.0.0.1 i trafia właśnie na to konto.
+      #
+      # UWAGA: działa TYLKO przy inicjalizacji PUSTEGO wolumenu. Na działającej instalacji
+      # konto `root@'%'` trzeba usunąć ręcznie — procedura (wraz z kolejnością, bo
+      # skip_name_resolve=ON) w docs/design/audit-2026-09-operator.md §B1.
+      MYSQL_ROOT_HOST: 127.0.0.1
       # dla mysql-init/10-create-app-user.sh — serwer OpenSPG łączy się jako user
       # aplikacyjny, NIE root
       MYSQL_APP_USER: ${MYSQL_APP_USER:?MYSQL_APP_USER is required}
       MYSQL_APP_PASSWORD: ${MYSQL_APP_PASSWORD:?MYSQL_APP_PASSWORD is required}
     healthcheck:
-      # hasło przez env MYSQL_PWD, nie w argv (niewidoczne w `ps` wewnątrz kontenera)
-      test: ["CMD-SHELL", "MYSQL_PWD=\"$${MYSQL_ROOT_PASSWORD}\" mysqladmin ping -h 127.0.0.1 -uroot --silent"]
+      # hasło przez env MYSQL_PWD, nie w argv (niewidoczne w `ps` wewnątrz kontenera).
+      # REALNE ZAPYTANIE, nie `mysqladmin ping`: ping zwraca SUKCES nawet przy odmowie
+      # dostępu (zweryfikowane 2026-09-07 na efemerycznym kontenerze — ping ze złym
+      # hasłem kończy się kodem 0). Kontener z zepsutym kontem roota raportowałby się
+      # jako healthy. Ta sama lekcja stoi już w verify_backup.sh przy sondzie gotowości.
+      test: ["CMD-SHELL", "MYSQL_PWD=\"$${MYSQL_ROOT_PASSWORD}\" mysql -h 127.0.0.1 --protocol=tcp -uroot -N -e 'SELECT 1' >/dev/null"]
       interval: 30s
       timeout: 10s
       retries: 5
