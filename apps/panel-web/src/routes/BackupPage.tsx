@@ -10,6 +10,10 @@
  *  - panel WYZWALA bieg najwęższym możliwym kanałem (plik-znacznik + jednostka .path),
  *  - panel NIE ODTWARZA — pokazuje komendy, wykonuje je człowiek na hoście.
  * Uzasadnienie tej ostatniej granicy: `services/backup.ts` w panel-api.
+ *
+ * PageHeader siedzi WEWNĄTRZ <Tabs>, bo TabsList i TabsTrigger wymagają kontekstu roota
+ * Radiksa — wstawione obok (choćby przez slot `tabs`) renderują się bez niego i przestają
+ * przełączać. Ten sam układ ma /settings.
  */
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate, useSearch } from '@tanstack/react-router';
@@ -25,7 +29,7 @@ import { BackupConfigForm } from '@/components/backup/BackupConfigForm';
 import { BackupStatusCards } from '@/components/backup/BackupStatusCards';
 import { RecoveryGuide, SnapshotsTable } from '@/components/backup/RecoveryGuide';
 import type { BackupStateResponse } from '@/components/backup/types';
-import type { BackupTab } from '../router';
+import type { BackupSearch, BackupTab } from '../router';
 
 const TAB_LABEL: Record<BackupTab, PlKey> = {
   state: 'backup.tabs.state',
@@ -35,6 +39,11 @@ const TAB_LABEL: Record<BackupTab, PlKey> = {
 };
 
 const BACKUP_TABS: readonly BackupTab[] = ['state', 'snapshots', 'config', 'recovery'];
+
+/** Search dla zakładki (domyślna 'state' nie jest serializowana). */
+function searchForTab(tab: BackupTab): BackupSearch {
+  return tab === 'state' ? {} : { tab };
+}
 
 export function BackupPage() {
   const search = useSearch({ from: '/backup' });
@@ -52,47 +61,50 @@ export function BackupPage() {
 
   return (
     <PageContainer>
-      <PageHeader
-        title={t('backup.title')}
-        description={t('backup.subtitle')}
-        tabs={
-          <TabsList>
-            {BACKUP_TABS.map((value) => (
-              <TabsTrigger
-                key={value}
-                value={value}
-                onClick={() => void navigate({ to: '/backup', search: value === 'state' ? {} : { tab: value } })}
-              >
-                {t(TAB_LABEL[value])}
-              </TabsTrigger>
-            ))}
-          </TabsList>
+      <Tabs
+        value={tab}
+        onValueChange={(value) =>
+          void navigate({ to: '/backup', search: searchForTab(value as BackupTab), replace: true })
         }
-      />
+      >
+        <PageHeader
+          title={t('backup.title')}
+          description={t('backup.subtitle')}
+          tabs={
+            <TabsList className="flex-nowrap overflow-x-auto">
+              {BACKUP_TABS.map((item) => (
+                <TabsTrigger key={item} value={item} className="shrink-0">
+                  {t(TAB_LABEL[item])}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          }
+        />
 
-      {state.isPending && <SkeletonCard />}
-      {state.isError && (
-        <Alert variant="fail" title={t('common.error')}>
-          {errorMessage(state.error)}
-        </Alert>
-      )}
+        {state.isPending && <SkeletonCard />}
+        {state.isError && (
+          <Alert variant="fail" title={t('common.error')}>
+            {errorMessage(state.error)}
+          </Alert>
+        )}
 
-      {state.data !== undefined && (
-        <Tabs value={tab}>
-          <TabsContent value="state">
-            <BackupStatusCards state={state.data} />
-          </TabsContent>
-          <TabsContent value="snapshots">
-            <SnapshotsTable state={state.data} />
-          </TabsContent>
-          <TabsContent value="config">
-            <BackupConfigForm config={state.data.config} />
-          </TabsContent>
-          <TabsContent value="recovery">
-            <RecoveryGuide state={state.data} />
-          </TabsContent>
-        </Tabs>
-      )}
+        {state.data !== undefined && (
+          <>
+            <TabsContent value="state">
+              <BackupStatusCards state={state.data} />
+            </TabsContent>
+            <TabsContent value="snapshots">
+              <SnapshotsTable state={state.data} />
+            </TabsContent>
+            <TabsContent value="config">
+              <BackupConfigForm config={state.data.config} />
+            </TabsContent>
+            <TabsContent value="recovery">
+              <RecoveryGuide state={state.data} />
+            </TabsContent>
+          </>
+        )}
+      </Tabs>
 
       {state.data?.state?.generatedAt !== null && state.data?.state?.generatedAt !== undefined && (
         <p className="mt-4 text-xs text-text-secondary">
