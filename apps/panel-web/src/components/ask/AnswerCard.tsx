@@ -20,10 +20,11 @@ import { Button, buttonVariants, IconButton } from '@/ui/button';
 import { Card } from '@/ui/card';
 import { cn } from '@/ui/cn';
 import { Popover, PopoverContent, PopoverTrigger } from '@/ui/popover';
+import { Select } from '@/ui/select';
 import { Textarea } from '@/ui/textarea';
 import { Tooltip } from '@/ui/tooltip';
 import { useToast } from '@/ui/toast';
-import { t } from '@/i18n/t';
+import { t, type PlKey } from '@/i18n/t';
 
 // ── Feedback (POST /api/v1/ask/:answerId/feedback) ───────────────────────────
 
@@ -33,17 +34,51 @@ interface FeedbackControlsProps {
   onSaved: (verdict: 'up' | 'down') => void;
 }
 
+/**
+ * Kategorie przyczyny negatywnej oceny. Każda wskazuje INNĄ naprawę, dlatego lista jest
+ * krótka i rozłączna — dłuższa zmusiłaby użytkownika do zgadywania, a wtedy dane byłyby
+ * gorsze niż ich brak. Kolejność od najczęstszej.
+ */
+const FEEDBACK_CATEGORIES = [
+  'retrieval_miss',
+  'incomplete',
+  'hallucination',
+  'outdated',
+  'citation_error',
+  'wrong_kb',
+  'other',
+] as const;
+type FeedbackCategory = (typeof FEEDBACK_CATEGORIES)[number];
+
+const CATEGORY_LABEL: Record<FeedbackCategory, PlKey> = {
+  retrieval_miss: 'ask.feedback.cat.retrievalMiss',
+  incomplete: 'ask.feedback.cat.incomplete',
+  hallucination: 'ask.feedback.cat.hallucination',
+  outdated: 'ask.feedback.cat.outdated',
+  citation_error: 'ask.feedback.cat.citationError',
+  wrong_kb: 'ask.feedback.cat.wrongKb',
+  other: 'ask.feedback.cat.other',
+};
+
 function FeedbackControls({ answerId, verdict, onSaved }: FeedbackControlsProps) {
   const toast = useToast();
   const [commentOpen, setCommentOpen] = useState(false);
   const [comment, setComment] = useState('');
+  const [category, setCategory] = useState<FeedbackCategory | ''>('');
   const [sending, setSending] = useState(false);
 
-  async function send(v: 'up' | 'down', withComment: string | null): Promise<void> {
+  async function send(
+    v: 'up' | 'down',
+    withComment: string | null,
+    withCategory: FeedbackCategory | '' = '',
+  ): Promise<void> {
     setSending(true);
     try {
-      const body: { verdict: 'up' | 'down'; comment?: string } = { verdict: v };
+      const body: { verdict: 'up' | 'down'; comment?: string; category?: FeedbackCategory } = {
+        verdict: v,
+      };
       if (withComment !== null && withComment.trim() !== '') body.comment = withComment.trim();
+      if (withCategory !== '') body.category = withCategory;
       await apiFetch(`/api/v1/ask/${encodeURIComponent(answerId)}/feedback`, { method: 'POST', body });
       setCommentOpen(false);
       onSaved(v);
@@ -90,9 +125,23 @@ function FeedbackControls({ answerId, verdict, onSaved }: FeedbackControlsProps)
         </Tooltip>
         <PopoverContent align="start" className="w-80">
           <div className="flex flex-col gap-2">
-            <label className="text-sm font-medium text-text" htmlFor={`fb-${answerId}`}>
+            <label className="text-sm font-medium text-text" htmlFor={`fb-cat-${answerId}`}>
               {t('ask.feedback.whatWrong')}
             </label>
+            {/* Kategoria PRZED komentarzem: jedno kliknięcie daje dane, po których da się
+                działać, nawet gdy nikomu nie chce się pisać zdania. */}
+            <Select
+              id={`fb-cat-${answerId}`}
+              value={category}
+              onChange={(ev) => setCategory(ev.target.value as FeedbackCategory | '')}
+            >
+              <option value="">{t('ask.feedback.cat.none')}</option>
+              {FEEDBACK_CATEGORIES.map((c) => (
+                <option key={c} value={c}>
+                  {t(CATEGORY_LABEL[c])}
+                </option>
+              ))}
+            </Select>
             <Textarea
               id={`fb-${answerId}`}
               rows={3}
@@ -104,7 +153,12 @@ function FeedbackControls({ answerId, verdict, onSaved }: FeedbackControlsProps)
               <Button size="sm" variant="ghost" onClick={() => setCommentOpen(false)}>
                 {t('common.cancel')}
               </Button>
-              <Button size="sm" variant="primary" loading={sending} onClick={() => void send('down', comment)}>
+              <Button
+                size="sm"
+                variant="primary"
+                loading={sending}
+                onClick={() => void send('down', comment, category)}
+              >
                 {t('ask.feedback.sendComment')}
               </Button>
             </div>
@@ -200,6 +254,12 @@ export function AnswerCard({ entry, canFeedback, canPropose, onOpenCitation, onV
               >
                 <span className="shrink-0 font-mono text-2xs text-accent">[{c.n}]</span>
                 <span className="truncate">{c.title ?? c.id}</span>
+                {/* Sekcja dokumentu — bez niej cytowanie wskazuje fragment, a nie miejsce
+                    w dokumencie, i nie da się ocenić, czy zła odpowiedź to wina modelu,
+                    retrievalu czy podziału źródła. */}
+                {c.sectionHeading !== undefined && c.sectionHeading !== '' && (
+                  <span className="truncate text-text-tertiary">› {c.sectionHeading}</span>
+                )}
               </button>
             ))}
           </div>

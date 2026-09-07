@@ -1,6 +1,6 @@
 import type { KbRow } from '@pomagierkb/shared/db';
 import { TAG_STOPWORDS } from '@pomagierkb/shared/text';
-import { kbRoutingKeywords } from '@pomagierkb/shared/db';
+import { kbPiiPolicy, kbRoutingKeywords, strictestPiiPolicy } from '@pomagierkb/shared/db';
 import { wrapUntrusted, type LlmClient } from '@pomagierkb/shared/llm';
 
 /**
@@ -259,7 +259,10 @@ export async function analyzeContent(input: AnalyzeInput, deps: AnalyzeDeps = {}
       (input.sourceUrl ? `Źródło (metadana): ${input.sourceUrl}\n` : '') +
       (input.titleHint ? `Sugerowany tytuł: ${input.titleHint}\n` : '') +
       '\nDokument do analizy:\n' +
-      wrapUntrusted(input.content, 'dokument');
+      // Polityka PII: analiza dopiero WYBIERA bazę docelową, więc w tym momencie nie wiemy,
+      // czyja polityka obowiązuje. Bierzemy najostrzejszą spośród aktywnych — dokument nie może
+      // wyjechać luźniej niż pozwala najbardziej wrażliwa baza, do której mógłby trafić.
+      wrapUntrusted(input.content, 'dokument', undefined, strictestPiiPolicy(active.map(kbPiiPolicy)));
     const res = await llm.chat({
       system: ANALYZE_SYSTEM_PROMPT,
       user,

@@ -19,6 +19,10 @@ export interface ThreadCitation {
   title?: string;
   snippet?: string;
   sourceRef?: string;
+  /** Dokument źródłowy fragmentu (id z eksportu) — patrz retrieval.ts. */
+  docId?: string;
+  /** Nagłówek sekcji, z której pochodzi fragment. */
+  sectionHeading?: string;
 }
 
 export interface ThreadResult {

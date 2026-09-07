@@ -9,6 +9,33 @@ import { hex8, parseJson, ymd } from './util.js';
 export type AnswerSource = 'mcp' | 'panel' | 'api';
 export type FeedbackVerdict = 'up' | 'down';
 
+/**
+ * Przyczyna negatywnej oceny. Kategorie dobrane tak, żeby każda wskazywała INNĄ naprawę:
+ * `retrieval_miss` → korpus albo ranking, `hallucination` → model albo próg odmowy,
+ * `citation_error` → mapowanie evidence, `outdated` → cykl aktualizacji dokumentu,
+ * `incomplete` → chunking albo budżet kontekstu, `wrong_kb` → routing namespace'ów.
+ * Bez tego rozróżnienia „odpowiedź była zła" nie prowadzi do żadnego działania.
+ * NULL dla ocen pozytywnych i wpisów sprzed migracji 0061.
+ */
+export type FeedbackCategory =
+  | 'retrieval_miss'
+  | 'hallucination'
+  | 'citation_error'
+  | 'outdated'
+  | 'incomplete'
+  | 'wrong_kb'
+  | 'other';
+
+export const FEEDBACK_CATEGORIES: readonly FeedbackCategory[] = [
+  'retrieval_miss',
+  'hallucination',
+  'citation_error',
+  'outdated',
+  'incomplete',
+  'wrong_kb',
+  'other',
+];
+
 export interface AnswerRow {
   id: string;
   question: string;
@@ -37,6 +64,7 @@ export interface FeedbackRow {
   answer_id: string;
   verdict: FeedbackVerdict;
   comment: string | null;
+  category: FeedbackCategory | null;
   created_by: string | null;
   created_at: string;
 }
@@ -44,7 +72,14 @@ export interface FeedbackRow {
 export interface AnswerInput {
   question: string;
   namespaces?: string[];
-  citations?: { n: number; id: string; namespace: string }[];
+  citations?: {
+    n: number;
+    id: string;
+    namespace: string;
+    /** Dokument źródłowy i sekcja — bez nich cytowanie wskazuje fragment, nie miejsce. */
+    docId?: string;
+    section?: string;
+  }[];
   confidence?: number | null;
   model?: string | null;
   degraded?: boolean;
@@ -57,6 +92,10 @@ export interface AnswerInput {
   answerText?: string | null;
   /** true = odpowiedź wydana z cache, bez wywołania chat_llm (D8-11). */
   fromCache?: boolean;
+  /** Wersja promptu systemowego — bez niej nie da się porównać dwóch jego wariantów. */
+  promptVersion?: string | null;
+  /** Czasy per kanał retrievalu w ms; łączny `took_ms` nie mówi, który kanał je zjadł. */
+  retrievalMs?: Record<string, number> | null;
 }
 
 /**
@@ -81,8 +120,8 @@ export function recordAnswer(db: Db, input: AnswerInput): AnswerRow {
   db.prepare(
     `INSERT INTO answers (id, question, namespaces_json, citations_json, confidence, model,
        degraded, no_answer, source, api_key_id, user_id, took_ms, created_at,
-       answer_text, from_cache)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       answer_text, from_cache, prompt_version, retrieval_ms_json)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id,
     input.question,
@@ -99,6 +138,10 @@ export function recordAnswer(db: Db, input: AnswerInput): AnswerRow {
     nowIso(),
     clipAnswerText(input.answerText),
     input.fromCache === true ? 1 : 0,
+    input.promptVersion ?? null,
+    input.retrievalMs !== undefined && input.retrievalMs !== null
+      ? JSON.stringify(input.retrievalMs)
+      : null,
   );
   return getAnswerOrThrow(db, id);
 }
@@ -137,6 +180,7 @@ export function recordFeedback(
   comment?: string | null,
   createdBy?: string | null,
   owner?: FeedbackOwner | null,
+  category?: FeedbackCategory | null,
 ): RecordFeedbackResult {
   const tx = db.transaction((): RecordFeedbackResult => {
     const answer = getAnswerOrThrow(db, answerId);
@@ -147,8 +191,9 @@ export function recordFeedback(
     }
     const id = `fb_${hex8()}${hex8()}`;
     db.prepare(
-      'INSERT INTO feedback (id, answer_id, verdict, comment, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-    ).run(id, answerId, verdict, comment ?? null, createdBy ?? null, nowIso());
+      'INSERT INTO feedback (id, answer_id, verdict, comment, category, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      // Kategoria ma sens wyłącznie przy ocenie negatywnej — przy 'up' jest szumem.
+    ).run(id, answerId, verdict, comment ?? null, verdict === 'down' ? (category ?? null) : null, createdBy ?? null, nowIso());
     let gap: GapRow | null = null;
     let gapCreated = false;
     if (verdict === 'down') {
@@ -159,7 +204,7 @@ export function recordFeedback(
         kbNamespace: namespaces[0] ?? null,
         confidence: answer.confidence,
         apiKeyId: answer.api_key_id,
-        metadata: { answerId, ...(comment ? { comment } : {}) },
+        metadata: { answerId, ...(comment ? { comment } : {}), ...(category ? { category } : {}) },
       });
       gap = recorded.row;
       gapCreated = recorded.created;

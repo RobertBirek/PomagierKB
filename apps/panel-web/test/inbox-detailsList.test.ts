@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   formatMetadataValue,
   metadataEntries,
+  piiWarning,
 } from '../src/components/inbox/detailsList';
 
 describe('formatMetadataValue()', () => {
@@ -63,5 +64,31 @@ describe('metadataEntries()', () => {
 
   it('pusty obiekt → brak wpisów', () => {
     expect(metadataEntries({})).toEqual([]);
+  });
+});
+
+describe('piiWarning', () => {
+  it('brak sygnału, gdy metadanych PII nie ma albo licznik jest zerowy', () => {
+    expect(piiWarning({})).toBeNull();
+    expect(piiWarning({ pii: { total: 0, types: [], policy: 'flag' } })).toBeNull();
+  });
+
+  it('tłumaczy typy na polski i przenosi politykę', () => {
+    const w = piiWarning({ pii: { total: 3, types: ['pesel', 'email'], policy: 'mask' } });
+    expect(w).toEqual({ total: 3, types: ['PESEL', 'adres e-mail'], policy: 'mask' });
+  });
+
+  it('nieznany typ przechodzi surowy zamiast znikać (nowy detektor w backendzie)', () => {
+    expect(piiWarning({ pii: { total: 1, types: ['paszport'], policy: 'flag' } })?.types).toEqual([
+      'paszport',
+    ]);
+  });
+
+  it('uszkodzony kształt nie wywraca panelu recenzenta', () => {
+    expect(piiWarning({ pii: 'tak' })).toBeNull();
+    expect(piiWarning({ pii: [] })).toBeNull();
+    expect(piiWarning({ pii: { total: 'dużo' } })).toBeNull();
+    // Brak `types`/`policy` przy poprawnym liczniku → sygnał zostaje, z bezpiecznymi domyślnymi.
+    expect(piiWarning({ pii: { total: 2 } })).toEqual({ total: 2, types: [], policy: 'flag' });
   });
 });

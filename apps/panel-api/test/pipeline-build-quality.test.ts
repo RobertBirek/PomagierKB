@@ -87,9 +87,9 @@ beforeAll(() => {
 afterAll(() => db.close());
 
 describe('runQualityGate', () => {
-  it('zdrowy eksport → verdict OK, 13 checków, raport zapisany w quality_reports', async () => {
+  it('zdrowy eksport → verdict OK, 14 checków, raport zapisany w quality_reports', async () => {
     const report = await runQualityGate({ db, namespace: NS, client: null });
-    expect(report.checks).toHaveLength(13);
+    expect(report.checks).toHaveLength(14);
     expect(report.verdict).toBe('OK');
     expect(report.runId).toBe(exp.runId);
     expect(check(report, 'live_search_sanity').details).toContain('pominięto'); // brak klienta OpenSPG
@@ -100,7 +100,41 @@ describe('runQualityGate', () => {
 
     const saved = latestQualityReport(db, NS);
     expect(saved?.verdict).toBe('OK');
-    expect(JSON.parse(saved!.checks_json)).toHaveLength(13);
+    expect(JSON.parse(saved!.checks_json)).toHaveLength(14);
+  });
+
+  it('zdrowy eksport → krawędzie grafu bez sierot', async () => {
+    const report = await runQualityGate({ db, namespace: NS, client: null });
+    const c = check(report, 'graph_edges_orphans');
+    expect(c.ok).toBe(true);
+    expect(c.details).toContain('wszystkie końce istnieją');
+  });
+
+  it('krawędź celująca w nieistniejący węzeł → FAIL z checkiem graph_edges_orphans', async () => {
+    // Scenariusz z życia: dokument zniknął z eksportu (wycofany, przemianowany), a krawędź
+    // po nim została. `kb_graph_neighbors` prowadziłby wtedy agenta do id, którego nie da
+    // się pobrać — objawem byłoby „narzędzie zwraca puste sąsiedztwo", bez wskazania winnego.
+    const before = db
+      .prepare('SELECT src_id AS srcId, rel, dst_id AS dstId FROM graph_edges WHERE namespace = ?')
+      .all(NS) as { srcId: string; rel: string; dstId: string }[];
+    db.prepare(
+      'INSERT OR IGNORE INTO graph_edges (namespace, src_id, rel, dst_id) VALUES (?, ?, ?, ?)',
+    ).run(NS, 'CHUNK_DEADBEEF_000', 'in_document', 'DOC_NIEISTNIEJACY');
+    try {
+      const report = await runQualityGate({ db, namespace: NS, client: null });
+      const c = check(report, 'graph_edges_orphans');
+      expect(c.ok).toBe(false);
+      expect(c.details).toContain('DOC_NIEISTNIEJACY');
+      expect(report.verdict).toBe('FAIL'); // poziom error, nie warn — nawigacja jest zepsuta
+    } finally {
+      db.prepare('DELETE FROM graph_edges WHERE namespace = ? AND dst_id = ?').run(
+        NS,
+        'DOC_NIEISTNIEJACY',
+      );
+      expect(
+        db.prepare('SELECT COUNT(*) AS n FROM graph_edges WHERE namespace = ?').get(NS),
+      ).toEqual({ n: before.length });
+    }
   });
 
   it('zdublowane id w chunk.csv → FAIL z checkiem ids_unique_nonempty', async () => {

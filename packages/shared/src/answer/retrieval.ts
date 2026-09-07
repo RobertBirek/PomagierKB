@@ -62,6 +62,16 @@ export interface RetrievalHit {
   vectorScore?: number;
   source: RetrievalSource;
   sourceRef?: string;
+  /**
+   * Dokument źródłowy i nagłówek sekcji, z której pochodzi chunk.
+   *
+   * Oba pola SĄ w `chunks_mirror` i w schemacie grafu od początku — do 2026-09-07 po prostu
+   * nie były przepuszczane tutaj, więc cytowanie mówiło „ten fragment", a nie „ten dokument,
+   * sekcja Montaż". Bez nich nie da się rozstrzygnąć, czy zła odpowiedź to wina modelu,
+   * retrievalu, czy podziału źródła na fragmenty — a to trzy różne naprawy.
+   */
+  docId?: string;
+  sectionHeading?: string;
 }
 
 export interface HybridSearchParams {
@@ -107,6 +117,12 @@ export interface RetrievalResult {
   /** Namespace'y wzmocnione przez routing hints (kb_registry.routing_keywords). */
   matchedRouting: string[];
   tookMs: number;
+  /**
+   * Czas każdego kanału w ms (`fallback_fts`, `openspg_vector`, `openspg_text`).
+   * Sam `tookMs` mówi, że retrieval trwał 2 s, ale nie który kanał to zjadł — a to
+   * różnica między „wolny OpenSPG" a „wolny dostawca embeddingów".
+   */
+  channelMs: Record<string, number>;
 }
 
 const CHANNEL_TIMEOUT_MS = 5000;
@@ -125,6 +141,8 @@ interface ChannelHit {
   title?: string;
   snippet?: string;
   sourceRef?: string;
+  docId?: string;
+  sectionHeading?: string;
   /** Surowy score kanału (tylko wektorowy — do bramki trafności). */
   score?: number;
 }
@@ -199,12 +217,16 @@ function toChannelHit(hit: SearchHit, namespace: string, resolvedId?: string): C
     'summary',
   ]);
   const sourceRef = firstString(hit.fields, ['sourceRef', 'source_ref', 'sourceUrl', 'url']);
+  const docId = firstString(hit.fields, ['sourceDocumentRefId', 'source_document_ref_id', 'docId']);
+  const sectionHeading = firstString(hit.fields, ['sectionHeading', 'section_heading']);
   return {
     id: resolvedId ?? hit.id,
     namespace,
     ...(title !== undefined ? { title: stripLiteralQuotes(title) } : {}),
     ...(content !== undefined ? { snippet: truncateSnippet(stripLiteralQuotes(content)) } : {}),
     ...(sourceRef !== undefined ? { sourceRef: stripLiteralQuotes(sourceRef) } : {}),
+    ...(docId !== undefined ? { docId: stripLiteralQuotes(docId) } : {}),
+    ...(sectionHeading !== undefined ? { sectionHeading: stripLiteralQuotes(sectionHeading) } : {}),
   };
 }
 
@@ -221,7 +243,10 @@ async function runChannel(
   ctx: AnswerCtx,
   name: string,
   run: (signal: AbortSignal) => Promise<ChannelHit[]>,
+  /** Zbiera czas kanału w ms — łączny `tookMs` nie mówi, który kanał go zjadł. */
+  timings?: Record<string, number>,
 ): Promise<ChannelHit[] | null> {
+  const startedAt = Date.now();
   let timer: ReturnType<typeof setTimeout> | undefined;
   const controller = new AbortController();
   const timeout = new Promise<null>((resolve) => {
@@ -245,6 +270,9 @@ async function runChannel(
     // Zwycięstwo wyścigu przez `run` też kończy kanał — nie zostawiamy żywego
     // kontrolera (żądanie i tak się już zakończyło).
     controller.abort();
+    // Także dla kanału, który padł albo trafił w timeout: „openspg_vector zjadł 5000 ms"
+    // to najważniejsza informacja przy diagnozie wolnej odpowiedzi.
+    if (timings !== undefined) timings[name] = Date.now() - startedAt;
   }
 }
 
@@ -254,6 +282,8 @@ interface MirrorRow {
   title: string | null;
   content: string;
   source_ref: string | null;
+  doc_id: string | null;
+  section_heading: string | null;
 }
 
 /** Wzbogacenie finalnych wyników o dane z chunks_mirror (tytuł/snippet/sourceRef). */
@@ -262,7 +292,8 @@ function mirrorLookup(db: Db, ids: string[]): Map<string, MirrorRow> {
   const placeholders = ids.map(() => '?').join(',');
   const rows = db
     .prepare(
-      `SELECT id, namespace, title, content, source_ref FROM chunks_mirror WHERE id IN (${placeholders})`,
+      `SELECT id, namespace, title, content, source_ref, doc_id, section_heading
+         FROM chunks_mirror WHERE id IN (${placeholders})`,
     )
     .all(...ids) as MirrorRow[];
   return new Map(rows.map((r) => [r.id, r]));
@@ -320,6 +351,7 @@ export async function hybridSearch(
       lexicalStrict: false,
       matchedRouting: [],
       tookMs: Date.now() - started,
+      channelMs: {}, // żaden kanał nie wystartował — pusta mapa, nie zera
     };
   }
   // Jedna mapa rejestru na całe wyszukiwanie (zamiast getKb per namespace per kanał — N+1).
@@ -365,9 +397,19 @@ export async function hybridSearch(
       .filter((h): h is ChannelHit => h !== undefined);
   };
 
+  const channelMs: Record<string, number> = {};
+  // Alias zamykający mapę czasów — dzięki niemu wywołania kanałów niżej zostają
+  // jednolinijkowe i czytelne, zamiast rosnąć o kolejny argument w każdym miejscu.
+  const runChannelTimed = (
+    ctxArg: AnswerCtx,
+    name: string,
+    run: (signal: AbortSignal) => Promise<ChannelHit[]>,
+  ): Promise<ChannelHit[] | null> => runChannel(ctxArg, name, run, channelMs);
+
   // (a) FTS5 — synchroniczny (better-sqlite3), timeout nie dotyczy; błąd → pusty kanał.
   let ftsHits: ChannelHit[] = [];
   let lexicalStrict = false;
+  const ftsStartedAt = Date.now();
   try {
     const ftsRows = searchFts(ctx.db, textQuery, namespaces, limit);
     // AND = wszystkie rdzenie zapytania w chunku; OR to luźny fallback (słaby dowód).
@@ -392,6 +434,7 @@ export async function hybridSearch(
       'retrieval: FTS5 zawiódł',
     );
   }
+  channelMs['fallback_fts'] = Date.now() - ftsStartedAt;
 
   // (b)+(c) OpenSPG — równolegle, każdy z własnym timeoutem 5 s i breakerem
   // ('openspg' w tabeli breakers: otwarty → kanał od razu null, kokpit widzi stan).
@@ -430,7 +473,7 @@ export async function hybridSearch(
 
   const [vectorHits, textHits] = await Promise.all([
     vectorEnabled && openspg && llm
-      ? runChannel(ctx, 'openspg_vector', async (signal) => {
+      ? runChannelTimed(ctx, 'openspg_vector', async (signal) => {
           const queryVector = await queryVectorPromise;
           // Rzucamy PRZED withBreaker → kanał „nie zadziałał", breaker 'openspg' nietknięty.
           if (queryVector === null) throw new Error('embed zapytania niedostępny');
@@ -472,7 +515,7 @@ export async function hybridSearch(
       ? Promise.resolve(null)
       : openspgTextQuery === null
       ? Promise.resolve<ChannelHit[]>([])
-      : runChannel(ctx, 'openspg_text', (signal) => {
+      : runChannelTimed(ctx, 'openspg_text', (signal) => {
           const scoped = openspg.withSignal(signal);
           return withBreaker(ctx.db, 'openspg', async () => {
             // TextSearchRequest wymaga projectId — wołamy per namespace i scalamy;
@@ -531,6 +574,10 @@ export async function hybridSearch(
     const title = detail?.title ?? m?.title ?? undefined;
     const snippet = detail?.snippet ?? (m ? truncateSnippet(m.content) : '');
     const sourceRef = detail?.sourceRef ?? m?.source_ref ?? undefined;
+    // Mirror ma pierwszeństwo nad kanałem: jest lokalny i zawsze kompletny, podczas gdy
+    // kanały OpenSPG zwracają tylko te property, o które akurat poprosił zapytujący.
+    const docId = m?.doc_id ?? detail?.docId ?? undefined;
+    const sectionHeading = m?.section_heading ?? detail?.sectionHeading ?? undefined;
     const vectorScore = vectorMap.get(f.id)?.score;
     return {
       id: f.id,
@@ -541,6 +588,10 @@ export async function hybridSearch(
       ...(vectorScore !== undefined ? { vectorScore } : {}),
       ...(title !== undefined && title !== null ? { title } : {}),
       ...(sourceRef !== undefined && sourceRef !== null ? { sourceRef } : {}),
+      ...(docId !== undefined && docId !== null && docId !== '' ? { docId } : {}),
+      ...(sectionHeading !== undefined && sectionHeading !== null && sectionHeading !== ''
+        ? { sectionHeading }
+        : {}),
     };
   });
 
@@ -579,5 +630,6 @@ export async function hybridSearch(
     lexicalStrict,
     matchedRouting: routing.matched,
     tookMs: Date.now() - started,
+    channelMs,
   };
 }

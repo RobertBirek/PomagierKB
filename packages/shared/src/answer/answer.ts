@@ -1,5 +1,5 @@
 import type { Db } from '../db/index.js';
-import { getSettingModelName, recordAnswer, recordGap } from '../db/index.js';
+import { getSettingModelName, piiPolicyFor, recordAnswer, recordGap } from '../db/index.js';
 import { AppError } from '../errors.js';
 import { wrapUntrusted } from '../llm/index.js';
 import { hybridSearch } from './retrieval.js';
@@ -57,6 +57,10 @@ export interface AnswerCitation {
   title?: string;
   snippet?: string;
   sourceRef?: string;
+  /** Dokument źródłowy fragmentu — pozwala pokazać „Dokument › Sekcja" zamiast id chunka. */
+  docId?: string;
+  /** Nagłówek sekcji, z której pochodzi fragment. */
+  sectionHeading?: string;
 }
 
 export interface AnswerResult {
@@ -215,6 +219,14 @@ function buildContext(
   return { sources, snippetFallbacks };
 }
 
+/**
+ * Wersja promptu systemowego odpowiedzi, zapisywana przy każdej odpowiedzi
+ * (`answers.prompt_version`). PODBIJ przy KAŻDEJ zmianie treści promptu — bez tego
+ * nie da się porównać dwóch wariantów na tym samym zbiorze goldenów ani odpowiedzieć
+ * na pytanie „czy jakość spadła przez prompt, czy przez korpus".
+ */
+export const ANSWER_PROMPT_VERSION = 'answer-v1';
+
 function systemPrompt(language: 'pl' | 'en'): string {
   if (language === 'en') {
     return [
@@ -333,6 +345,8 @@ export async function answerQuestion(ctx: AnswerCtx, params: AnswerParams): Prom
       // (D8-11), więc koszt chat_llm per odpowiedź da się wreszcie policzyć.
       answerText: cached.answer,
       fromCache: true,
+      promptVersion: ANSWER_PROMPT_VERSION,
+      retrievalMs: null, // trafienie cache nie uruchamia retrievalu
     });
     return { ...cached, answerId: cachedRow.id, warnings: [...cached.warnings] };
   }
@@ -397,6 +411,8 @@ export async function answerQuestion(ctx: AnswerCtx, params: AnswerParams): Prom
       // i tak niesie no_answer=1 (sędzia rozpoznaje odmowę po tej fladze).
       answerText: null,
       fromCache: false,
+      promptVersion: ANSWER_PROMPT_VERSION,
+      retrievalMs: retrieval.channelMs,
     });
     return {
       answer: NO_ANSWER_TEXT,
@@ -436,7 +452,15 @@ export async function answerQuestion(ctx: AnswerCtx, params: AnswerParams): Prom
 
   // ── Rerank top-k PO bramce (nie płacimy za embed odrzuconych zapytań);
   // strategia z 'answer.rerank' (default embed — patrz rerank.ts). ──
-  const rerank = await rerankHits(ctx.db, ctx.llm, strategy, params.question, retrieval.results);
+  const piiPolicy = piiPolicyFor(ctx.db, usedNamespaces);
+  const rerank = await rerankHits(
+    ctx.db,
+    ctx.llm,
+    strategy,
+    params.question,
+    retrieval.results,
+    piiPolicy,
+  );
 
   // ── Bramka odmowy, faza 2 (przed chat_llm, po tanim reranku embed): cosinus
   // policzony NASZYM modelem na pełnej treści z mirrora to drugi, niezależny głos.
@@ -467,7 +491,10 @@ export async function answerQuestion(ctx: AnswerCtx, params: AnswerParams): Prom
     (language === 'en' ? 'Question: ' : 'Pytanie: ') +
     params.question +
     '\n\n' +
-    wrapUntrusted(sourcesBlock, 'kb_sources', CONTEXT_CHAR_BUDGET + 2000);
+    // Kontekst pochodzi z DOKUMENTÓW, więc podlega polityce PII bazy — a przy odpowiedzi
+    // łączącej kilka baz obowiązuje najostrzejsza z nich. Samo pytanie użytkownika zostaje
+    // nietknięte: podmiana e-maila w pytaniu zepsułaby wyszukiwanie i nikomu by nie pomogła.
+    wrapUntrusted(sourcesBlock, 'kb_sources', CONTEXT_CHAR_BUDGET + 2000, piiPolicy);
 
   params.onPhase?.('generating');
   const chatResult = await ctx.llm.chat({ system: systemPrompt(language), user });
@@ -494,6 +521,8 @@ export async function answerQuestion(ctx: AnswerCtx, params: AnswerParams): Prom
       ...(s.hit.title !== undefined ? { title: s.hit.title } : {}),
       snippet: stripHighlights(s.hit.snippet),
       ...(s.hit.sourceRef !== undefined ? { sourceRef: s.hit.sourceRef } : {}),
+      ...(s.hit.docId !== undefined ? { docId: s.hit.docId } : {}),
+      ...(s.hit.sectionHeading !== undefined ? { sectionHeading: s.hit.sectionHeading } : {}),
     }));
 
   // ── confidence = 0.5*llmSelf + 0.3*sygnał_trafności + 0.2*coverage; sygnał =
@@ -531,7 +560,13 @@ export async function answerQuestion(ctx: AnswerCtx, params: AnswerParams): Prom
   const answerRow = recordAnswer(ctx.db, {
     question: params.question,
     namespaces: usedNamespaces,
-    citations: citations.map((c) => ({ n: c.n, id: c.id, namespace: c.namespace })),
+    citations: citations.map((c) => ({
+      n: c.n,
+      id: c.id,
+      namespace: c.namespace,
+      ...(c.docId !== undefined ? { docId: c.docId } : {}),
+      ...(c.sectionHeading !== undefined ? { section: c.sectionHeading } : {}),
+    })),
     confidence,
     model,
     degraded: retrieval.degraded,
@@ -545,6 +580,8 @@ export async function answerQuestion(ctx: AnswerCtx, params: AnswerParams): Prom
     // więc sędzia LLM mierzył wyłącznie próbkę obciążoną w dół).
     answerText: answer,
     fromCache: false,
+    promptVersion: ANSWER_PROMPT_VERSION,
+    retrievalMs: retrieval.channelMs,
   });
 
   const result: AnswerResult = {

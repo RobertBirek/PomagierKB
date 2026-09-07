@@ -877,6 +877,24 @@ export const pl = {
   'system.breakers.resetConfirm': 'Wznów ruch',
   'system.health.refresh': 'Odśwież stan',
 
+  // Sygnał o danych osobowych w szkicu (metadata.pii z intake-workera).
+  'inbox.draft.piiTitle': 'Dokument zawiera dane osobowe',
+  'inbox.draft.piiBody': 'Wykryto {total} wystąpień: {types}.',
+  'inbox.draft.piiPolicyFlag':
+    'Polityka bazy to „wykrywaj i licz”, więc treść pojechała do modelu bez zmian — sprawdź, czy te dane mają prawo znaleźć się w bazie wiedzy.',
+  'inbox.draft.piiPolicyMask':
+    'Polityka bazy to „maskuj”, więc do modelu poszły placeholdery zamiast wartości — w bazie wiedzy zostanie jednak treść oryginalna.',
+
+  // Kategorie przyczyny negatywnej oceny odpowiedzi (feedback.category).
+  'ask.feedback.cat.none': 'Nie wiem / nie podaję',
+  'ask.feedback.cat.retrievalMiss': 'Baza nie znalazła właściwego fragmentu',
+  'ask.feedback.cat.incomplete': 'Odpowiedź niepełna — brakuje części informacji',
+  'ask.feedback.cat.hallucination': 'Odpowiedź zmyślona — nie ma tego w źródłach',
+  'ask.feedback.cat.outdated': 'Informacja nieaktualna',
+  'ask.feedback.cat.citationError': 'Cytowanie nie pasuje do treści',
+  'ask.feedback.cat.wrongKb': 'Szukano w niewłaściwej bazie wiedzy',
+  'ask.feedback.cat.other': 'Inny problem',
+
   // ── /backup (agent strony kopii zapasowych: 'backup.*') ──────────────────────
   'backup.title': 'Kopie zapasowe i odtwarzanie',
   'backup.subtitle':

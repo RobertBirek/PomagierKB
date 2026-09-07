@@ -1,7 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 import { AppError } from '@pomagierkb/shared/errors';
 import { answerQuestion } from '@pomagierkb/shared/answer';
-import type { FeedbackVerdict } from '@pomagierkb/shared/db';
+import type { FeedbackCategory, FeedbackVerdict } from '@pomagierkb/shared/db';
+import { FEEDBACK_CATEGORIES } from '@pomagierkb/shared/db';
 import {
   activeNamespaces,
   assertKnownNamespaces,
@@ -37,6 +38,8 @@ interface AskBody {
 interface FeedbackBody {
   verdict: FeedbackVerdict;
   comment?: string;
+  /** Przyczyna oceny negatywnej; ignorowana przy verdict='up'. */
+  category?: FeedbackCategory;
 }
 
 export default async function askRoutes(app: FastifyInstance): Promise<void> {
@@ -177,6 +180,10 @@ export default async function askRoutes(app: FastifyInstance): Promise<void> {
           properties: {
             verdict: { type: 'string', enum: ['up', 'down'] },
             comment: { type: 'string', maxLength: 2000 },
+            // Przyczyna oceny negatywnej. Każda kategoria wskazuje INNĄ naprawę, więc
+            // bez niej „odpowiedź była zła" nie prowadzi do żadnego działania.
+            // Przy verdict='up' pole jest ignorowane (repo zapisuje NULL).
+            category: { type: 'string', enum: [...FEEDBACK_CATEGORIES] },
           },
         },
         response: { 201: successRef, '4xx': errorRef, '5xx': errorRef },
@@ -189,11 +196,12 @@ export default async function askRoutes(app: FastifyInstance): Promise<void> {
         req.user!.id,
         req.body.verdict,
         req.body.comment ?? null,
+        req.body.category ?? null,
       );
       reply.auditContext = {
         resourceType: 'answer',
         resourceId: req.params.answerId,
-        after: { verdict: feedback.verdict, gapRecorded: gap !== null },
+        after: { verdict: feedback.verdict, category: feedback.category, gapRecorded: gap !== null },
       };
       return reply.status(201).send({
         ok: true as const,

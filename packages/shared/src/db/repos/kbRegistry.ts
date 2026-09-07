@@ -2,6 +2,7 @@ import type { Db } from '../open.js';
 import { nowIso } from '../open.js';
 import { AppError } from '../../errors.js';
 import { isConstraintError, parseJson } from './util.js';
+import { coercePiiPolicy, type PiiPolicy } from '../../pii/index.js';
 
 /** Rejestr KB — JEDYNE źródło prawdy o bazach wiedzy (kb_registry). */
 
@@ -24,6 +25,7 @@ export interface KbRow {
   is_default: number;
   dirty: number;
   config_json: string;
+  pii_policy: string;
   created_at: string;
   updated_at: string;
 }
@@ -178,4 +180,43 @@ export function setDefaultKb(db: Db, namespace: string): void {
 /** Słowa kluczowe routingu jako tablica (kolumna JSON). */
 export function kbRoutingKeywords(row: KbRow): string[] {
   return parseJson<string[]>(row.routing_keywords, []);
+}
+
+/** Kolejność restrykcyjności polityki PII — im wyżej, tym mniej wolno wysłać. */
+const PII_STRICTNESS: Record<PiiPolicy, number> = { off: 0, flag: 1, mask: 2 };
+
+/** Polityka pojedynczej bazy (kolumna `pii_policy`, nieznana wartość → domyślna). */
+export function kbPiiPolicy(row: KbRow): PiiPolicy {
+  return coercePiiPolicy(row.pii_policy);
+}
+
+/** Najostrzejsza z podanych polityk; pusta lista → domyślna, nigdy `off`. */
+export function strictestPiiPolicy(policies: readonly PiiPolicy[]): PiiPolicy {
+  if (policies.length === 0) return coercePiiPolicy(undefined);
+  let strictest: PiiPolicy = 'off';
+  for (const policy of policies) {
+    if (PII_STRICTNESS[policy] > PII_STRICTNESS[strictest]) strictest = policy;
+  }
+  return strictest;
+}
+
+/**
+ * Polityka PII dla ZBIORU baz wiedzy — wygrywa NAJOSTRZEJSZA.
+ *
+ * Odpowiedź potrafi łączyć fragmenty z kilku baz w jednym promptcie. Gdyby wygrywała
+ * polityka luźniejsza, dopisanie jednej bazy z `off` cicho wyłączyłoby maskowanie dla
+ * wszystkich pozostałych — dokładnie ten rodzaj regresji, którego nikt nie zauważy.
+ * Nieznany namespace (skasowana baza, literówka) też podnosi poprzeczkę do domyślnej,
+ * zamiast obniżać ją do zera.
+ */
+export function piiPolicyFor(db: Db, namespaces: readonly string[]): PiiPolicy {
+  if (namespaces.length === 0) return coercePiiPolicy(undefined);
+  const placeholders = namespaces.map(() => '?').join(',');
+  const rows = db
+    .prepare(`SELECT namespace, pii_policy FROM kb_registry WHERE namespace IN (${placeholders})`)
+    .all(...namespaces) as { namespace: string; pii_policy: string }[];
+  const found = new Map(rows.map((r) => [r.namespace, coercePiiPolicy(r.pii_policy)]));
+  // Namespace nieznany rejestrowi (skasowana baza, literówka) podnosi poprzeczkę do
+  // domyślnej, zamiast po cichu obniżać ją do zera.
+  return strictestPiiPolicy(namespaces.map((ns) => found.get(ns) ?? coercePiiPolicy(undefined)));
 }

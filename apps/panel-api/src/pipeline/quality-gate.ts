@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import type { Db, DraftRow, ExportFileRow, QualityVerdict } from '@pomagierkb/shared/db';
 import {
+  listEdgesForNamespace,
   findFinishedBuildJob,
   getKb,
   latestExportRun,
@@ -21,7 +22,7 @@ import { readChunkingSettings } from '../services/pipeline-settings.js';
 import { sha256hex } from './chunker.js';
 
 /**
- * QUALITY GATE (Etap 9, docs/design/pipeline-frontend.md) — 13 checków na
+ * QUALITY GATE (Etap 9, docs/design/pipeline-frontend.md) — 14 checków na
  * OSTATNIM eksporcie KB. Każdy check: {id, level:'error'|'warn', ok, details};
  * verdict = FAIL gdy padł jakikolwiek error, WARN gdy tylko warny, inaczej OK.
  * Wynik ląduje w repo quality_reports (render w panelu; bez plików .md).
@@ -292,6 +293,32 @@ export async function runQualityGate(deps: QualityGateDeps): Promise<QualityGate
     }
     add('referential_integrity', 'error', bad.length === 0,
       bad.length === 0 ? 'wszystkie refId celują w istniejące encje' : limitList(bad));
+  }
+
+  // 5b. graph_edges_orphans — nawigacja grafowa (kb_graph_neighbors) chodzi po tabeli
+  //     `graph_edges`, którą eksport podmienia w całości per namespace. Do 2026-09-07 NIC
+  //     jej nie sprawdzało: krawędź wskazująca na skasowany albo przemianowany węzeł
+  //     prowadziłaby agenta do id, którego nie da się pobrać przez kb_get_source, a jedynym
+  //     objawem byłoby „narzędzie zwraca puste sąsiedztwo". Tu odpowiednik
+  //     `referential_integrity`, tyle że po stronie krawędzi, a nie kolumn refId.
+  {
+    const known = new Set<string>();
+    for (const file of ['chunk.csv', 'reference_document.csv', 'topic.csv']) {
+      for (const rec of files.get(file)?.records ?? []) {
+        const id = rec['id'] ?? '';
+        if (id !== '') known.add(id);
+      }
+    }
+    const edges = listEdgesForNamespace(db, namespace);
+    const bad: string[] = [];
+    for (const edge of edges) {
+      if (!known.has(edge.srcId)) bad.push(`krawędź ${edge.rel}: src ${edge.srcId} nie istnieje w eksporcie`);
+      if (!known.has(edge.dstId)) bad.push(`krawędź ${edge.rel}: dst ${edge.dstId} nie istnieje w eksporcie`);
+    }
+    add('graph_edges_orphans', 'error', bad.length === 0,
+      bad.length === 0
+        ? `krawędzi ${edges.length}, wszystkie końce istnieją w eksporcie`
+        : limitList(bad));
   }
 
   // 6. promoted_coverage — każdy promowany draft (poza wycofanymi regułą

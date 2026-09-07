@@ -1,7 +1,9 @@
 import type { Db, KbRow, KbStatus } from '@pomagierkb/shared/db';
+import type { PiiPolicy } from '@pomagierkb/shared/pii';
 import {
   createKb,
   getKbOrThrow,
+  kbPiiPolicy,
   latestExportRun,
   listDrafts,
   listKbs,
@@ -53,6 +55,8 @@ export interface KbEntryApi {
   jobPrefix: string;
   isDefault: boolean;
   routingKeywords: string[];
+  /** Polityka PII na wyjściu do LLM (off | flag | mask). */
+  piiPolicy: PiiPolicy;
   documentTypes: DocumentTypeDef[];
   totals: KbTotals;
   createdAt: string;
@@ -148,6 +152,7 @@ export function kbToApi(db: Db, row: KbRow): KbEntryApi {
     jobPrefix: row.job_prefix,
     isDefault: row.is_default === 1,
     routingKeywords: kbRoutingKeywords(row),
+    piiPolicy: kbPiiPolicy(row),
     documentTypes: documentTypesOf(row),
     totals: totalsFor(db, row.namespace),
     createdAt: row.created_at,
@@ -190,6 +195,8 @@ export interface KbPatch {
   config?: Record<string, unknown>;
   /** Routing hints cross-KB (kb_registry.routing_keywords — ważenie fuzji wyszukiwania). */
   routingKeywords?: string[];
+  /** Polityka danych osobowych na wyjściu do dostawcy LLM: off | flag | mask. */
+  piiPolicy?: PiiPolicy;
 }
 
 /**
@@ -210,11 +217,12 @@ export function patchKbEntry(db: Db, namespace: string, patch: KbPatch): { befor
       patch.name !== undefined ||
       patch.description !== undefined ||
       patch.config !== undefined ||
-      patch.routingKeywords !== undefined
+      patch.routingKeywords !== undefined ||
+      patch.piiPolicy !== undefined
     ) {
       const current = getKbOrThrow(db, namespace);
       db.prepare(
-        'UPDATE kb_registry SET name = ?, description = ?, config_json = ?, routing_keywords = ?, updated_at = ? WHERE namespace = ?',
+        'UPDATE kb_registry SET name = ?, description = ?, config_json = ?, routing_keywords = ?, pii_policy = ?, updated_at = ? WHERE namespace = ?',
       ).run(
         patch.name !== undefined ? patch.name.trim() : current.name,
         patch.description !== undefined ? patch.description : current.description,
@@ -222,6 +230,7 @@ export function patchKbEntry(db: Db, namespace: string, patch: KbPatch): { befor
         patch.routingKeywords !== undefined
           ? JSON.stringify(patch.routingKeywords.map((k) => k.trim()).filter((k) => k !== ''))
           : current.routing_keywords,
+        patch.piiPolicy !== undefined ? patch.piiPolicy : current.pii_policy,
         nowIso(),
         namespace,
       );

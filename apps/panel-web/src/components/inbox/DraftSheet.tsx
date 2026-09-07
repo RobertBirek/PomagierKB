@@ -33,7 +33,7 @@ import { SkeletonText } from '@/ui/skeleton';
 import { Textarea } from '@/ui/textarea';
 import { useToast } from '@/ui/toast';
 import { draftStatusBadge, sourceLabel } from './badges';
-import { metadataEntries } from './detailsList';
+import { metadataEntries, piiWarning } from './detailsList';
 import { REJECT_REASON_MAX, REJECT_REASON_MIN, validateRejectReason } from './rejectReason';
 import type { DraftDetail, DraftListItem, KbItem } from './types';
 
@@ -174,6 +174,9 @@ export function DraftSheet({ draftId, onClose, kbByNs, kbs, canReview, onChanged
       ? (analysis['warnings'] as unknown[]).filter((w): w is string => typeof w === 'string')
       : [];
   const entries = draft !== undefined ? metadataEntries(draft.metadata) : [];
+  // Recenzja człowieka jest JEDYNĄ bramką przed promocją do grafu — sygnał o danych
+  // osobowych musi tu być widoczny, a nie schowany w zwijanym JSON-ie niżej.
+  const pii = draft !== undefined ? piiWarning(draft.metadata) : null;
 
   return (
     <>
@@ -206,6 +209,18 @@ export function DraftSheet({ draftId, onClose, kbByNs, kbs, canReview, onChanged
                     <span>{t('inbox.draft.contentLength', { count: formatNumber(draft.contentLength) })}</span>
                   )}
                 </div>
+
+                {pii !== null && (
+                  <Alert variant="warn" title={t('inbox.draft.piiTitle')}>
+                    {t('inbox.draft.piiBody', {
+                      total: pii.total,
+                      types: pii.types.join(', '),
+                    })}{' '}
+                    {pii.policy === 'mask'
+                      ? t('inbox.draft.piiPolicyMask')
+                      : t('inbox.draft.piiPolicyFlag')}
+                  </Alert>
+                )}
 
                 {analysisWarnings.length > 0 && (
                   <Alert variant="warn" title={t('inbox.draft.analysisWarnings')}>

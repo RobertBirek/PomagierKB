@@ -5,6 +5,7 @@ import {
   listAnswersByUser,
   listKbs,
   recordFeedback,
+  type FeedbackCategory,
   type FeedbackVerdict,
   type RecordFeedbackResult,
 } from '@pomagierkb/shared/db';
@@ -310,11 +311,12 @@ export function submitAskFeedback(
   userId: string,
   verdict: FeedbackVerdict,
   comment?: string | null,
+  category?: FeedbackCategory | null,
 ): RecordFeedbackResult {
   const answer = getAnswer(db, answerId);
   if (answer === null || answer.user_id !== userId) {
     throw new AppError('not_found', `odpowiedź nie istnieje: ${answerId}`);
   }
   // owner także w repo (obrona w głąb — guard nie zniknie przy refaktorze tej funkcji)
-  return recordFeedback(db, answerId, verdict, comment ?? null, userId, { userId });
+  return recordFeedback(db, answerId, verdict, comment ?? null, userId, { userId }, category ?? null);
 }

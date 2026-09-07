@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { KbStatus } from '@pomagierkb/shared/db';
+import { PII_POLICIES, type PiiPolicy } from '@pomagierkb/shared/pii';
 import { getKbOrThrow, latestQualityReport } from '@pomagierkb/shared/db';
 import { AppError } from '@pomagierkb/shared/errors';
 import { listJobs } from '@pomagierkb/shared/openspg';
@@ -75,6 +76,9 @@ const patchKbBodySchema = {
     // odcina literówki. Archiwizacja = PATCH {status:'archived'} (soft delete).
     status: { type: 'string', enum: ['draft', 'provisioning', 'active', 'error', 'archived'] },
     config: { type: 'object' },
+    // Polityka danych osobowych na granicy wyjścia do dostawcy LLM (poza EOG).
+    // 'flag' = wykrywaj i licz, 'mask' = podmieniaj na placeholdery, 'off' = nie skanuj.
+    piiPolicy: { type: 'string', enum: [...PII_POLICIES] },
     // Routing hints cross-KB: słowa kluczowe ważące fuzję wyszukiwania (answer/routing.ts).
     routingKeywords: {
       type: 'array',
@@ -178,6 +182,7 @@ export default async function kbsRoutes(app: FastifyInstance): Promise<void> {
     status?: KbStatus;
     config?: Record<string, unknown>;
     routingKeywords?: string[];
+    piiPolicy?: PiiPolicy;
   } }>(
     '/kbs/:namespace',
     {
@@ -194,8 +199,8 @@ export default async function kbsRoutes(app: FastifyInstance): Promise<void> {
       reply.auditContext = {
         resourceType: 'kb',
         resourceId: req.params.namespace,
-        before: { name: before.name, description: before.description, status: before.status, config: before.config_json },
-        after: { name: after.name, description: after.description, status: after.status, config: after.config_json },
+        before: { name: before.name, description: before.description, status: before.status, config: before.config_json, piiPolicy: before.pii_policy },
+        after: { name: after.name, description: after.description, status: after.status, config: after.config_json, piiPolicy: after.pii_policy },
       };
       return { ok: true as const, data: { kb: kbToApi(db, after) } };
     },

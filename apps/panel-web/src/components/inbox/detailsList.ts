@@ -45,3 +45,45 @@ export function metadataEntries(metadata: Record<string, unknown>): MetadataEntr
     isDate: typeof value === 'string' && ISO_DATE_RE.test(value),
   }));
 }
+
+/** Nazwy typów PII po polsku — surowe klucze („pesel", „id_card") nic nie mówią recenzentowi. */
+const PII_TYPE_LABEL: Record<string, string> = {
+  pesel: 'PESEL',
+  nip: 'NIP',
+  regon: 'REGON',
+  iban: 'numer rachunku',
+  id_card: 'numer dowodu',
+  email: 'adres e-mail',
+  phone: 'numer telefonu',
+  birth_date: 'data urodzenia',
+};
+
+export interface PiiWarning {
+  total: number;
+  /** Nazwy typów po polsku, w kolejności z backendu. */
+  types: string[];
+  /** Polityka bazy w chwili ingestu: off | flag | mask. */
+  policy: string;
+}
+
+/**
+ * Sygnał o danych osobowych w szkicu (metadata.pii — pisane przez intake-worker).
+ * Recenzja człowieka jest w tym systemie jedyną bramką przed promocją do grafu, więc
+ * informacja „ten dokument zawiera PESEL" musi być WIDOCZNA, a nie schowana w zwijanym
+ * JSON-ie z danymi technicznymi. Zwraca null, gdy nic nie wykryto albo kształt jest inny,
+ * niż zakładamy (starszy backend) — brak sygnału nigdy nie może wywrócić panelu recenzenta.
+ */
+export function piiWarning(metadata: Record<string, unknown>): PiiWarning | null {
+  const raw = metadata['pii'];
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null;
+  const obj = raw as Record<string, unknown>;
+  const total = typeof obj['total'] === 'number' && Number.isFinite(obj['total']) ? obj['total'] : 0;
+  if (total <= 0) return null;
+  const types = Array.isArray(obj['types'])
+    ? (obj['types'] as unknown[])
+        .filter((v): v is string => typeof v === 'string')
+        .map((v) => PII_TYPE_LABEL[v] ?? v)
+    : [];
+  const policy = typeof obj['policy'] === 'string' ? obj['policy'] : 'flag';
+  return { total, types, policy };
+}

@@ -39,6 +39,19 @@ export function replaceEdgesForNamespace(db: Db, namespace: string, edges: Graph
   tx.immediate();
 }
 
+/**
+ * Wszystkie krawędzie namespace — do kontroli spójności po eksporcie (quality gate).
+ * Deterministyczna kolejność, żeby komunikat o błędzie był powtarzalny między biegami.
+ */
+export function listEdgesForNamespace(db: Db, namespace: string): GraphEdge[] {
+  return db
+    .prepare(
+      `SELECT src_id AS srcId, rel, dst_id AS dstId FROM graph_edges
+        WHERE namespace = ? ORDER BY src_id, rel, dst_id`,
+    )
+    .all(namespace) as GraphEdge[];
+}
+
 export type EdgeDirection = 'out' | 'in' | 'both';
 
 /**

@@ -1,7 +1,15 @@
 import { readFileSync } from 'node:fs';
 import type { FastifyBaseLogger } from 'fastify';
 import type { Db } from '@pomagierkb/shared/db';
-import { createDraft, DRAFT_LIMITS, getSetting, listKbs, type DraftSourceType } from '@pomagierkb/shared/db';
+import {
+  createDraft,
+  DRAFT_LIMITS,
+  getSetting,
+  kbPiiPolicy,
+  listKbs,
+  strictestPiiPolicy,
+  type DraftSourceType,
+} from '@pomagierkb/shared/db';
 import { appendAudit, sanitizeForAudit } from '@pomagierkb/shared/audit';
 import { unseal } from '@pomagierkb/shared/crypto';
 import { AppError } from '@pomagierkb/shared/errors';
@@ -17,6 +25,7 @@ import {
 import { readIngestLimits } from '../services/pipeline-settings.js';
 import { safeFetch, type SafeFetchDeps } from '../services/safe-http.js';
 import { extractContent, ExtractError } from './extract.js';
+import { detectPii, summarize } from '@pomagierkb/shared/pii';
 import { aiCleanPass, cleanContent } from './clean.js';
 import { pickProfile } from './cleanProfiles.js';
 import { parseSourceFrontmatter } from './frontmatter.js';
@@ -203,8 +212,17 @@ export async function processIntake(
     );
   }
 
+  // Skan PII na PEŁNEJ oczyszczonej treści, zanim cokolwiek pojedzie do modelu.
+  // Robimy go tutaj, a nie w `wrapUntrusted`, bo to DWA różne pytania: tam liczy się
+  // „co faktycznie wysyłamy" (po przycięciu do budżetu promptu), tu — „co ten dokument
+  // zawiera", i to drugie jest informacją dla recenzenta przed promocją. Skan jest
+  // niezależny od polityki: nawet przy 'off' chcemy wiedzieć, na czym siedzimy.
+  const piiReport = summarize(detectPii(regexCleaned.text));
+  const piiPolicy = strictestPiiPolicy(listKbs(db).filter((r) => r.status === 'active').map(kbPiiPolicy));
+
   const cleaned = await aiCleanPass(extracted.text, regexCleaned, {
     llm: aiClean ? openieLlm : null,
+    piiPolicy,
   });
   updateIntake(db, row.id, {
     status: 'cleaned',
@@ -268,6 +286,11 @@ export async function processIntake(
       extractProvider: extracted.provider,
       cleanProfile: cleaned.profile,
       createdBy: row.created_by,
+      // Sygnał dla recenzenta w Inboxie: liczniki i typy, NIGDY wartości — inaczej sam
+      // mechanizm ochrony wynosiłby dane osobowe do metadanych i audytu.
+      ...(piiReport.total > 0
+        ? { pii: { total: piiReport.total, types: piiReport.types, policy: piiPolicy } }
+        : {}),
       ...(sourceMeta.owner !== null ? { sourceOwner: sourceMeta.owner } : {}),
       ...(sourceMeta.license !== null ? { sourceLicense: sourceMeta.license } : {}),
       ...(sourceMeta.date !== null ? { sourceDate: sourceMeta.date } : {}),

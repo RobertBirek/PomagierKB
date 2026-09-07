@@ -1,4 +1,4 @@
-import { recordGap } from '../db/index.js';
+import { piiPolicyFor, recordGap } from '../db/index.js';
 import { AppError } from '../errors.js';
 import { wrapUntrusted } from '../llm/index.js';
 import { hybridSearch } from './retrieval.js';
@@ -150,7 +150,7 @@ export async function verifyClaim(ctx: AnswerCtx, params: VerifyClaimParams): Pr
     .join('\n\n');
   const chat = await ctx.llm.chat({
     system: SYSTEM,
-    user: `Teza: ${params.claim}\n\n${wrapUntrusted(block, 'verify_sources', EVIDENCE_LIMIT * (CHUNK_CHARS + 200))}`,
+    user: `Teza: ${params.claim}\n\n${wrapUntrusted(block, 'verify_sources', EVIDENCE_LIMIT * (CHUNK_CHARS + 200), piiPolicyFor(ctx.db, usedNs))}`,
   });
   const verdict = parseVerdict(chat.text);
   if (verdict === null) {

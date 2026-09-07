@@ -1,4 +1,5 @@
 import { wrapUntrusted, type LlmClient } from '@pomagierkb/shared/llm';
+import { PII_POLICY_DEFAULT, type PiiPolicy } from '@pomagierkb/shared/pii';
 import { looksHumanText } from './extract.js';
 import { CLEAN_PROFILES, type CleanProfileName } from './cleanProfiles.js';
 
@@ -101,6 +102,11 @@ export interface CleanAiDeps {
   llm?: LlmClient | null;
   /** Limit długości tekstu dla przebiegu LLM (default 12 000). */
   maxAiChars?: number;
+  /**
+   * Polityka danych osobowych bazy docelowej. Domyślnie `flag` (nie `off`) — pominięcie
+   * tego pola przez nowe miejsce wywołania nie może po cichu wyłączyć ochrony.
+   */
+  piiPolicy?: PiiPolicy;
 }
 
 const AI_SYSTEM_PROMPT =
@@ -142,7 +148,12 @@ export async function aiCleanPass(
   try {
     const res = await llm.chat({
       system: AI_SYSTEM_PROMPT,
-      user: wrapUntrusted(regexResult.text, 'dokument do wyczyszczenia', maxChars),
+      user: wrapUntrusted(
+        regexResult.text,
+        'dokument do wyczyszczenia',
+        maxChars,
+        deps.piiPolicy ?? PII_POLICY_DEFAULT,
+      ),
     });
     const aiText = res.text.trim();
     const keepsEnough = aiText.length >= AI_CLEAN_MIN_KEEP_RATIO * regexResult.text.length;

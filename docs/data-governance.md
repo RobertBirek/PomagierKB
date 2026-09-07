@@ -58,6 +58,34 @@ Dwie drogi wyjścia:
 1. `panel-api`/`mcp-server` przez `packages/shared/src/llm` (egress przez `edge-net`);
 2. `release-openspg-server` przy wektoryzacji w builderze (jedyna usługa w `kag-egress`).
 
+**Warstwa PII na drodze 1 (od 2026-09-07).** `kb_registry.pii_policy` decyduje, co dzieje się
+z treścią dokumentu tuż przed wysyłką: `off` (nie skanuj), `flag` (wykrywaj i licz, treść bez
+zmian — DOMYŚLNE), `mask` (podmień na placeholdery typu `[PESEL]`). Wykrywane są PESEL, NIP,
+REGON, IBAN i numer dowodu — każdy weryfikowany **sumą kontrolną**, nie samą długością — oraz
+numer telefonu i data urodzenia, te wyłącznie w kontekście (`tel.`, `ur.`), bo nasze bazy są
+pełne dziewięciocyfrowych kodów katalogowych i dat obowiązywania procedur.
+
+Maskowanie działa na **granicy wyjścia** (`wrapUntrusted` w `packages/shared/src/llm`), a nie
+przy zapisie: nasz dysk jest wewnątrz perymetru RODO, dostawca nie jest. W bazie wiedzy zostaje
+więc treść oryginalna. Przy odpowiedzi łączącej kilka baz obowiązuje polityka **najostrzejsza**
+z nich. Droga 2 (wektoryzacja w builderze) tej warstwy NIE ma — OpenSPG wysyła treść sam,
+poza naszym kodem; to znane ograniczenie, nie przeoczenie.
+
+Wynik skanu (liczniki i typy, **nigdy wartości**) trafia do metadanych szkicu i jest pokazywany
+recenzentowi w Inboxie przed promocją — recenzja człowieka jest jedyną bramką przed wejściem
+treści do bazy, więc to właściwe miejsce na tę informację.
+
+Politykę zmienia się przez `PATCH /api/v1/kbs/:namespace` z `{"piiPolicy":"mask"}` (admin);
+panel nie ma na to kontrolki, bo pozostałe pola rejestru KB też są ustawiane wyłącznie przez API.
+
+### Zakres widoczności baz wiedzy
+
+**Panel: każdy zalogowany użytkownik przeszukuje wszystkie aktywne bazy** — nie ma ograniczenia
+per użytkownik ani per grupa; jedyną kontrolą jest RBAC roli na trasie. **MCP: przeciwnie** —
+każdy klucz ma profil ograniczający widoczne namespace'y, egzekwowany na wynikach retrievalu.
+Ta różnica jest świadoma (`docs/design/PLAN.md`, sekcja „Zmiany decyzji", 2026-09-07), a nie
+przeoczeniem. Warunek ponownego otwarcia decyzji: pierwsza baza z danymi kadrowymi.
+
 **Klucz API dostawcy istnieje w DWÓCH kopiach**: sealowanej w SQLite `settings`
 oraz **jawnym tekstem** w MariaDB `openspg.kg_user_model.config` (jasypt w tym buildzie
 nic nie szyfruje — zweryfikowane 2026-09-06). Konsekwencja dla governance: **każdy dump
