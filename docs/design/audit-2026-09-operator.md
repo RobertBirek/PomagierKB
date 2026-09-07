@@ -171,13 +171,13 @@ dublować PR-ów. Instrukcja jest w komentarzu obu plików.
 Osobno — żywy `.env` odstaje od `.env.example`: `KUMA_IMAGE` i `STIRLING_IMAGE` to **ruchome tagi**
 mimo polityki pinowania digestów.
 
-> **Nieaktualne 2026-09-07:** `KUMA_IMAGE` zostało przypięte przy aktualizacji do 2.5.3
-> (`@sha256:3e24e96c…`) — digest 1.x, który tu wcześniej stał, **cofnąłby** Kumę do wersji 1
-> na katalogu danych po migracji do schematu 2.x. Nie wklejaj go. Zostaje tylko Stirling:
-
-```
-STIRLING_IMAGE=docker.io/stirlingtools/stirling-pdf@sha256:3b3670fce70b396ec56ba380a3cc7858e0abf83fe13f31c88f7737847763a396
-```
+> **✅ ZROBIONE 2026-09-07 — nie wykonuj tego punktu.** `KUMA_IMAGE` przypięto przy
+> aktualizacji do 2.5.3, `STIRLING_IMAGE` do `@sha256:3b3670fc…` (ten sam obraz, który już
+> działał — przypięcie nic nie zmieniło w runtime). Dopisano też `STIRLING_IMAGE_CHECK_TAG`
+> i `TIKA_IMAGE_CHECK_TAG`. `drift_check.sh` potwierdza: „obraz zgodny z digestem z .env"
+> dla obu. Digest 1.x Kumy, który tu wcześniej stał jako gotowa linia do wklejenia,
+> **cofnąłby** ją do wersji 1 na katalogu danych po migracji do schematu 2.x — dlatego
+> usunięty stąd zupełnie.
 
 Dopisz też tagi linii wydań, żeby miesięczny `update_check.sh` nie zgadywał (bez nich po
 `docker image prune` zgłosi „BRAK TAGU"):
