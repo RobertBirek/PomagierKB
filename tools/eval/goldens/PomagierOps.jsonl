@@ -1,6 +1,17 @@
-{"question":"jak wykonać backup panelu","negative":true,"namespaces":["PomagierOps"],"kind":"empty-kb"}
-{"question":"restart caddy po edycji Caddyfile","negative":true,"namespaces":["PomagierOps"],"kind":"empty-kb"}
-{"question":"jak zrotować klucz MCP","negative":true,"namespaces":["PomagierOps"],"kind":"empty-kb"}
-{"question":"procedura DR odtworzenia z backupu","negative":true,"namespaces":["PomagierOps"],"kind":"empty-kb"}
-{"question":"oprawa HighBay strumień świetlny","negative":true,"namespaces":["PomagierOps"],"kind":"cross-kb-leak"}
-{"question":"czujnik ruchu DALI-2 ściemnianie","negative":true,"namespaces":["PomagierOps"],"kind":"cross-kb-leak"}
+{"question": "jak zrotować klucz MCP dla agenta", "expectedIds": ["CHUNK_4AFE60C4C42D7CF7_005"], "namespaces": ["PomagierOps"], "expectedNamespace": "PomagierOps", "kind": "operator"}
+{"question": "czy AUTHENTIK_SECRET_KEY wolno rotować", "expectedIds": ["CHUNK_656066C83CC58071_002"], "mustContain": ["NIE ROTOWAĆ"], "namespaces": ["PomagierOps"], "expectedNamespace": "PomagierOps", "kind": "sekrety"}
+{"question": "ile kopii ma klucz LLM u dostawcy", "expectedIds": ["CHUNK_656066C83CC58071_002"], "mustContain": ["DWIE"], "namespaces": ["PomagierOps"], "expectedNamespace": "PomagierOps", "kind": "sekrety"}
+{"question": "co zrobić gdy mysql_restore fałszywie zgłasza awarię", "expectedIds": ["CHUNK_DB8AF7220E600A69_005"], "mustContain": ["skip-networking"], "namespaces": ["PomagierOps"], "expectedNamespace": "PomagierOps", "kind": "awaria"}
+{"question": "jak odtworzyć bazę wiedzy gdy graf jest uszkodzony", "expectedIds": ["CHUNK_B1B87523FCDC0D98_001"], "namespaces": ["PomagierOps"], "expectedNamespace": "PomagierOps", "kind": "odtworzenie"}
+{"question": "czym jest rampa zjazdowa dla OpenSPG", "expectedIds": ["CHUNK_9B7DFDA6B1987C20_006"], "namespaces": ["PomagierOps"], "expectedNamespace": "PomagierOps", "kind": "strategia"}
+{"question": "jak wygląda front-matter lekcji agenta", "expectedIds": ["CHUNK_BCCFE9FF30989B6D_001"], "namespaces": ["PomagierOps"], "expectedNamespace": "PomagierOps", "kind": "konwencja"}
+{"question": "jak zatwierdzić szkic w inboxie", "expectedIds": ["CHUNK_4AFE60C4C42D7CF7_002"], "namespaces": ["PomagierOps"], "expectedNamespace": "PomagierOps", "kind": "operator"}
+{"question": "skąd biorą się luki wiedzy", "expectedIds": ["CHUNK_4AFE60C4C42D7CF7_004"], "namespaces": ["PomagierOps"], "expectedNamespace": "PomagierOps", "kind": "operator"}
+{"question": "jak usunąć dane osobowe użytkownika", "expectedIds": ["CHUNK_4AFE60C4C42D7CF7_009"], "namespaces": ["PomagierOps"], "expectedNamespace": "PomagierOps", "kind": "rodo"}
+{"question": "przepis na bigos staropolski", "negative": true, "namespaces": ["PomagierOps"], "kind": "off-topic"}
+{"question": "jaka jest stolica Australii", "negative": true, "namespaces": ["PomagierOps"], "kind": "off-topic"}
+{"question": "jak wymienić olej w samochodzie", "negative": true, "namespaces": ["PomagierOps"], "kind": "off-topic"}
+{"question": "jak upiec chleb na zakwasie", "negative": true, "namespaces": ["PomagierOps"], "kind": "off-topic"}
+{"question": "jakie są objawy grypy", "negative": true, "namespaces": ["PomagierOps"], "kind": "off-topic"}
+{"question": "jak skonfigurować ingress w Kubernetes", "negative": true, "namespaces": ["PomagierOps"], "kind": "near-miss"}
+{"question": "jak skalować klaster Elasticsearch", "negative": true, "namespaces": ["PomagierOps"], "kind": "near-miss"}

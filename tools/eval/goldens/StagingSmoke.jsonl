@@ -1,66 +1,66 @@
-{"question":"Jaki jest strumień świetlny oprawy HighBay LED 150W?","expectedIds":["CHUNK_EF8A5D4D_000"],"mustContain":["21000 lm"],"namespaces":["StagingSmoke"],"expectedNamespace":"StagingSmoke","kind":"paraphrase"}
-{"question":"ile lumenów ma oprawa HighBay 150W","expectedIds":["CHUNK_EF8A5D4D_000"],"mustContain":["21000 lm"],"namespaces":["StagingSmoke"],"expectedNamespace":"StagingSmoke","kind":"paraphrase"}
-{"question":"skuteczność świetlna oprawy HighBay lm/W","expectedIds":["CHUNK_EF8A5D4D_000"],"mustContain":["140 lm/W"],"namespaces":["StagingSmoke"],"expectedNamespace":"StagingSmoke","kind":"paraphrase"}
-{"question":"stopień ochrony IP oprawy przemysłowej HighBay","expectedIds":["CHUNK_EF8A5D4D_000"],"mustContain":["IP65"],"namespaces":["StagingSmoke"],"expectedNamespace":"StagingSmoke","kind":"paraphrase"}
-{"question":"odporność mechaniczna IK08 oprawy","expectedIds":["CHUNK_EF8A5D4D_000"],"mustContain":["IK08"],"namespaces":["StagingSmoke"],"expectedNamespace":"StagingSmoke","kind":"paraphrase"}
-{"question":"barwa światła 4000K neutralna","expectedIds":["CHUNK_EF8A5D4D_000"],"mustContain":["4000K"],"namespaces":["StagingSmoke"],"expectedNamespace":"StagingSmoke","kind":"paraphrase"}
-{"question":"współczynnik oddawania barw CRI oprawy LED 150W","expectedIds":["CHUNK_EF8A5D4D_000"],"mustContain":["CRI powyżej 80"],"namespaces":["StagingSmoke"],"expectedNamespace":"StagingSmoke","kind":"paraphrase"}
-{"question":"zasilacz Meanwell gwarancja 5 lat","expectedIds":["CHUNK_EF8A5D4D_000"],"mustContain":["Meanwell"],"namespaces":["StagingSmoke"],"expectedNamespace":"StagingSmoke","kind":"paraphrase"}
-{"question":"montaż oprawy na haku wysokość zawieszenia","expectedIds":["CHUNK_EF8A5D4D_000"],"mustContain":["6-12 metrów"],"namespaces":["StagingSmoke"],"expectedNamespace":"StagingSmoke","kind":"paraphrase"}
-{"question":"oprawa przemysłowa do magazynu","expectedIds":["CHUNK_EF8A5D4D_000"],"namespaces":["StagingSmoke"],"expectedNamespace":"StagingSmoke","kind":"paraphrase"}
-{"question":"oprawa do magazynu wysokiego składowania","expectedIds":["CHUNK_EF8A5D4D_000"],"namespaces":["StagingSmoke"],"expectedNamespace":"StagingSmoke","kind":"paraphrase"}
-{"question":"Szukam oprawy oświetleniowej LED do hali magazynowej o wysokości około 10 metrów, jaka będzie odpowiednia i jaki ma strumień?","expectedIds":["CHUNK_EF8A5D4D_000"],"namespaces":["StagingSmoke"],"expectedNamespace":"StagingSmoke","kind":"long","requires":"full"}
-{"question":"Czy oprawa HighBay 150W ma gwarancję na zasilacz i jak długą?","expectedIds":["CHUNK_EF8A5D4D_000"],"mustContain":["5-letnią gwarancją"],"namespaces":["StagingSmoke"],"expectedNamespace":"StagingSmoke","kind":"long"}
-{"question":"HighBay","expectedIds":["DOC_EF8A5D4D"],"namespaces":["StagingSmoke"],"expectedNamespace":"StagingSmoke","kind":"keyword"}
-{"question":"IP65","expectedIds":["CHUNK_EF8A5D4D_000"],"namespaces":["StagingSmoke"],"expectedNamespace":"StagingSmoke","kind":"keyword"}
-{"question":"Meanwell","expectedIds":["CHUNK_EF8A5D4D_000"],"namespaces":["StagingSmoke"],"expectedNamespace":"StagingSmoke","kind":"keyword"}
-{"question":"21000 lm","expectedIds":["CHUNK_EF8A5D4D_000"],"namespaces":["StagingSmoke"],"expectedNamespace":"StagingSmoke","kind":"keyword"}
-{"question":"IK08","expectedIds":["CHUNK_EF8A5D4D_000"],"namespaces":["StagingSmoke"],"expectedNamespace":"StagingSmoke","kind":"keyword"}
-{"question":"skuteczność 140 lm/W","expectedIds":["CHUNK_EF8A5D4D_000"],"namespaces":["StagingSmoke"],"expectedNamespace":"StagingSmoke","kind":"keyword"}
-{"question":"oprawy HighBay LED","expectedIds":["DOC_EF8A5D4D"],"namespaces":["StagingSmoke"],"expectedNamespace":"StagingSmoke","kind":"inflection"}
-{"question":"opraw przemysłowych LED o mocy 150W","expectedIds":["CHUNK_EF8A5D4D_000"],"namespaces":["StagingSmoke"],"expectedNamespace":"StagingSmoke","kind":"inflection"}
-{"question":"strumieniem świetlnym oprawy przemysłowej","expectedIds":["CHUNK_EF8A5D4D_000"],"namespaces":["StagingSmoke"],"expectedNamespace":"StagingSmoke","kind":"inflection"}
-{"question":"montażu na haku","expectedIds":["CHUNK_EF8A5D4D_000"],"namespaces":["StagingSmoke"],"expectedNamespace":"StagingSmoke","kind":"inflection"}
-{"question":"strumien swietlny oprawy","expectedIds":["CHUNK_EF8A5D4D_000"],"namespaces":["StagingSmoke"],"expectedNamespace":"StagingSmoke","kind":"nodiacritics"}
-{"question":"oprawa przemyslowa do magazynow wysokiego skladowania","expectedIds":["CHUNK_EF8A5D4D_000"],"namespaces":["StagingSmoke"],"expectedNamespace":"StagingSmoke","kind":"nodiacritics"}
-{"question":"stopien ochrony i odpornosc oprawy","expectedIds":["CHUNK_EF8A5D4D_000"],"namespaces":["StagingSmoke"],"expectedNamespace":"StagingSmoke","kind":"nodiacritics"}
-{"question":"oprawa hajbej 150 wat strumien swietlny","expectedIds":["CHUNK_EF8A5D4D_000"],"namespaces":["StagingSmoke"],"expectedNamespace":"StagingSmoke","kind":"typo"}
-{"question":"high bay LED 150 W luminaire luminous flux","expectedIds":["CHUNK_EF8A5D4D_000"],"namespaces":["StagingSmoke"],"expectedNamespace":"StagingSmoke","kind":"english","requires":"full"}
-{"question":"warehouse high-rack lighting fixture","expectedIds":["CHUNK_EF8A5D4D_000"],"namespaces":["StagingSmoke"],"expectedNamespace":"StagingSmoke","kind":"english","requires":"full"}
-{"question":"what is the color temperature of the HighBay fixture","expectedIds":["CHUNK_EF8A5D4D_000"],"namespaces":["StagingSmoke"],"expectedNamespace":"StagingSmoke","kind":"english","requires":"full"}
-{"question":"Czy oprawa HighBay obsługuje sterowanie DALI?","expectedIds":["CHUNK_EF8A5D4D_001"],"mustContain":["DALI-2"],"namespaces":["StagingSmoke"],"expectedNamespace":"StagingSmoke","kind":"paraphrase"}
-{"question":"ściemnianie oprawy DALI-2","expectedIds":["CHUNK_EF8A5D4D_001"],"mustContain":["ściemnianie"],"namespaces":["StagingSmoke"],"expectedNamespace":"StagingSmoke","kind":"paraphrase"}
-{"question":"integracja oprawy z systemem zarządzania budynkiem","expectedIds":["CHUNK_EF8A5D4D_001"],"mustContain":["zarządzania budynkiem"],"namespaces":["StagingSmoke"],"expectedNamespace":"StagingSmoke","kind":"paraphrase"}
-{"question":"czujnik ruchu w oprawie oszczędność energii","expectedIds":["CHUNK_EF8A5D4D_001"],"mustContain":["40%"],"namespaces":["StagingSmoke"],"expectedNamespace":"StagingSmoke","kind":"paraphrase"}
-{"question":"o ile czujnik ruchu ogranicza zużycie energii","expectedIds":["CHUNK_EF8A5D4D_001"],"mustContain":["40%"],"namespaces":["StagingSmoke"],"expectedNamespace":"StagingSmoke","kind":"paraphrase"}
-{"question":"opcja czujnika ruchu w strefach o małym ruchu","expectedIds":["CHUNK_EF8A5D4D_001"],"namespaces":["StagingSmoke"],"expectedNamespace":"StagingSmoke","kind":"paraphrase"}
-{"question":"DALI","expectedIds":["CHUNK_EF8A5D4D_001"],"namespaces":["StagingSmoke"],"expectedNamespace":"StagingSmoke","kind":"keyword"}
-{"question":"sterowanie oprawą","expectedIds":["CHUNK_EF8A5D4D_001"],"namespaces":["StagingSmoke"],"expectedNamespace":"StagingSmoke","kind":"keyword"}
-{"question":"czujnik ruchu ogranicza zuzycie energii","expectedIds":["CHUNK_EF8A5D4D_001"],"namespaces":["StagingSmoke"],"expectedNamespace":"StagingSmoke","kind":"nodiacritics"}
-{"question":"dimming DALI-2 building management system integration","expectedIds":["CHUNK_EF8A5D4D_001"],"namespaces":["StagingSmoke"],"expectedNamespace":"StagingSmoke","kind":"english","requires":"full"}
-{"question":"motion sensor option reduces energy consumption","expectedIds":["CHUNK_EF8A5D4D_001"],"namespaces":["StagingSmoke"],"expectedNamespace":"StagingSmoke","kind":"english","requires":"full"}
-{"question":"sterownaie DALI","expectedIds":["CHUNK_EF8A5D4D_001"],"namespaces":["StagingSmoke"],"expectedNamespace":"StagingSmoke","kind":"typo","requires":"full"}
-{"question":"Chciałbym zintegrować oświetlenie hali z systemem BMS — czy ta oprawa to umożliwia i w jakiej wersji?","expectedIds":["CHUNK_EF8A5D4D_001"],"namespaces":["StagingSmoke"],"expectedNamespace":"StagingSmoke","kind":"long","requires":"full"}
-{"question":"jak wymienić olej w samochodzie","negative":true,"namespaces":["StagingSmoke"],"kind":"negative"}
-{"question":"procedura zgłaszania urlopu w systemie kadrowym","negative":true,"namespaces":["StagingSmoke"],"kind":"negative-adversarial"}
-{"question":"stawka VAT na usługi budowlane 2026","negative":true,"namespaces":["StagingSmoke"],"kind":"negative"}
-{"question":"przepis na pierogi ruskie","negative":true,"namespaces":["StagingSmoke"],"kind":"negative"}
-{"question":"przepis na bigos staropolski","negative":true,"namespaces":["StagingSmoke"],"kind":"negative"}
-{"question":"kurs dolara do złotego","negative":true,"namespaces":["StagingSmoke"],"kind":"negative"}
-{"question":"jak skonfigurować router WiFi","negative":true,"namespaces":["StagingSmoke"],"kind":"negative"}
-{"question":"kto wygrał mistrzostwa świata w piłce nożnej","negative":true,"namespaces":["StagingSmoke"],"kind":"negative-adversarial"}
-{"question":"harmonogram pociągów Warszawa Kraków","negative":true,"namespaces":["StagingSmoke"],"kind":"negative"}
-{"question":"lek na ból głowy dawkowanie","negative":true,"namespaces":["StagingSmoke"],"kind":"negative"}
-{"question":"python list comprehension example","negative":true,"namespaces":["StagingSmoke"],"kind":"negative"}
-{"question":"rozliczenie delegacji krajowej dieta","negative":true,"namespaces":["StagingSmoke"],"kind":"negative"}
-{"question":"instrukcja obsługi pralki","negative":true,"namespaces":["StagingSmoke"],"kind":"negative"}
-{"question":"systemy operacyjne w komputerach osobistych","negative":true,"namespaces":["StagingSmoke"],"kind":"negative-adversarial"}
-{"question":"maksymalne stawki podatku od nieruchomości","negative":true,"namespaces":["StagingSmoke"],"kind":"negative-adversarial"}
-{"question":"test wiedzy o historii Polski","negative":true,"namespaces":["StagingSmoke"],"kind":"negative-adversarial"}
-{"question":"kiedy wypada Wielkanoc w 2027 roku","negative":true,"namespaces":["StagingSmoke"],"kind":"negative"}
-{"question":"najlepsze trasy rowerowe w Bieszczadach","negative":true,"namespaces":["StagingSmoke"],"kind":"negative"}
-{"question":"jak działa silnik spalinowy w motocyklu","negative":true,"namespaces":["StagingSmoke"],"kind":"negative"}
-{"question":"wymagania rekrutacyjne na studia prawnicze","negative":true,"namespaces":["StagingSmoke"],"kind":"negative"}
-{"question":"ile kosztuje oprawa HighBay LED 150W","expectedIds":["CHUNK_EF8A5D4D_000"],"namespaces":["StagingSmoke"],"expectedNamespace":"StagingSmoke","kind":"near-miss"}
-{"question":"kto jest producentem oprawy HighBay i gdzie ma siedzibę","expectedIds":["CHUNK_EF8A5D4D_000"],"namespaces":["StagingSmoke"],"expectedNamespace":"StagingSmoke","kind":"near-miss"}
-{"question":"jaka jest gwarancja na całą oprawę HighBay poza zasilaczem","expectedIds":["CHUNK_EF8A5D4D_000"],"namespaces":["StagingSmoke"],"expectedNamespace":"StagingSmoke","kind":"near-miss"}
+{"question": "Jaki jest strumień świetlny oprawy HighBay LED 150W?", "expectedIds": ["CHUNK_2CE534D09DDB7838_000"], "mustContain": ["21000 lm"], "namespaces": ["StagingSmoke"], "expectedNamespace": "StagingSmoke", "kind": "paraphrase"}
+{"question": "ile lumenów ma oprawa HighBay 150W", "expectedIds": ["CHUNK_2CE534D09DDB7838_000"], "mustContain": ["21000 lm"], "namespaces": ["StagingSmoke"], "expectedNamespace": "StagingSmoke", "kind": "paraphrase"}
+{"question": "skuteczność świetlna oprawy HighBay lm/W", "expectedIds": ["CHUNK_2CE534D09DDB7838_000"], "mustContain": ["140 lm/W"], "namespaces": ["StagingSmoke"], "expectedNamespace": "StagingSmoke", "kind": "paraphrase"}
+{"question": "stopień ochrony IP oprawy przemysłowej HighBay", "expectedIds": ["CHUNK_2CE534D09DDB7838_000"], "mustContain": ["IP65"], "namespaces": ["StagingSmoke"], "expectedNamespace": "StagingSmoke", "kind": "paraphrase"}
+{"question": "odporność mechaniczna IK08 oprawy", "expectedIds": ["CHUNK_2CE534D09DDB7838_000"], "mustContain": ["IK08"], "namespaces": ["StagingSmoke"], "expectedNamespace": "StagingSmoke", "kind": "paraphrase"}
+{"question": "barwa światła 4000K neutralna", "expectedIds": ["CHUNK_2CE534D09DDB7838_000"], "mustContain": ["4000K"], "namespaces": ["StagingSmoke"], "expectedNamespace": "StagingSmoke", "kind": "paraphrase"}
+{"question": "współczynnik oddawania barw CRI oprawy LED 150W", "expectedIds": ["CHUNK_2CE534D09DDB7838_000"], "mustContain": ["CRI powyżej 80"], "namespaces": ["StagingSmoke"], "expectedNamespace": "StagingSmoke", "kind": "paraphrase"}
+{"question": "zasilacz Meanwell gwarancja 5 lat", "expectedIds": ["CHUNK_2CE534D09DDB7838_000"], "mustContain": ["Meanwell"], "namespaces": ["StagingSmoke"], "expectedNamespace": "StagingSmoke", "kind": "paraphrase"}
+{"question": "montaż oprawy na haku wysokość zawieszenia", "expectedIds": ["CHUNK_2CE534D09DDB7838_000"], "mustContain": ["6-12 metrów"], "namespaces": ["StagingSmoke"], "expectedNamespace": "StagingSmoke", "kind": "paraphrase"}
+{"question": "oprawa przemysłowa do magazynu", "expectedIds": ["CHUNK_2CE534D09DDB7838_000"], "namespaces": ["StagingSmoke"], "expectedNamespace": "StagingSmoke", "kind": "paraphrase"}
+{"question": "oprawa do magazynu wysokiego składowania", "expectedIds": ["CHUNK_2CE534D09DDB7838_000"], "namespaces": ["StagingSmoke"], "expectedNamespace": "StagingSmoke", "kind": "paraphrase"}
+{"question": "Szukam oprawy oświetleniowej LED do hali magazynowej o wysokości około 10 metrów, jaka będzie odpowiednia i jaki ma strumień?", "expectedIds": ["CHUNK_2CE534D09DDB7838_000"], "namespaces": ["StagingSmoke"], "expectedNamespace": "StagingSmoke", "kind": "long", "requires": "full"}
+{"question": "Czy oprawa HighBay 150W ma gwarancję na zasilacz i jak długą?", "expectedIds": ["CHUNK_2CE534D09DDB7838_000"], "mustContain": ["5-letnią gwarancją"], "namespaces": ["StagingSmoke"], "expectedNamespace": "StagingSmoke", "kind": "long"}
+{"question": "HighBay", "expectedIds": ["DOC_2CE534D09DDB7838"], "namespaces": ["StagingSmoke"], "expectedNamespace": "StagingSmoke", "kind": "keyword"}
+{"question": "IP65", "expectedIds": ["CHUNK_2CE534D09DDB7838_000"], "namespaces": ["StagingSmoke"], "expectedNamespace": "StagingSmoke", "kind": "keyword"}
+{"question": "Meanwell", "expectedIds": ["CHUNK_2CE534D09DDB7838_000"], "namespaces": ["StagingSmoke"], "expectedNamespace": "StagingSmoke", "kind": "keyword"}
+{"question": "21000 lm", "expectedIds": ["CHUNK_2CE534D09DDB7838_000"], "namespaces": ["StagingSmoke"], "expectedNamespace": "StagingSmoke", "kind": "keyword"}
+{"question": "IK08", "expectedIds": ["CHUNK_2CE534D09DDB7838_000"], "namespaces": ["StagingSmoke"], "expectedNamespace": "StagingSmoke", "kind": "keyword"}
+{"question": "skuteczność 140 lm/W", "expectedIds": ["CHUNK_2CE534D09DDB7838_000"], "namespaces": ["StagingSmoke"], "expectedNamespace": "StagingSmoke", "kind": "keyword"}
+{"question": "oprawy HighBay LED", "expectedIds": ["DOC_2CE534D09DDB7838"], "namespaces": ["StagingSmoke"], "expectedNamespace": "StagingSmoke", "kind": "inflection"}
+{"question": "opraw przemysłowych LED o mocy 150W", "expectedIds": ["CHUNK_2CE534D09DDB7838_000"], "namespaces": ["StagingSmoke"], "expectedNamespace": "StagingSmoke", "kind": "inflection"}
+{"question": "strumieniem świetlnym oprawy przemysłowej", "expectedIds": ["CHUNK_2CE534D09DDB7838_000"], "namespaces": ["StagingSmoke"], "expectedNamespace": "StagingSmoke", "kind": "inflection"}
+{"question": "montażu na haku", "expectedIds": ["CHUNK_2CE534D09DDB7838_000"], "namespaces": ["StagingSmoke"], "expectedNamespace": "StagingSmoke", "kind": "inflection"}
+{"question": "strumien swietlny oprawy", "expectedIds": ["CHUNK_2CE534D09DDB7838_000"], "namespaces": ["StagingSmoke"], "expectedNamespace": "StagingSmoke", "kind": "nodiacritics"}
+{"question": "oprawa przemyslowa do magazynow wysokiego skladowania", "expectedIds": ["CHUNK_2CE534D09DDB7838_000"], "namespaces": ["StagingSmoke"], "expectedNamespace": "StagingSmoke", "kind": "nodiacritics"}
+{"question": "stopien ochrony i odpornosc oprawy", "expectedIds": ["CHUNK_2CE534D09DDB7838_000"], "namespaces": ["StagingSmoke"], "expectedNamespace": "StagingSmoke", "kind": "nodiacritics"}
+{"question": "oprawa hajbej 150 wat strumien swietlny", "expectedIds": ["CHUNK_2CE534D09DDB7838_000"], "namespaces": ["StagingSmoke"], "expectedNamespace": "StagingSmoke", "kind": "typo"}
+{"question": "high bay LED 150 W luminaire luminous flux", "expectedIds": ["CHUNK_2CE534D09DDB7838_000"], "namespaces": ["StagingSmoke"], "expectedNamespace": "StagingSmoke", "kind": "english", "requires": "full"}
+{"question": "warehouse high-rack lighting fixture", "expectedIds": ["CHUNK_2CE534D09DDB7838_000"], "namespaces": ["StagingSmoke"], "expectedNamespace": "StagingSmoke", "kind": "english", "requires": "full"}
+{"question": "what is the color temperature of the HighBay fixture", "expectedIds": ["CHUNK_2CE534D09DDB7838_000"], "namespaces": ["StagingSmoke"], "expectedNamespace": "StagingSmoke", "kind": "english", "requires": "full"}
+{"question": "Czy oprawa HighBay obsługuje sterowanie DALI?", "expectedIds": ["CHUNK_2CE534D09DDB7838_001"], "mustContain": ["DALI-2"], "namespaces": ["StagingSmoke"], "expectedNamespace": "StagingSmoke", "kind": "paraphrase"}
+{"question": "ściemnianie oprawy DALI-2", "expectedIds": ["CHUNK_2CE534D09DDB7838_001"], "mustContain": ["ściemnianie"], "namespaces": ["StagingSmoke"], "expectedNamespace": "StagingSmoke", "kind": "paraphrase"}
+{"question": "integracja oprawy z systemem zarządzania budynkiem", "expectedIds": ["CHUNK_2CE534D09DDB7838_001"], "mustContain": ["zarządzania budynkiem"], "namespaces": ["StagingSmoke"], "expectedNamespace": "StagingSmoke", "kind": "paraphrase"}
+{"question": "czujnik ruchu w oprawie oszczędność energii", "expectedIds": ["CHUNK_2CE534D09DDB7838_001"], "mustContain": ["40%"], "namespaces": ["StagingSmoke"], "expectedNamespace": "StagingSmoke", "kind": "paraphrase"}
+{"question": "o ile czujnik ruchu ogranicza zużycie energii", "expectedIds": ["CHUNK_2CE534D09DDB7838_001"], "mustContain": ["40%"], "namespaces": ["StagingSmoke"], "expectedNamespace": "StagingSmoke", "kind": "paraphrase"}
+{"question": "opcja czujnika ruchu w strefach o małym ruchu", "expectedIds": ["CHUNK_2CE534D09DDB7838_001"], "namespaces": ["StagingSmoke"], "expectedNamespace": "StagingSmoke", "kind": "paraphrase"}
+{"question": "DALI", "expectedIds": ["CHUNK_2CE534D09DDB7838_001"], "namespaces": ["StagingSmoke"], "expectedNamespace": "StagingSmoke", "kind": "keyword"}
+{"question": "sterowanie oprawą", "expectedIds": ["CHUNK_2CE534D09DDB7838_001"], "namespaces": ["StagingSmoke"], "expectedNamespace": "StagingSmoke", "kind": "keyword"}
+{"question": "czujnik ruchu ogranicza zuzycie energii", "expectedIds": ["CHUNK_2CE534D09DDB7838_001"], "namespaces": ["StagingSmoke"], "expectedNamespace": "StagingSmoke", "kind": "nodiacritics"}
+{"question": "dimming DALI-2 building management system integration", "expectedIds": ["CHUNK_2CE534D09DDB7838_001"], "namespaces": ["StagingSmoke"], "expectedNamespace": "StagingSmoke", "kind": "english", "requires": "full"}
+{"question": "motion sensor option reduces energy consumption", "expectedIds": ["CHUNK_2CE534D09DDB7838_001"], "namespaces": ["StagingSmoke"], "expectedNamespace": "StagingSmoke", "kind": "english", "requires": "full"}
+{"question": "sterownaie DALI", "expectedIds": ["CHUNK_2CE534D09DDB7838_001"], "namespaces": ["StagingSmoke"], "expectedNamespace": "StagingSmoke", "kind": "typo", "requires": "full"}
+{"question": "Chciałbym zintegrować oświetlenie hali z systemem BMS — czy ta oprawa to umożliwia i w jakiej wersji?", "expectedIds": ["CHUNK_2CE534D09DDB7838_001"], "namespaces": ["StagingSmoke"], "expectedNamespace": "StagingSmoke", "kind": "long", "requires": "full"}
+{"question": "jak wymienić olej w samochodzie", "negative": true, "namespaces": ["StagingSmoke"], "kind": "negative"}
+{"question": "procedura zgłaszania urlopu w systemie kadrowym", "negative": true, "namespaces": ["StagingSmoke"], "kind": "negative-adversarial"}
+{"question": "stawka VAT na usługi budowlane 2026", "negative": true, "namespaces": ["StagingSmoke"], "kind": "negative"}
+{"question": "przepis na pierogi ruskie", "negative": true, "namespaces": ["StagingSmoke"], "kind": "negative"}
+{"question": "przepis na bigos staropolski", "negative": true, "namespaces": ["StagingSmoke"], "kind": "negative"}
+{"question": "kurs dolara do złotego", "negative": true, "namespaces": ["StagingSmoke"], "kind": "negative"}
+{"question": "jak skonfigurować router WiFi", "negative": true, "namespaces": ["StagingSmoke"], "kind": "negative"}
+{"question": "kto wygrał mistrzostwa świata w piłce nożnej", "negative": true, "namespaces": ["StagingSmoke"], "kind": "negative-adversarial"}
+{"question": "harmonogram pociągów Warszawa Kraków", "negative": true, "namespaces": ["StagingSmoke"], "kind": "negative"}
+{"question": "lek na ból głowy dawkowanie", "negative": true, "namespaces": ["StagingSmoke"], "kind": "negative"}
+{"question": "python list comprehension example", "negative": true, "namespaces": ["StagingSmoke"], "kind": "negative"}
+{"question": "rozliczenie delegacji krajowej dieta", "negative": true, "namespaces": ["StagingSmoke"], "kind": "negative"}
+{"question": "instrukcja obsługi pralki", "negative": true, "namespaces": ["StagingSmoke"], "kind": "negative"}
+{"question": "systemy operacyjne w komputerach osobistych", "negative": true, "namespaces": ["StagingSmoke"], "kind": "negative-adversarial"}
+{"question": "maksymalne stawki podatku od nieruchomości", "negative": true, "namespaces": ["StagingSmoke"], "kind": "negative-adversarial"}
+{"question": "test wiedzy o historii Polski", "negative": true, "namespaces": ["StagingSmoke"], "kind": "negative-adversarial"}
+{"question": "kiedy wypada Wielkanoc w 2027 roku", "negative": true, "namespaces": ["StagingSmoke"], "kind": "negative"}
+{"question": "najlepsze trasy rowerowe w Bieszczadach", "negative": true, "namespaces": ["StagingSmoke"], "kind": "negative"}
+{"question": "jak działa silnik spalinowy w motocyklu", "negative": true, "namespaces": ["StagingSmoke"], "kind": "negative"}
+{"question": "wymagania rekrutacyjne na studia prawnicze", "negative": true, "namespaces": ["StagingSmoke"], "kind": "negative"}
+{"question": "ile kosztuje oprawa HighBay LED 150W", "expectedIds": ["CHUNK_2CE534D09DDB7838_000"], "namespaces": ["StagingSmoke"], "expectedNamespace": "StagingSmoke", "kind": "near-miss"}
+{"question": "kto jest producentem oprawy HighBay i gdzie ma siedzibę", "expectedIds": ["CHUNK_2CE534D09DDB7838_000"], "namespaces": ["StagingSmoke"], "expectedNamespace": "StagingSmoke", "kind": "near-miss"}
+{"question": "jaka jest gwarancja na całą oprawę HighBay poza zasilaczem", "expectedIds": ["CHUNK_2CE534D09DDB7838_000"], "namespaces": ["StagingSmoke"], "expectedNamespace": "StagingSmoke", "kind": "near-miss"}

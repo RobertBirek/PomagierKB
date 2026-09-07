@@ -32,7 +32,14 @@ const num = (env, fallback) => (process.env[env] ? Number(process.env[env]) : fa
 const thresholds = {
   hit5: num('EVAL_MIN_HIT5', 0.8),
   mrr: num('EVAL_MIN_MRR', 0.5),
+  // Bramka TWARDA tylko dla pytań spoza dziedziny — to była pierwotna funkcja bramki
+  // odmowy i pomiar 2026-09-07 potwierdza, że działa (24/25).
   negativeAccuracy: num('EVAL_MIN_NEG', 0.9),
+  // Near-miss (ta sama dziedzina, treści BRAK) NIE ma twardego progu: pomiar na 50
+  // pytaniach pokazał, że pasmo near-miss 0.666-0.762 pokrywa się z on-topic
+  // 0.702-0.874 niemal całkowicie, więc żaden próg skalarny ich nie rozdzieli.
+  // Metryka jest RAPORTOWANA, żeby regresja była widoczna; obroną jest wymóg cytowań.
+  nearMissAccuracy: num('EVAL_MIN_NEARMISS', 0),
   namespaceAccuracy: num('EVAL_MIN_NS', 0.9),
 };
 // Próg trafności bramki — ta sama funkcja co produkcja (bez ustawienia = default 0.7).
@@ -110,6 +117,7 @@ if (channels === 'full') {
 const ctx = { db, llm, openspg, log: console };
 const allActive = db.prepare("SELECT namespace FROM kb_registry WHERE status='active'").all().map((r) => r.namespace);
 let hit1 = 0, hit5 = 0, mrrSum = 0, negOk = 0, negTotal = 0, nsChecked = 0, nsCorrect = 0;
+let nmOk = 0, nmTotal = 0;
 let contentChecked = 0, contentOk = 0;
 const misses = [];
 // Pytania z "requires":"full" mierzą zdolność kanału SEMANTYCZNEGO (angielski, literówki,
@@ -139,7 +147,8 @@ for (const g of goldens) {
   const results = res.results ?? res;
   bump(g.kind, 'total');
   if (g.negative) {
-    negTotal++;
+    const isNearMiss = String(g.kind ?? '').includes('near-miss');
+    if (isNearMiss) nmTotal++; else negTotal++;
     // Ta sama reguła co produkcyjna bramka odmowy — metryka mierzy TRAFNOŚĆ,
     // a nie to, które kanały akurat działały (D8-06).
     const gate = evaluateRelevanceGate({
@@ -148,8 +157,8 @@ for (const g of goldens) {
       lexicalStrict: res.lexicalStrict ?? false,
       minRelevance,
     });
-    if (!gate.pass) { negOk++; bump(g.kind, 'negOk'); }
-    else misses.push({ q: g.question, kind: 'negative-hit', top: results[0]?.id, gate });
+    if (!gate.pass) { if (isNearMiss) nmOk++; else negOk++; bump(g.kind, 'negOk'); }
+    else if (!isNearMiss) misses.push({ q: g.question, kind: 'negative-hit', top: results[0]?.id, gate });
     continue;
   }
   const expected = [...new Set(g.expectedIds ?? [])];
@@ -198,6 +207,7 @@ const report = {
   hit5: positives ? +(hit5 / positives).toFixed(3) : null,
   mrr: positives ? +(mrrSum / positives).toFixed(3) : null,
   negativeAccuracy: negTotal ? +(negOk / negTotal).toFixed(3) : null,
+  nearMissAccuracy: nmTotal ? +(nmOk / nmTotal).toFixed(3) : null,
   namespaceAccuracy: nsChecked ? +(nsCorrect / nsChecked).toFixed(3) : null,
   mustContainAccuracy: contentChecked ? +(contentOk / contentChecked).toFixed(3) : null,
   perKind: Object.fromEntries(

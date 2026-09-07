@@ -8,15 +8,40 @@
   ],
   "measuredAt": "2026-09-06",
   "corpus": {
-    "StagingSmoke": { "documents": 1, "chunks": 2 },
-    "PomagierOps": { "documents": 0, "chunks": 0 },
+    "StagingSmoke": {
+      "documents": 1,
+      "chunks": 2
+    },
+    "PomagierOps": {
+      "documents": 0,
+      "chunks": 0
+    },
     "note": "Metryki jakości są przy tym korpusie DETEKTOREM REGRESJI, nie dowodem jakości rankingu."
   },
   "queries": 52,
   "latencyMs": {
-    "hybrid": { "cold": { "p50": 282, "p95": 456, "p99": 533 }, "warm": { "p50": 196, "p95": 291, "p99": 444 } },
-    "text": { "p50": 31, "p95": 52, "p99": 82 },
-    "vector": { "p50": 180, "p95": 270, "p99": 330 }
+    "hybrid": {
+      "cold": {
+        "p50": 282,
+        "p95": 456,
+        "p99": 533
+      },
+      "warm": {
+        "p50": 196,
+        "p95": 291,
+        "p99": 444
+      }
+    },
+    "text": {
+      "p50": 31,
+      "p95": 52,
+      "p99": 82
+    },
+    "vector": {
+      "p50": 180,
+      "p95": 270,
+      "p99": 330
+    }
   },
   "quality": {
     "hit1": 0.95,
@@ -25,8 +50,16 @@
   },
   "gateCalibration": {
     "$comment": "Surowe score kanału OpenSPG search/vector (evidence/D8-vector-raw-scores.json) — podstawa progu 0.7 w answer/gate.ts.",
-    "onTopic": [0.871, 0.789, 0.778],
-    "offTopic": [0.635, 0.609, 0.515],
+    "onTopic": [
+      0.871,
+      0.789,
+      0.778
+    ],
+    "offTopic": [
+      0.635,
+      0.609,
+      0.515
+    ],
     "chosenThreshold": 0.7,
     "marginAbove": 0.078,
     "marginBelow": 0.065
@@ -36,5 +69,80 @@
     "ftsOnlyEnglishQueries": "0 trafień (korpus polski; kanał wektorowy je obsługuje) — w goldens oznaczone requires:full",
     "ftsOnlyTypos": "część literówek gubi luźny OR po zaostrzeniu rdzenia do ≥5 znaków — requires:full",
     "degradedModeParaphrases": "bez OpenSPG i bez LLM bramka wymaga trafienia AND, więc odległe parafrazy dostają uczciwą odmowę"
+  },
+  "recalibration": {
+    "date": "2026-09-07",
+    "why": "korpus urosl z 2 do 50 chunkow (build PomagierOps); pierwsza kalibracja szla na 6 pomiarach przy niemal pustej bazie",
+    "signal": "retrieval.topVectorScore (MAKSIMUM z kanalu wektorowego) — NIE results[0].vectorScore",
+    "sample": {
+      "onTopic": 28,
+      "nearMiss": 12,
+      "offTopic": 10
+    },
+    "distribution": {
+      "onTopic": {
+        "min": 0.702,
+        "p10": 0.733,
+        "p50": 0.803,
+        "max": 0.874
+      },
+      "nearMiss": {
+        "min": 0.666,
+        "p50": 0.724,
+        "p90": 0.743,
+        "max": 0.762
+      },
+      "offTopic": {
+        "min": 0.617,
+        "p50": 0.657,
+        "max": 0.711
+      }
+    },
+    "errorMatrix": {
+      "0.68": {
+        "falseRefusals": "0/28",
+        "falseAnswers": "12/22"
+      },
+      "0.70": {
+        "falseRefusals": "0/28",
+        "falseAnswers": "11/22",
+        "chosen": true
+      },
+      "0.72": {
+        "falseRefusals": "2/28",
+        "falseAnswers": "7/22"
+      },
+      "0.74": {
+        "falseRefusals": "4/28",
+        "falseAnswers": "2/22"
+      }
+    },
+    "decision": "prog 0.70 ZOSTAJE — lezy na dolnej krawedzi rozkladu on-topic (min 0.702), wiec nie odrzuca zadnego trafnego pytania; obnizanie nic nie kupuje, podnoszenie kosztuje realne pytania operatorskie",
+    "knownLimit": "pasmo near-miss 0.666-0.762 pokrywa sie z on-topic 0.702-0.874 — zaden skalar tego nie rozdzieli; obrona jest wymog cytowan i sciezka noAnswer"
+  },
+  "evalRun": {
+    "date": "2026-09-07",
+    "corpus": {
+      "PomagierOps": 48,
+      "StagingSmoke": 2
+    },
+    "goldens": 92,
+    "metrics": {
+      "hit@1": 0.908,
+      "hit@5": 0.985,
+      "MRR": 0.938,
+      "negativeAccuracy": 0.96,
+      "nearMissAccuracy": 0.0,
+      "namespaceAccuracy": 1.0,
+      "mustContain": 1.0
+    },
+    "gates": {
+      "hit@5": 0.8,
+      "MRR": 0.5,
+      "negativeAccuracy": 0.9,
+      "namespaceAccuracy": 0.9,
+      "mustContain": 1.0,
+      "nearMissAccuracy": "brak (mierzone)"
+    }
   }
 }

@@ -8,12 +8,39 @@
  * 0/14 pytań spoza bazy odrzuconych (topNorm 0.5–1.0, „przepis na bigos" = 0.99).
  * RRF mierzy ZGODNOŚĆ rankingów kanałów, nie trafność — normalizacja tego nie zmienia.
  *
- * CO ZAMIAST: sygnał semantyczny, czyli surowy cosinus. Rozkład zmierzony na żywej
- * bazie (evidence/D8-vector-raw-scores.json):
- *   on-topic  0.871 / 0.789 / 0.778   (min 0.778)
- *   off-topic 0.635 / 0.609 / 0.515   (max 0.635)
- * Separacja jest czysta; próg 0.70 leży prawie dokładnie pośrodku (margines +0.078
- * nad maksimum off-topic i −0.078 pod minimum on-topic).
+ * CO ZAMIAST: sygnał semantyczny, czyli surowy cosinus.
+ *
+ * REKALIBRACJA 2026-09-07 (korpus urósł z 2 do 50 chunków). Pierwsza kalibracja szła
+ * na 6 pomiarach przy niemal pustej bazie i jej „czysta separacja" była artefaktem —
+ * pomiar na 50 pytaniach (28 on-topic / 12 near-miss / 10 off-topic) pokazuje co innego:
+ *   on-topic  min 0.702  p10 0.733  p50 0.803  max 0.874
+ *   near-miss min 0.666  p50 0.724  p90 0.743  max 0.762
+ *   off-topic min 0.617  p50 0.657  max 0.711
+ *
+ * WYNIK: próg 0.70 ZOSTAJE — leży dokładnie na dolnej krawędzi rozkładu on-topic
+ * (minimum 0.702), więc nie odrzuca ANI JEDNEGO trafnego pytania, a jednocześnie
+ * odsiewa 9/10 pytań spoza dziedziny. To była pierwotna funkcja bramki i ją pełni.
+ *
+ * Macierz błędów (fałszywe odmowy / fałszywe odpowiedzi na 22 negatywach):
+ *   0.68 → 0/28 (0%)  | 12/22 (55%)
+ *   0.70 → 0/28 (0%)  | 11/22 (50%)   ← WYBRANE: zero odmów przy najniższym możliwym
+ *   0.72 → 2/28 (7%)  |  7/22 (32%)
+ *   0.74 → 4/28 (14%) |  2/22 ( 9%)
+ * Obniżanie nic nie kupuje (odmów i tak zero), a podnoszenie kosztuje realne pytania
+ * operatorskie („co oznacza flaga dirty" 0.702, „jak odrzucić szkic" 0.703).
+ *
+ * CZEGO TEN PRÓG NIE ZAŁATWIA — i żaden skalar nie załatwi: pasmo near-miss (0.666–0.762)
+ * pokrywa się z on-topic (0.702–0.874) niemal w całości. Pytania o replikację PostgreSQL
+ * czy migrację z MongoDB są semantycznie blisko, bo korpus mówi o MySQL, Postgresie i S3
+ * w kontekście backupu — a odpowiedzi nie ma. Obroną jest warstwa niżej: wymóg cytowań
+ * i ścieżka noAnswer, nie ten skalar.
+ *
+ * PUŁAPKA POMIARU (kosztowała jedną błędną rekomendację): bramka dostaje
+ * `retrieval.topVectorScore` — MAKSIMUM z kanału wektorowego. To NIE jest
+ * `results[0].vectorScore`, czyli wynik wektorowy tego, co wygrało fuzję RRF; te dwie
+ * wielkości potrafią różnić się o 0.1. Mierząc próg, czytaj to samo pole co produkcja.
+ *
+ * Po każdym istotnym wzroście korpusu POWTÓRZYĆ pomiar — patrz tools/eval/baseline.json.
  *
  * Gdy sygnału semantycznego nie ma (tryb zdegradowany: sam FTS5, brak embeddingów),
  * bramka wymaga LEKSYKALNEGO trafienia AND — luźny fallback OR po rdzeniach potrafi
