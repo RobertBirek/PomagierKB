@@ -207,18 +207,61 @@ sshd -t && systemctl reload ssh
 **Zanim zrelooadujesz — otwórz drugą sesję SSH i sprawdź, że klucz działa.** Utrata dostępu
 do hosta z zewnętrznym IP na białej liście jest kosztowna.
 
-### D2. Naprawa vhosta `status.*` (D2-02, P2)
-`status.ilovelighting.sanok.pl` zwraca 404 z `x-authentik-id`: w Authentiku **nie ma**
-Proxy Providera ani aplikacji „Status Monitor", więc outpost nie ma czego obsłużyć
-(zachowanie fail-closed, poprawne). Bez tego A4 jest niewykonalne z przeglądarki.
+### D2. Naprawa vhosta `status.*` (D2-02, P2) — ✅ WYKONANE 2026-09-07
 
+`status.ilovelighting.sanok.pl` zwracał 404: w Authentiku nie było ani Proxy Providera, ani
+aplikacji, więc embedded outpost nie miał czego obsłużyć dla tego hosta (zachowanie
+fail-closed, poprawne). Utworzone przez `ak shell`:
+
+- **Proxy Provider** `status-monitor-fwd`, tryb `forward_single`,
+  `external_host = https://status.ilovelighting.sanok.pl`,
+  flow autoryzacji `default-provider-authorization-implicit-consent`
+  (bez ekranu zgody — narzędzie wewnętrzne), unieważnienia `default-provider-invalidation-flow`;
+- **aplikacja** `status-monitor` z **polityką dostępu dla grupy `kag-admin`** — bez niej
+  aplikacja byłaby otwarta dla KAŻDEGO zalogowanego użytkownika Authentika;
+- przypięcie providera do `authentik Embedded Outpost`;
+- `authentik_host` i `authentik_host_browser` outpostu ustawione na
+  `https://auth.ilovelighting.sanok.pl/` — bez tego outpost przekierowywał przeglądarkę na
+  `http://0.0.0.0:9000`, czyli adres własnego nasłuchu.
+
+Weryfikacja: `status.*` → 302 na `auth.ilovelighting.sanok.pl/application/o/authorize/`,
+`/dashboard` bez sesji → 302 na logowanie (fail-closed), pozostałe vhosty bez zmian,
+log dostępu `access-status.log` zapisuje żądania.
+
+**Konfiguracja Authentika żyje w bazie, nie w gicie** — po odtworzeniu instancji od zera
+trzeba ją powtórzyć. Skrypt odtwarzający (uwaga: `set_oauth_defaults()` dotyka relacji M2M,
+więc obiekt musi być NAJPIERW zapisany):
+
+```bash
+docker exec -i edge-authentik-server ak shell -c "$(cat <<'SCRIPT'
+from authentik.providers.proxy.models import ProxyProvider, ProxyMode
+from authentik.core.models import Application, Group
+from authentik.outposts.models import Outpost
+from authentik.flows.models import Flow
+from authentik.policies.models import PolicyBinding
+authz = Flow.objects.get(slug="default-provider-authorization-implicit-consent")
+inval = Flow.objects.get(slug="default-provider-invalidation-flow")
+prov = ProxyProvider(name="status-monitor-fwd", authorization_flow=authz, invalidation_flow=inval,
+                     external_host="https://status.ilovelighting.sanok.pl", mode=ProxyMode.FORWARD_SINGLE)
+prov.save(); prov.set_oauth_defaults(); prov.save()
+app, _ = Application.objects.get_or_create(slug="status-monitor",
+                                           defaults=dict(name="Status Monitor", provider=prov))
+PolicyBinding.objects.get_or_create(target=app, group=Group.objects.get(name="kag-admin"),
+                                    defaults=dict(order=0))
+out = Outpost.objects.get(name="authentik Embedded Outpost")
+out.providers.add(prov)
+cfg = out.config
+cfg.authentik_host = "https://auth.ilovelighting.sanok.pl/"
+cfg.authentik_host_browser = "https://auth.ilovelighting.sanok.pl/"
+out.config = cfg; out.save()
+SCRIPT
+)"
 ```
-Authentik → Providers → Create → Proxy Provider (forward auth, single application)
-           external host: https://status.ilovelighting.sanok.pl
-Authentik → Applications → Create → Status Monitor (provider jw., policy: grupa kag-admin)
-Authentik → Outposts → embedded → dodaj aplikację
-```
-Procedura jest w `docs/authentik-setup.md`.
+
+**Co zostało do zrobienia w przeglądarce:** Uptime Kuma 2.5.3 czeka na kreatorze wyboru bazy
+(`Waiting for user action`). Wejdź na `https://status.ilovelighting.sanok.pl/`, zaloguj się
+kontem z grupy `kag-admin`, wybierz backend (SQLite wystarczy) i załóż konto administratora
+Kumy. Dopiero potem monitory — patrz A4.
 
 ### D3. Konto testowe dla narzędzi UX (D4-02, P1 — część operatorska)
 Narzędzia `tools/ux-audit/*` logowały się **hasłem superusera Authentika**, czytanym wprost
