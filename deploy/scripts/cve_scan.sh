@@ -122,7 +122,17 @@ for img in "${IMAGES[@]}"; do
   # 161 „nowych" podatności, których nie było. Bierzemy więc RepoDigest (stabilny dla
   # obrazów firm trzecich przypiętych digestem), a dla obrazów budowanych u nas —
   # repo:tag (`kag-panel:local`), bo tam przyrost między buildami JEST informacją.
-  key="$(docker image inspect "${img}" --format '{{if .RepoDigests}}{{index .RepoDigests 0}}{{else}}{{if .RepoTags}}{{index .RepoTags 0}}{{else}}{{.Id}}{{end}}{{end}}' 2>/dev/null || printf '%s' "${img}")"
+  # Dla obrazów firm trzecich stabilną tożsamością jest RepoDigest (zmienia się dopiero
+  # przy świadomym podniesieniu pinu). Dla obrazów budowanych U NAS jest ODWROTNIE:
+  # buildkit nadaje im RepoDigest, który zmienia się przy KAŻDYM buildzie — kluczowanie
+  # po nim znaczyłoby, że po każdym deployu cała lista podatności panelu i mcp raportuje
+  # się jako „nowa", czyli dokładnie tam, gdzie przyrost ma być wiarygodny, alarm byłby
+  # bezwartościowy. Dlatego dla nich klucz to repo:tag.
+  if [[ "${name}" =~ ${OWN_IMAGE_RE} ]]; then
+    key="${name}"
+  else
+    key="$(docker image inspect "${img}" --format '{{if .RepoDigests}}{{index .RepoDigests 0}}{{else}}{{if .RepoTags}}{{index .RepoTags 0}}{{else}}{{.Id}}{{end}}{{end}}' 2>/dev/null || printf '%s' "${img}")"
+  fi
   printf '%s' "${scan_json}" | jq -c --arg img "${key}" --arg name "${name}" '
     {
       image: $img,
