@@ -5,7 +5,7 @@ cała jego istota:
 
 | Kierunek | Dozwolone? | Czym egzekwowane |
 |---|---|---|
-| VPS → cała sieć biurowa | **TAK** | `AllowedIPs` peera + trasa przez `wg0` |
+| VPS → cała sieć biurowa (`192.168.1.0/24`) | **TAK** | `AllowedIPs` peera + trasa przez `wg0` |
 | sieć biurowa → host VPS (SSH, ICMP) | TAK | reguły ufw na interfejsie `wg0` |
 | sieć biurowa → sieci docker | **NIE** | `wg_guard.sh` (DOCKER-USER) |
 | kontenery docker → sieć biurowa | **NIE** | `wg_guard.sh` (DOCKER-USER) |
@@ -90,6 +90,36 @@ docker exec release-openspg-server curl -m 5 http://<adres w LAN biura>/
 | Duże pliki wiszą, małe przechodzą | MTU/fragmentacja | `wg-quick` ustawia 1420; przy tunelu w tunelu zejdź niżej |
 | Po restarcie Dockera biuro nagle widzi kontenery | `DOCKER-USER` wyczyszczone, guard nie wstał | `systemctl status kag-wg-guard`; `PartOf=docker.service` ma to robić sam |
 | `drift_check.sh` zgłasza nieoczekiwany nasłuch | ktoś otworzył port poza kontraktem | sprawdź `ss -lntup`; allowlista jest w `drift_check.sh` |
+
+## Peer dodany „w locie" — incydent 2026-09-08
+
+**Objaw:** tunel działał (handshake świeży, `ping` do biura przechodził), a mimo to kontener
+OpenSPG dostawał **HTTP 200 z routera w biurze** (`192.168.1.1`). Izolacja nie działała.
+
+**Przyczyna:** peer był dodany poleceniem `wg set` i istniał **wyłącznie w pamięci** —
+w `/etc/wireguard/wg0.conf` go nie było. `wg_guard.sh` czytał wtedy podsieci tylko z pliku,
+więc `192.168.1.0/24` nie miało ani jednej reguły w `DOCKER-USER`. Trasa do LAN-u też była
+dodana ręcznie, więc oba — peer i trasa — zniknęłyby przy najbliższym restarcie.
+
+**Naprawione dwutorowo:**
+
+1. Peer zapisany w `wg0.conf`, więc `wg-quick` odtwarza go i trasę sam (zweryfikowane
+   restartem: handshake wrócił w 5 s).
+2. `wg_guard.sh` bierze teraz **sumę** podsieci z pliku ORAZ z runtime'u
+   (`wg show wg0 allowed-ips`). Sam plik nie chroni tego, co realnie istnieje; sam runtime
+   nie zadziała, gdy tunel leży.
+
+**Zasada operacyjna:** po każdej zmianie peerów — także przez `wg set` — uruchom
+`systemctl restart kag-wg-guard`. Dodanie peera bez wpisu w pliku daje tunel, który zniknie
+przy restarcie, więc i tak zapisz go w konfiguracji.
+
+Kontrola, że guard obejmuje wszystkie podsieci tunelu:
+
+```bash
+iptables -S DOCKER-USER | grep kag-wg-guard | grep -oE '^-A DOCKER-USER -s [0-9./]+' \
+  | awk '{print $4}' | sort -u
+# muszą być: podsieć tunelu, KAŻDA sieć biurowa z AllowedIPs, i wszystkie podsieci docker
+```
 
 ## Pułapka kolejności guardów (odkryta przy wdrożeniu 2026-09-08)
 

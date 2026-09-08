@@ -67,14 +67,21 @@ fi
 # Bierzemy je z konfiguracji, a nie z `wg show`: guard musi dać się założyć także wtedy, gdy
 # tunel akurat leży — inaczej po restarcie interfejsu istniałoby okno bez ochrony.
 [[ -f "${WG_CONF}" ]] || die "brak ${WG_CONF} — nie wiem, jakie podsieci chronić"
-# Bierzemy AllowedIPs peerów ORAZ Address interfejsu. Samo AllowedIPs nie wystarcza: bywa
-# pojedynczym /32 peera, a wtedy dołożenie kolejnego peera cicho zostawiłoby go poza ochroną.
-# Address niesie prefiks całej podsieci tunelu (iptables sam normalizuje 10.90.0.1/24 do sieci).
+# SUMA dwóch źródeł, i to nie z ostrożności, tylko z incydentu 2026-09-08: peer dodany
+# w locie (`wg set`) bez zapisania do pliku był dla guarda NIEWIDZIALNY, więc sieć biurowa
+# 192.168.1.0/24 nie miała ani jednej reguły i kontener OpenSPG dostawał HTTP 200 z routera
+# w biurze. Czytanie samego pliku nie chroni tego, co realnie istnieje; czytanie samego
+# runtime'u nie zadziała, gdy tunel akurat leży. Bierzemy więc oba:
+#   - z PLIKU: AllowedIPs peerów + Address interfejsu (prefiks całej podsieci tunelu),
+#   - z RUNTIME'U: AllowedIPs faktycznie skonfigurowanych peerów.
 mapfile -t TUNNEL_NETS < <(
-  grep -iE '^\s*(AllowedIPs|Address)\s*=' "${WG_CONF}" \
-    | cut -d= -f2- | tr ',' '\n' | tr -d ' \t' | grep -E '^[0-9]+\.' | sort -u
+  {
+    grep -iE '^\s*(AllowedIPs|Address)\s*=' "${WG_CONF}" | cut -d= -f2- | tr ',' '\n'
+    # Pole 1 to klucz publiczny, reszta to podsieci; brak interfejsu = brak wyjścia, nie błąd.
+    wg show "${WG_IFACE}" allowed-ips 2>/dev/null | cut -f2- | tr ' \t' '\n'
+  } | tr -d ' \t' | grep -E '^[0-9]+\.' | sort -u
 )
-[[ ${#TUNNEL_NETS[@]} -gt 0 ]] || die "w ${WG_CONF} nie znalazłem ani jednego AllowedIPs/Address"
+[[ ${#TUNNEL_NETS[@]} -gt 0 ]] || die "ani ${WG_CONF}, ani interfejs ${WG_IFACE} nie dały żadnej podsieci"
 
 # ── Podsieci docker ─────────────────────────────────────────────────────────────────────
 # Czytane z dockera, nie zaszyte: `docker network create` przy odtwarzaniu hosta przydziela
