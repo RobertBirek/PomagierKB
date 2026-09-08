@@ -60,28 +60,27 @@ do top-5. Bez tej flagi hit@5 zalicza trafienie w którykolwiek z oczekiwanych i
 multihopu miara fałszywie optymistyczna, bo pytanie „diagnoza awarii backupu i odtworzenie
 bazy" wyglądałoby na spełnione, gdy retrieval znalazł sam runbook backupu i nic o odtwarzaniu.
 
-**Pomiar 2026-09-08, kanał `fts`: `multihopCoverage` = 0/3.** Ogólny `hit@5` = 0,919 to
-ukrywał — i to jest właśnie powód, dla którego ta metryka istnieje osobno. Diagnoza rozdziela
-się na dwie RÓŻNE przyczyny, co widać dopiero po spojrzeniu na rangi:
+**Pomiar 2026-09-08 — i to jest przykład, dlaczego kanał trzeba czytać razem z liczbą.**
 
-1. *„diagnoza awarii backupu i odtworzenie pojedynczej bazy wiedzy"* — kanał zwraca 20 wyników,
-   drugi dokument jest na **randze 6**, tuż za progiem. Pierwsze pięć miejsc zajmuje PIĘĆ
-   chunków jednego dokumentu. To problem **różnorodności wyników**, nie recallu: fuzja RRF nie
-   ma żadnego ograniczenia „ile chunków z jednego dokumentu może zająć czołówkę".
-2. *„rotacja klucza LLM a zamrożony model embeddingów"* i *„lekcja z sesji agenta jako szkic
-   i recenzja Inboxu"* — kanał zwraca **jeden wynik w ogóle**. FTS wymaga trafienia AND
-   wszystkich rdzeni zapytania, a żaden inny chunk ich nie zawiera. To nie jest problem
-   rankingu, tylko **brak kanału semantycznego** w trybie `fts`.
+| kanał | multihopCoverage |
+|---|---|
+| `fts` (fallback leksykalny) | **0/3** |
+| `full` (produkcyjny hybryd) | **3/3** |
 
-Stąd wniosek, którego nie wolno przeskoczyć: **te 0/3 to pomiar FALLBACKU leksykalnego, a nie
-werdykt o produkcji.** Produkcyjny hybryd dokłada kanał wektorowy, który przypadki 2 i 3 może
-obsłużyć; sprawdzenie wymaga `EVAL_CHANNELS=full` na żywym stacku (koszt: kilkanaście
-embeddingów). Dopóki tego pomiaru nie ma, `multihopCoverage` jest **raportowana bez progu** —
-bramka postawiona na oko albo blokowałaby bez powodu, albo dawała fałszywą zieloność.
+W trybie `fts` ogólny `hit@5` = 0,919 to ukrywał, a rangi rozbijały porażkę na dwie różne
+przyczyny: raz drugi dokument lądował na randze 6 (pierwszą piątkę zajmowało pięć chunków
+jednego dokumentu), dwa razy kanał zwracał w ogóle **jeden wynik**, bo FTS wymaga trafienia
+AND wszystkich rdzeni zapytania.
 
-Kolejność napraw, gdyby pomiar `full` potwierdził problem: najpierw ograniczenie liczby chunków
-z jednego dokumentu w czołówce fuzji (naprawia przypadek 1 i nie rusza recallu), potem dopiero
-cokolwiek przy samym rankingu.
+Na produkcyjnym hybrydzie **wszystkie trzy przechodzą, a drugi dokument jest za każdym razem
+na randze 2**. Kanał wektorowy robi dokładnie to, do czego jest. Wniosek praktyczny: **nie
+ruszamy fuzji** — rozważane ograniczenie udziału jednego dokumentu w czołówce rozwiązywałoby
+problem, którego w produkcji nie ma, kosztem ryzyka dla zmierzonego `hit@5`.
+
+Dlatego te goldeny mają `"requires": "full"`: w trybie `fts` są POMIJANE, bo mierzyłyby brak
+kanału semantycznego, a nie regresję — tak samo jak przypadki angielskie i z literówkami.
+`multihopCoverage` pozostaje bez twardego progu do czasu, aż kilka przebiegów `full` pokaże,
+czy 3/3 jest stabilne, czy było szczęściem przy trzech pytaniach.
 
 Przypadków **temporal** nadal nie ma: żaden z tych dokumentów nie ma wersji historycznych,
 więc pytanie „co obowiązywało w maju" nie miałoby o co zahaczyć.
