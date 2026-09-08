@@ -286,6 +286,27 @@ function validateCitations(
   };
 }
 
+/**
+ * Cytowania w kształcie zapisywanym do `answers.citations_json`.
+ *
+ * Funkcja, a nie literał w dwóch miejscach: dokładnie to rozjechało się przy wdrożeniu
+ * 2026-09-08 — ścieżka świeża dostała `docId`/`section`, ścieżka trafienia w cache została
+ * przy `{n,id,namespace}`. Wiersz zapisany z cache był uboższy od identycznej odpowiedzi
+ * policzonej na żywo, choć czyta go ten sam sędzia jakości. Jedno źródło kształtu znosi
+ * możliwość powtórki.
+ */
+export function toStoredCitations(
+  citations: readonly AnswerCitation[],
+): { n: number; id: string; namespace: string; docId?: string; section?: string }[] {
+  return citations.map((c) => ({
+    n: c.n,
+    id: c.id,
+    namespace: c.namespace,
+    ...(c.docId !== undefined ? { docId: c.docId } : {}),
+    ...(c.sectionHeading !== undefined ? { section: c.sectionHeading } : {}),
+  }));
+}
+
 export async function answerQuestion(ctx: AnswerCtx, params: AnswerParams): Promise<AnswerResult> {
   const started = Date.now();
   const maxSources = Math.min(Math.max(params.maxSources ?? 6, 1), 10);
@@ -331,7 +352,7 @@ export async function answerQuestion(ctx: AnswerCtx, params: AnswerParams): Prom
     const cachedRow = recordAnswer(ctx.db, {
       question: params.question,
       namespaces: usedNamespaces,
-      citations: cached.citations.map((c) => ({ n: c.n, id: c.id, namespace: c.namespace })),
+      citations: toStoredCitations(cached.citations),
       confidence: cached.confidence,
       model: cached.model,
       degraded: cached.degraded,
@@ -560,13 +581,7 @@ export async function answerQuestion(ctx: AnswerCtx, params: AnswerParams): Prom
   const answerRow = recordAnswer(ctx.db, {
     question: params.question,
     namespaces: usedNamespaces,
-    citations: citations.map((c) => ({
-      n: c.n,
-      id: c.id,
-      namespace: c.namespace,
-      ...(c.docId !== undefined ? { docId: c.docId } : {}),
-      ...(c.sectionHeading !== undefined ? { section: c.sectionHeading } : {}),
-    })),
+    citations: toStoredCitations(citations),
     confidence,
     model,
     degraded: retrieval.degraded,

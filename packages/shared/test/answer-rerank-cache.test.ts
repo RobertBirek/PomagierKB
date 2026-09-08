@@ -11,6 +11,7 @@ import {
   putCachedAnswer,
   rerankHits,
 } from '../src/answer/index.js';
+import { toStoredCitations } from '../src/answer/index.js';
 import type { AnswerResult, RetrievalHit } from '../src/answer/index.js';
 import { createKb, finishExportRun, replaceForDocument, startExportRun } from '../src/db/index.js';
 import { testDb } from './helpers.js';
@@ -153,5 +154,45 @@ describe('cache odpowiedzi', () => {
     const run2 = startExportRun(db, 'KbC');
     finishExportRun(db, run2.id, 'success', { docCount: 1, chunkCount: 2 });
     expect(dataVersion(db, ['KbC'])).toBeGreaterThan(v1);
+  });
+});
+
+describe('toStoredCitations — jeden kształt dla obu ścieżek', () => {
+  /**
+   * Regresja z wdrożenia 2026-09-08: mapowanie cytowań do `answers.citations_json` było
+   * napisane DWA razy — ścieżka świeża dostała `docId`/`section`, ścieżka trafienia
+   * w cache została przy `{n,id,namespace}`. UI nic nie zauważył (czyta obiekt z cache),
+   * ale wiersz zapisany z cache był uboższy od identycznej odpowiedzi policzonej na żywo,
+   * choć czyta go ten sam sędzia jakości. Test pilnuje kształtu w jednym miejscu, bo
+   * i kod jest teraz w jednym miejscu.
+   */
+  it('przenosi docId i section, pomija pola nieobecne', () => {
+    expect(
+      toStoredCitations([
+        {
+          n: 1,
+          id: 'CHUNK_a_000',
+          namespace: 'Ns',
+          title: 'Tytuł',
+          snippet: 'fragment',
+          docId: 'DOC_a',
+          sectionHeading: 'Montaż',
+        },
+      ]),
+    ).toEqual([{ n: 1, id: 'CHUNK_a_000', namespace: 'Ns', docId: 'DOC_a', section: 'Montaż' }]);
+  });
+
+  it('cytowanie bez pochodzenia nie dostaje kluczy z undefined', () => {
+    const [row] = toStoredCitations([{ n: 2, id: 'CHUNK_b_000', namespace: 'Ns' }]);
+    expect(Object.keys(row!).sort()).toEqual(['id', 'n', 'namespace']);
+  });
+
+  it('tytuł i snippet NIE trafiają do wiersza — to kontrakt, nie przeoczenie', () => {
+    // `answers` ma nie puchnąć o treść, którą i tak da się odtworzyć z mirrora po id.
+    const [row] = toStoredCitations([
+      { n: 1, id: 'CHUNK_c_000', namespace: 'Ns', title: 'T', snippet: 'S' },
+    ]);
+    expect(row).not.toHaveProperty('title');
+    expect(row).not.toHaveProperty('snippet');
   });
 });

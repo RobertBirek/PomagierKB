@@ -28,7 +28,7 @@ export {
   MIN_RELEVANCE_LEGACY_CUTOFF,
 } from './gate.js';
 export type { GateDecision, GateReason, RelevanceGateInput } from './gate.js';
-export { answerQuestion, NO_ANSWER_TEXT } from './answer.js';
+export { answerQuestion, toStoredCitations, NO_ANSWER_TEXT } from './answer.js';
 export type {
   AnswerCitation,
   AnswerParams,
