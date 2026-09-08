@@ -50,9 +50,41 @@ Obrona przed tym wariantem ma DWIE bramki, obie poza tym katalogiem:
 Czego nadal NIE mierzymy: czy model faktycznie się oprze. To własność niedeterministyczna
 i nie nasza — od niej jest wybór dostawcy i przegląd odpowiedzi, nie test jednostkowy.
 
-Z tego samego powodu nie ma tu przypadków **multihop** ani **temporal**, choć zewnętrzny
-raport słusznie wymienia je jako obowiązkowe warstwy testów: przy jednym dokumencie pytanie
-wielokrokowe byłoby atrapą, a nie testem.
+### `multihop` — i pierwszy pomiar, który wyszedł na zero
+
+`PomagierOps` ma **6 realnych dokumentów / 48 chunków**, więc pytania wielokrokowe dają się
+tam zadać uczciwie (w `StagingSmoke`, przy jednym dokumencie, nadal byłyby atrapą).
+
+Wpis z `"requireAllDocs": true` zalicza się dopiero, gdy **KAŻDY** oczekiwany dokument wejdzie
+do top-5. Bez tej flagi hit@5 zalicza trafienie w którykolwiek z oczekiwanych id — dla
+multihopu miara fałszywie optymistyczna, bo pytanie „diagnoza awarii backupu i odtworzenie
+bazy" wyglądałoby na spełnione, gdy retrieval znalazł sam runbook backupu i nic o odtwarzaniu.
+
+**Pomiar 2026-09-08, kanał `fts`: `multihopCoverage` = 0/3.** Ogólny `hit@5` = 0,919 to
+ukrywał — i to jest właśnie powód, dla którego ta metryka istnieje osobno. Diagnoza rozdziela
+się na dwie RÓŻNE przyczyny, co widać dopiero po spojrzeniu na rangi:
+
+1. *„diagnoza awarii backupu i odtworzenie pojedynczej bazy wiedzy"* — kanał zwraca 20 wyników,
+   drugi dokument jest na **randze 6**, tuż za progiem. Pierwsze pięć miejsc zajmuje PIĘĆ
+   chunków jednego dokumentu. To problem **różnorodności wyników**, nie recallu: fuzja RRF nie
+   ma żadnego ograniczenia „ile chunków z jednego dokumentu może zająć czołówkę".
+2. *„rotacja klucza LLM a zamrożony model embeddingów"* i *„lekcja z sesji agenta jako szkic
+   i recenzja Inboxu"* — kanał zwraca **jeden wynik w ogóle**. FTS wymaga trafienia AND
+   wszystkich rdzeni zapytania, a żaden inny chunk ich nie zawiera. To nie jest problem
+   rankingu, tylko **brak kanału semantycznego** w trybie `fts`.
+
+Stąd wniosek, którego nie wolno przeskoczyć: **te 0/3 to pomiar FALLBACKU leksykalnego, a nie
+werdykt o produkcji.** Produkcyjny hybryd dokłada kanał wektorowy, który przypadki 2 i 3 może
+obsłużyć; sprawdzenie wymaga `EVAL_CHANNELS=full` na żywym stacku (koszt: kilkanaście
+embeddingów). Dopóki tego pomiaru nie ma, `multihopCoverage` jest **raportowana bez progu** —
+bramka postawiona na oko albo blokowałaby bez powodu, albo dawała fałszywą zieloność.
+
+Kolejność napraw, gdyby pomiar `full` potwierdził problem: najpierw ograniczenie liczby chunków
+z jednego dokumentu w czołówce fuzji (naprawia przypadek 1 i nie rusza recallu), potem dopiero
+cokolwiek przy samym rankingu.
+
+Przypadków **temporal** nadal nie ma: żaden z tych dokumentów nie ma wersji historycznych,
+więc pytanie „co obowiązywało w maju" nie miałoby o co zahaczyć.
 
 ## Bramki
 

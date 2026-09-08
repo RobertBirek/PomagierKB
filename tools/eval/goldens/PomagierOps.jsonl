@@ -15,3 +15,6 @@
 {"question": "jakie są objawy grypy", "negative": true, "namespaces": ["PomagierOps"], "kind": "off-topic"}
 {"question": "jak skonfigurować ingress w Kubernetes", "negative": true, "namespaces": ["PomagierOps"], "kind": "near-miss"}
 {"question": "jak skalować klaster Elasticsearch", "negative": true, "namespaces": ["PomagierOps"], "kind": "near-miss"}
+{"question": "rotacja klucza LLM a zamrożony model embeddingów", "expectedIds": ["DOC_656066C83CC58071", "DOC_9B7DFDA6B1987C20"], "requireAllDocs": true, "namespaces": ["PomagierOps"], "expectedNamespace": "PomagierOps", "kind": "multihop"}
+{"question": "diagnoza awarii backupu i odtworzenie pojedynczej bazy wiedzy", "expectedIds": ["DOC_DB8AF7220E600A69", "DOC_B1B87523FCDC0D98"], "requireAllDocs": true, "namespaces": ["PomagierOps"], "expectedNamespace": "PomagierOps", "kind": "multihop"}
+{"question": "lekcja z sesji agenta jako szkic i recenzja Inboxu", "expectedIds": ["DOC_BCCFE9FF30989B6D", "DOC_4AFE60C4C42D7CF7"], "requireAllDocs": true, "namespaces": ["PomagierOps"], "expectedNamespace": "PomagierOps", "kind": "multihop"}

@@ -10,6 +10,12 @@
 //     (packages/shared/src/answer/gate.ts) odrzuciłaby ten wynik.
 //   mustContain = fragmenty, które muszą wystąpić w treści któregoś z 5 najlepszych
 //     chunków (test „retrieval realnie wydobył fakt", nie tylko trafił id).
+//   requireAllDocs:true = pytanie WIELOKROKOWE: odpowiedź wymaga złożenia treści z KILKU
+//     dokumentów, więc zaliczenie wymaga obecności KAŻDEGO z oczekiwanych dokumentów
+//     w top-5. Bez tej flagi hit@5 zalicza trafienie w JEDEN z oczekiwanych id, co dla
+//     multihopu byłoby miarą fałszywie optymistyczną: pytanie „co zrobić, gdy backup padł
+//     i trzeba odtworzyć bazę" wyglądałoby na spełnione, gdy retrieval znalazł sam runbook
+//     backupu i nic o odtwarzaniu.
 // Kanały: EVAL_CHANNELS=fts (default — deterministycznie, zero kosztu, TYLKO lokalny FTS5)
 //         EVAL_CHANNELS=full (pełny hybrid: OpenSPG + embeddings z settings — na żywym stacku).
 // Raport JAWNIE mówi, który tryb mierzy — wynik 'fts' to jakość fallbacku, nie hybrydu.
@@ -41,6 +47,11 @@ const thresholds = {
   // Metryka jest RAPORTOWANA, żeby regresja była widoczna; obroną jest wymóg cytowań.
   nearMissAccuracy: num('EVAL_MIN_NEARMISS', 0),
   namespaceAccuracy: num('EVAL_MIN_NS', 0.9),
+  // Multihop RAPORTOWANY bez twardego progu — dokładnie z tego powodu, dla którego
+  // near-miss go nie ma: metryka jest nowa i niestrojona, a bramka postawiona „na oko"
+  // albo blokuje bez powodu, albo daje fałszywą zieloność. Próg dopiszemy, gdy pomiar
+  // na kilku przebiegach pokaże, jaki poziom jest realny.
+  multihopCoverage: num('EVAL_MIN_MULTIHOP', 0),
 };
 // Próg trafności bramki — ta sama funkcja co produkcja (bez ustawienia = default 0.7).
 const minRelevance = resolveMinRelevance(num('EVAL_MIN_RELEVANCE', null));
@@ -118,6 +129,7 @@ const ctx = { db, llm, openspg, log: console };
 const allActive = db.prepare("SELECT namespace FROM kb_registry WHERE status='active'").all().map((r) => r.namespace);
 let hit1 = 0, hit5 = 0, mrrSum = 0, negOk = 0, negTotal = 0, nsChecked = 0, nsCorrect = 0;
 let nmOk = 0, nmTotal = 0;
+let mhOk = 0, mhTotal = 0; // wielokrokowe: pokrycie WSZYSTKICH oczekiwanych dokumentów
 let contentChecked = 0, contentOk = 0;
 const misses = [];
 // Pytania z "requires":"full" mierzą zdolność kanału SEMANTYCZNEGO (angielski, literówki,
@@ -169,6 +181,14 @@ for (const g of goldens) {
     return expected.some((e) => ids.some((x) => x === e || x.startsWith(e)));
   };
   const rank = results.findIndex(matches);
+  // Multihop: KAŻDY oczekiwany dokument musi być w top-5, nie którykolwiek.
+  if (g.requireAllDocs === true) {
+    mhTotal++;
+    const top5 = results.slice(0, 5).map((r) => [r.id, docIdOf(r.id)].filter(Boolean));
+    const covered = expected.filter((e) => top5.some((ids) => ids.some((x) => x === e || x.startsWith(e))));
+    if (covered.length === expected.length) mhOk++;
+    else misses.push({ q: g.question, kind: 'multihop-partial', missing: expected.filter((e) => !covered.includes(e)) });
+  }
   if (rank === 0) hit1++;
   if (rank >= 0 && rank < 5) { hit5++; bump(g.kind, 'hit5'); }
   if (rank >= 0) { mrrSum += 1 / (rank + 1); perKind[g.kind ?? 'unspecified'].mrrSum += 1 / (rank + 1); }
@@ -208,6 +228,9 @@ const report = {
   mrr: positives ? +(mrrSum / positives).toFixed(3) : null,
   negativeAccuracy: negTotal ? +(negOk / negTotal).toFixed(3) : null,
   nearMissAccuracy: nmTotal ? +(nmOk / nmTotal).toFixed(3) : null,
+  // Odsetek pytań wielokrokowych, dla których KAŻDY wymagany dokument wszedł do top-5.
+  multihopCoverage: mhTotal ? +(mhOk / mhTotal).toFixed(3) : null,
+  multihopChecked: mhTotal,
   namespaceAccuracy: nsChecked ? +(nsCorrect / nsChecked).toFixed(3) : null,
   mustContainAccuracy: contentChecked ? +(contentOk / contentChecked).toFixed(3) : null,
   perKind: Object.fromEntries(
