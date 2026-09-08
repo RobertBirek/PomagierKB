@@ -17,6 +17,8 @@ export interface KbEntry {
   dirty: boolean;
   schemaVersion: number | null;
   vectorModelId: string;
+  /** Polityka danych osobowych na wyjściu do dostawcy LLM (off | flag | mask). */
+  piiPolicy: 'off' | 'flag' | 'mask';
   documentTypes: DocumentTypeDef[];
   totals: { documents: number; chunks: number; pendingDrafts: number };
   createdAt: string;

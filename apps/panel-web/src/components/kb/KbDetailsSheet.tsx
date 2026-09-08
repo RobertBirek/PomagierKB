@@ -5,6 +5,8 @@
  * schematu i typy dokumentów.
  */
 import { useQuery } from '@tanstack/react-query';
+import { useMe } from '@/hooks/useMe';
+import { can } from '@/lib/permissions';
 import { RefreshCw } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
 import { errorMessage } from '@/lib/errorMessage';
@@ -15,6 +17,7 @@ import { Sheet, SheetBody, SheetContent, SheetDescription, SheetHeader, SheetTit
 import { Skeleton, SkeletonText } from '@/ui/skeleton';
 import { CheckList, type CheckListItem } from './CheckList';
 import { groupQualityChecks, qualityCheckLabelKey } from './kb-lib';
+import { PiiPolicyControl } from './PiiPolicyControl';
 import { StatusBadgeV2 } from './StatusBadgeV2';
 import { useQualityReport, verdictVariant } from './QualityCell';
 import type { BuildJobItem, KbEntry, QualityCheckDto } from './types';
@@ -89,6 +92,7 @@ function QualityReportSection({ namespace }: { namespace: string }) {
 }
 
 export function KbDetailsSheet({ namespace, onClose }: { namespace: string | null; onClose: () => void }) {
+  const me = useMe();
   const detailQuery = useQuery({
     queryKey: ['kbs', namespace],
     queryFn: () => apiFetch<{ kb: KbEntry }>(`/api/v1/kbs/${namespace}`),
@@ -174,6 +178,15 @@ export function KbDetailsSheet({ namespace, onClose }: { namespace: string | nul
                 <dt className="text-text-secondary">{t('kb.details.updatedAt')}</dt>
                 <dd className="text-text">{formatDateTime(kb.updatedAt)}</dd>
               </dl>
+
+              {/* key: Sheet jest jeden dla wszystkich baz, więc bez remountu niezapisany
+                  wybór z poprzedniej bazy zostałby w polu przy otwarciu następnej. */}
+              <PiiPolicyControl
+                key={kb.namespace}
+                namespace={kb.namespace}
+                policy={kb.piiPolicy}
+                canEdit={can(me.data?.user.role, 'settings')}
+              />
 
               <QualityReportSection namespace={kb.namespace} />
 

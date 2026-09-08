@@ -877,6 +877,25 @@ export const pl = {
   'system.breakers.resetConfirm': 'Wznów ruch',
   'system.health.refresh': 'Odśwież stan',
 
+  // Polityka danych osobowych bazy wiedzy (kb_registry.pii_policy).
+  'kb.pii.title': 'Dane osobowe w treści wysyłanej do modelu',
+  'kb.pii.intro':
+    'Fragmenty dokumentów tej bazy trafiają do dostawcy LLM poza EOG. Ustawienie decyduje, co dzieje się z nimi tuż przed wysyłką — treść zapisana w bazie zostaje bez zmian.',
+  'kb.pii.off': 'Nie skanuj',
+  'kb.pii.offDesc': 'Bez wykrywania i bez maskowania.',
+  'kb.pii.flag': 'Wykrywaj i licz',
+  'kb.pii.flagDesc': 'Treść bez zmian; recenzent widzi ostrzeżenie przy szkicu w Inboxie.',
+  'kb.pii.mask': 'Maskuj',
+  'kb.pii.maskDesc': 'PESEL, NIP, IBAN i podobne zamieniane na znaczniki przed wysyłką.',
+  'kb.pii.offWarnTitle': 'Wyłączasz wykrywanie całkowicie',
+  'kb.pii.offWarnBody':
+    'Nikt nie dowie się, że dokument zawierał PESEL czy numer rachunku — ani przy recenzji szkicu, ani później. Wybieraj to tylko dla baz, o których wiesz, że danych osobowych nie przyjmą.',
+  'kb.pii.maskNoteTitle': 'Maskowanie może zmienić odpowiedzi',
+  'kb.pii.maskNoteBody':
+    'Model przestanie widzieć zamaskowane wartości, więc pytanie o konkretny numer pozostanie bez odpowiedzi. To jest zamierzone — ale jeśli baza takich danych nie zawiera, „wykrywaj i licz” daje ten sam efekt bez kosztu.',
+  'kb.pii.appliesNext': 'Zmiana działa od następnego wywołania modelu — istniejące odpowiedzi zostają bez zmian.',
+  'kb.pii.saved': 'Polityka danych osobowych: {policy}',
+
   // Sygnał o danych osobowych w szkicu (metadata.pii z intake-workera).
   'inbox.draft.piiTitle': 'Dokument zawiera dane osobowe',
   'inbox.draft.piiBody': 'Wykryto {total} wystąpień: {types}.',
