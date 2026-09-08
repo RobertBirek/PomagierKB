@@ -1,0 +1,20 @@
+# Szablon konfiguracji dla strony BIUROWEJ (za NAT-em) — BEZ KLUCZY.
+# Ten plik wypełnia się kluczami i przekazuje bezpiecznym kanałem, a kopię na tym hoście
+# kasuje się przez `shred -u`. Szczegóły: docs/runbooks/wireguard.md
+
+[Interface]
+Address    = 10.90.0.2/24
+PrivateKey = <klucz prywatny strony biurowej>
+# Router biurowy musi mieć włączony forwarding i regułę przepuszczającą ruch z wg0 do LAN-u
+# — inaczej tunel wstanie, ale VPS nie dosięgnie żadnej maszyny poza samym routerem.
+
+[Peer]
+# VPS PomagierKB
+PublicKey           = <klucz publiczny VPS-a>
+Endpoint            = <publiczny adres VPS-a>:51820
+# Tylko podsieć tunelu: biuro ma sięgać do HOSTA, a nie do sieci docker platformy.
+# Wpisanie tu 0.0.0.0/0 przekierowałoby cały ruch biura przez VPS — to nie jest ten projekt.
+AllowedIPs          = 10.90.0.0/24
+# Warunek działania kierunku VPS → biuro: podtrzymuje mapowanie NAT, przez które host
+# może w ogóle odezwać się pierwszy.
+PersistentKeepalive = 25

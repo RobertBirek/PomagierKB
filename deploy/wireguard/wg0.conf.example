@@ -1,0 +1,24 @@
+# Szablon konfiguracji tunelu — BEZ KLUCZY. Prawdziwy plik żyje wyłącznie w
+# /etc/wireguard/wg0.conf (0600 root) i nigdy nie trafia do repozytorium, tak samo jak
+# deploy/*/.env. Procedura uruchomienia i rotacji: docs/runbooks/wireguard.md
+#
+# Rola tego hosta: SERWER z publicznym endpointem. Strona biurowa jest za NAT-em, więc to
+# ona inicjuje połączenie i podtrzymuje mapowanie NAT przez PersistentKeepalive — bez tego
+# kierunek VPS → biuro w ogóle nie zadziała.
+
+[Interface]
+Address    = 10.90.0.1/24
+ListenPort = 51820
+PrivateKey = <klucz prywatny TEGO hosta — wygenerowany przez `wg genkey`>
+
+# ŻADNYCH PostUp/PostDown z regułami iptables. Izolację od sieci docker robi
+# deploy/scripts/wg_guard.sh uruchamiany przez kag-wg-guard.service, bo reguły muszą
+# przetrwać restart Dockera (który czyści DOCKER-USER), a nie tylko restart interfejsu.
+
+[Peer]
+# Sieć biurowa
+PublicKey  = <klucz publiczny strony biurowej>
+# AllowedIPs pełni tu PODWÓJNĄ rolę: to jednocześnie trasa (dokąd wysyłać) i filtr adresów
+# źródłowych (co przyjąć). Bez wpisanej sieci biurowej pakiety do niej nie miałyby trasy,
+# a odpowiedzi z niej zostałyby odrzucone jako sfałszowane.
+AllowedIPs = 10.90.0.2/32, <CIDR sieci biurowej, np. 10.10.0.0/24>

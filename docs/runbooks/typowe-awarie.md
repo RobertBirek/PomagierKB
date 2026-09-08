@@ -2,7 +2,9 @@
 
 Szybkie procedury dla najczęstszych problemów. Ścieżki: repo `/kag`, dane
 `/srv/kag-data`. Zasada nadrzędna: **nie publikujemy portów na hoście** — diagnostykę
-robimy od środka kontenerów.
+robimy od środka kontenerów. Jedyny wyjątek to `51820/udp` (tunel WireGuard do sieci
+biurowej, `docs/runbooks/wireguard.md`) — nasłuch procesu hosta, nie kontenera, i **bez
+trasy do jakiejkolwiek sieci docker**.
 
 ## 0. Która sieć do czego (SPRAWDŹ PRZED diagnostyką)
 

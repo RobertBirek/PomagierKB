@@ -36,7 +36,9 @@ Runbook wdrożenia platformy na czystym serwerze wg `docs/design/infra.md` §7 i
 
 - Linux z dostępem root (SSH), publiczne IPv4.
 - Wolne porty **80/tcp, 443/tcp, 443/udp** na hoście. Inne usługi hosta (np. trilium na 8080)
-  nie kolidują — platforma nie publikuje nic poza Caddy.
+  nie kolidują — platforma nie publikuje nic poza Caddy. Opcjonalny tunel WireGuard dokłada
+  **51820/udp** jako jedyny nasłuch procesu hosta poza SSH (`docs/runbooks/wireguard.md`);
+  `drift_check.sh` pilnuje tej listy jako kontraktu.
 
 **Zależności hosta — WYMAGANE** (bez nich stack nie wstanie albo backup nie zadziała):
 
@@ -316,6 +318,19 @@ oraz `kag-egress-guard.service` (blokada pivotu `kag-egress` → usługi hosta):
 sudo systemctl enable --now kag-egress-guard.service
 systemctl is-enabled kag-egress-guard.service    # oczekiwane: enabled
 ```
+
+oraz `kag-wg-guard.service` — izolacja tunelu WireGuard od sieci docker. **Bez niego tunel
+jest dziurą**: reguła `-i eth0 -j DROP` w `DOCKER-USER` dopasowuje interfejs, więc ruchu
+z `wg0` nie dotyka, a łańcuch Dockera w `FORWARD` wyprzedza ufw — sieć biurowa miałaby
+bezpośredni dostęp do `kag-datastores` z nieuwierzytelnionym OpenSPG na :8887.
+
+```bash
+sudo systemctl enable --now kag-wg-guard.service
+deploy/scripts/wg_guard.sh --check               # oczekiwane: exit 0
+```
+
+Instaluj go **tylko** tam, gdzie tunel istnieje; szczegóły i testy negatywne w
+`docs/runbooks/wireguard.md`.
 
 oraz `kag-backup-request.path` — bez niego strona `/backup` w panelu **działa, ale bez
 przycisków**: pokazuje stan i przyjmuje konfigurację, natomiast żądania „zrób snapshot teraz"

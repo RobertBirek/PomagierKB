@@ -349,6 +349,17 @@ backup_kuma
 if [[ -f "${EDGE_ENV}" ]]; then cp "${EDGE_ENV}" "${SNAP}/env-edge.env" && chmod 600 "${SNAP}/env-edge.env"; else warn "brak ${EDGE_ENV}"; fi
 if [[ -f "${KAG_ENV}"  ]]; then cp "${KAG_ENV}"  "${SNAP}/env-kag.env"  && chmod 600 "${SNAP}/env-kag.env";  else warn "brak ${KAG_ENV}"; fi
 
+# --- 7b. Klucze tunelu WireGuard ---
+# Utrata klucza prywatnego serwera oznacza przekonfigurowanie WSZYSTKICH peerów po drugiej
+# stronie — a tam bywa sprzęt, do którego nie mamy dostępu. Snapshot i tak zawiera komplet
+# sekretów platformy (oba .env, klucze certów) i poza host wychodzi wyłącznie zaszyfrowany,
+# więc dołożenie tych kluczy nie zmienia klasy wrażliwości kopii.
+if [[ -d /etc/wireguard ]]; then
+  tar --zstd -cf "${SNAP}/wireguard.tar.zst" -C /etc wireguard \
+    && chmod 600 "${SNAP}/wireguard.tar.zst" \
+    || warn "archiwizacja /etc/wireguard nie powiodła się"
+fi
+
 # --- 8. Audyt panelu (JSONL, hash-chain) ---
 if [[ -d "${DATA_ROOT}/kag/panel/audit" ]]; then
   tar --zstd -cf "${SNAP}/panel-audit.tar.zst" -C "${DATA_ROOT}/kag/panel" audit \

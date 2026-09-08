@@ -9,7 +9,11 @@
 [Unit]
 Description=PomagierKB — blokada pivotu kag-egress → usługi hosta (D6-12)
 Documentation=file:/kag/docs/design/audit-2026-09.md
-After=docker.service
+# After=wg-quick@wg0: guard wylicza adresy hosta z `ip addr` przy KAŻDYM starcie i zakłada
+# reguły raz. Gdy tunel wstawał później, adres wg0 nie trafiał do wyliczenia i pivot
+# kag-egress → host:80/443/8080 był tą drogą otwarty (potwierdzone 2026-09-08: OpenSPG
+# dostawał 308 od Caddy'ego pod adresem tunelu). Ordering jest tu kontrolą, nie kosmetyką.
+After=docker.service wg-quick@wg0.service
 Requires=docker.service
 PartOf=docker.service
 

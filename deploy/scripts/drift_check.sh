@@ -164,10 +164,58 @@ check_host_ports() {
   done < <(docker ps -q)
 }
 
+# --- 5. nasłuchy hosta poza Dockerem ---
+# check_host_ports patrzy WYŁĄCZNIE na `docker ps`, więc każdy proces hosta otwierający port
+# był dla kontroli dryfu niewidzialny. Tunel WireGuard jest pierwszą taką rzeczą, którą sami
+# dokładamy — i byłoby niekonsekwentne dokładać do hosta port, którego nic nie pilnuje.
+# Allowlista poniżej JEST kontraktem: wszystko spoza niej to dryf.
+#   22/tcp    SSH (ufw ogranicza do allowlisty adresów)
+#   80,443    edge-caddy (443 także UDP — HTTP/3)
+#   8080/tcp  obcy kontener `trilium`, poza naszymi stackami (znane, świadome)
+#   51820/udp tunel WireGuard do sieci biurowej — docs/runbooks/wireguard.md
+HOST_LISTEN_ALLOW="22/tcp 80/tcp 443/tcp 443/udp 8080/tcp 51820/udp"
+check_host_listeners() {
+  echo "== nasłuchy hosta (poza loopbackiem) =="
+  if ! command -v ss >/dev/null 2>&1; then
+    warn "brak `ss` — nie mogę sprawdzić nasłuchów hosta"
+    return
+  fi
+  local unexpected=()
+  local entry
+  # Adresy loopbackowe pomijamy: systemd-resolved na 127.0.0.53/54 nie jest powierzchnią ataku.
+  while read -r entry; do
+    [[ -n "${entry}" ]] || continue
+    if [[ " ${HOST_LISTEN_ALLOW} " == *" ${entry} "* ]]; then
+      ok "nasłuch hosta: ${entry}"
+    else
+      unexpected+=("${entry}")
+    fi
+  done < <(
+    # Parsowanie w awk, nie łańcuchem grep/sed: `ss` pisze adresy w czterech różnych
+    # kształtach (`0.0.0.0:80`, `*:80`, `[::]:80`, `127.0.0.53%lo:53`), a sufiks `%iface`
+    # przy loopbacku rozbija naiwne dopasowanie po kropce — pierwsza wersja tego checku
+    # zgłaszała systemd-resolved jako dryf.
+    ss -lntuHn 2>/dev/null | awk '
+      {
+        proto = $1; addr = $5;
+        sub(/:[0-9]+$/, "", addr);          # odetnij port
+        port = $5; sub(/^.*:/, "", port);
+        sub(/%.*$/, "", addr);              # odetnij %iface
+        gsub(/[\[\]]/, "", addr);           # odetnij nawiasy IPv6
+        if (addr ~ /^127\./ || addr == "::1") next;   # loopback nie jest powierzchnią ataku
+        print port "/" proto;
+      }' | sort -u
+  )
+  for entry in "${unexpected[@]+"${unexpected[@]}"}"; do
+    drift "nieoczekiwany nasłuch na hoście: ${entry} — spoza kontraktu portów"
+  done
+}
+
 check_stack edge
 check_stack kag
 check_orphans
 check_host_ports
+check_host_listeners
 
 echo "----------------------------------------------"
 if [[ ${DRIFT} -eq 1 ]]; then

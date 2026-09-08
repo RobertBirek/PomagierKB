@@ -37,6 +37,15 @@ INTERNET ── 80/443(+udp) ──► [edge-caddy]
 | `kag-internal` | `internal: true` (stack kag) | kag-tika, kag-stirling, kag-panel | parsery treści bez internetu; panel jest w obu sieciach, bo woła i parsery, i OpenSPG |
 | `kag-egress` | bridge (stack kag) | TYLKO release-openspg-server | serwer OpenSPG musi wołać API LLM (wektoryzacja, ekstrakcja); reszta datastores zostaje odcięta |
 
+**Tunel WireGuard (od 2026-09-08).** Interfejs `wg0` (`10.90.0.0/24`) łączy hosta z siecią
+biurową za NAT-em i **rozszerza kontrakt portów o `51820/udp`** — jedyny wyjątek od reguły
+„porty hosta publikuje wyłącznie edge-caddy", bo to nasłuch procesu hosta, a nie kontenera.
+Tunel **nie ma trasy do żadnej sieci docker**: `deploy/scripts/wg_guard.sh`
+(`kag-wg-guard.service`) zakłada w `DOCKER-USER` reguły `DROP` w obie strony. Jest to
+konieczne, bo domyślna reguła `-i eth0 -j DROP` dopasowuje interfejs i ruchu z `wg0` nie
+dotyka, a łańcuch Dockera w `FORWARD` wyprzedza ufw. Szczegóły i testy negatywne:
+`docs/runbooks/wireguard.md`.
+
 **Twarde zasady:** ŻADNA usługa OpenSPG nie publikuje portu na host (nawet 127.0.0.1 — różnica vs optimaKB, który publikował 8887 i 9998). Jedyne porty hosta: 80/tcp, 443/tcp, 443/udp (Caddy, HTTP/3).
 
 **Diagnostyka — którą sieć wybrać:** do `release-openspg-*` używaj `kag_kag-datastores`

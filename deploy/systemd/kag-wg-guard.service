@@ -1,0 +1,29 @@
+# kag-wg-guard.service — izolacja tunelu WireGuard od sieci docker (w obie strony).
+#
+# Reguły DOCKER-USER nie przeżywają restartu Dockera ani reboota, a bez nich sieć za tunelem
+# ma bezpośredni dostęp do kag-datastores (OpenSPG :8887 bez auth, MySQL, Neo4j, MinIO).
+# Stąd PartOf=docker.service: przeładowanie Dockera pociąga za sobą przeładowanie guarda.
+# Jeśli repo leży gdzie indziej niż /kag — popraw WorkingDirectory i ExecStart.
+[Unit]
+Description=PomagierKB — izolacja tunelu WireGuard od sieci docker
+Documentation=file:/kag/docs/runbooks/wireguard.md
+After=docker.service wg-quick@wg0.service
+Requires=docker.service
+PartOf=docker.service
+OnFailure=kag-alert@%n.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=true
+User=root
+Group=root
+WorkingDirectory=/kag
+ExecStart=/kag/deploy/scripts/wg_guard.sh
+ExecStop=/kag/deploy/scripts/wg_guard.sh --remove
+TimeoutStartSec=2min
+
+# Bez bloku hardeningu — jak kag-egress-guard.service i z tego samego powodu: skrypt musi
+# widzieć sieć hosta, tablice iptables i socket dockera, więc Protect*/Private* by go zepsuły.
+
+[Install]
+WantedBy=multi-user.target
