@@ -259,3 +259,79 @@ describe('trasy /kbs/:ns/quality', () => {
     expect(report.checks.length).toBeGreaterThan(0);
   });
 });
+
+// ── parseCsv: parser na wycinkach vs referencyjny znak-po-znaku (OOM 2026-09-09) ────────────
+function parseCsvReference(text: string): string[][] {
+  const rows: string[][] = [];
+  let field = '';
+  let row: string[] = [];
+  let inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]!;
+    if (inQuotes) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') {
+          field += '"';
+          i++;
+        } else inQuotes = false;
+      } else field += ch;
+    } else if (ch === '"') inQuotes = true;
+    else if (ch === ',') {
+      row.push(field);
+      field = '';
+    } else if (ch === '\n' || ch === '\r') {
+      if (ch === '\r' && text[i + 1] === '\n') i++;
+      row.push(field);
+      rows.push(row);
+      field = '';
+      row = [];
+    } else field += ch;
+  }
+  if (field !== '' || row.length > 0) {
+    row.push(field);
+    rows.push(row);
+  }
+  return rows;
+}
+
+describe('parseCsv — zgodność z parserem referencyjnym i koszt pamięci', () => {
+  const cases = [
+    'a,b,c\n1,2,3\n',
+    'a,b\r\n"x, y","z\nw"\r\n',
+    '"po""dwójny",""\n',
+    'bez,nowej,linii',
+    'pusty,,koniec,\n',
+    '"tylko"\n\n"dwa"\n',
+    'a,"b"c,d\n',
+    '',
+    '\n',
+    ',\n',
+    '"otwarty,bez zamknięcia',
+  ];
+  it('daje identyczny wynik jak parser referencyjny na przypadkach brzegowych', () => {
+    for (const c of cases) expect(parseCsv(c), JSON.stringify(c)).toEqual(parseCsvReference(c));
+  });
+  it('fuzz: losowe kombinacje przecinków, cudzysłowów i CR/LF', () => {
+    const alphabet = ['a', 'ż', ',', '"', '\n', '\r', ' ', 'x'];
+    let seed = 42;
+    const rnd = (): number => {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+      return seed;
+    };
+    for (let k = 0; k < 300; k++) {
+      const len = rnd() % 40;
+      let s = '';
+      for (let i = 0; i < len; i++) s += alphabet[rnd() % alphabet.length];
+      expect(parseCsv(s), JSON.stringify(s)).toEqual(parseCsvReference(s));
+    }
+  });
+  it('plik 8 MB (pola z cudzysłowami i nowymi liniami) parsuje się w rozsądnym czasie', () => {
+    const row = 'CHUNK_X,"' + 'treść z przecinkiem, nową linią\ni ""cudzysłowem"" '.repeat(20) + '",ok\n';
+    const text = 'id,content,flag\n' + row.repeat(Math.ceil(8_000_000 / row.length));
+    const t0 = Date.now();
+    const rows = parseCsv(text);
+    expect(rows.length).toBe(Math.ceil(8_000_000 / row.length) + 1);
+    expect(rows[1]![1]).toContain('"cudzysłowem"');
+    expect(Date.now() - t0).toBeLessThan(5000);
+  });
+});

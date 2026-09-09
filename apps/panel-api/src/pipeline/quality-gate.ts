@@ -68,42 +68,96 @@ export interface QualityGateDeps {
 // ── parser CSV (RFC 4180: cudzysłowy, przecinki i NOWE LINIE w polach) ──────
 
 export function parseCsv(text: string): string[][] {
+  // Parser na WYCINKACH (slice), nie na `field += ch`: konkatenacja znak po znaku tworzy w V8
+  // cons-string na każdy znak i przy chunk.csv ~40 MB (14 600 chunków) zjadała >1 GB sterty
+  // (OOM builda SubiektKB, 2026-09-09). Semantyka RFC 4180 bez zmian: cudzysłowy, "" w polu,
+  // przecinki i nowe linie w polach, CRLF.
   const rows: string[][] = [];
-  let field = '';
   let row: string[] = [];
-  let inQuotes = false;
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i]!;
-    if (inQuotes) {
-      if (ch === '"') {
-        if (text[i + 1] === '"') {
-          field += '"';
-          i++;
-        } else {
-          inQuotes = false;
+  const n = text.length;
+  let i = 0;
+  let fieldStarted = false; // czy po ostatnim separatorze zaczęto jakiekolwiek pole (dla końcówki pliku)
+  while (i < n) {
+    let value: string;
+    if (text.charCodeAt(i) === 34) {
+      // pole w cudzysłowie: szukamy zamykającego " nie będącego częścią ""
+      let j = i + 1;
+      let hasEscaped = false;
+      for (;;) {
+        const q = text.indexOf('"', j);
+        if (q === -1) {
+          j = n;
+          break;
         }
-      } else {
-        field += ch;
+        if (text.charCodeAt(q + 1) === 34) {
+          hasEscaped = true;
+          j = q + 2;
+          continue;
+        }
+        j = q;
+        break;
       }
-    } else if (ch === '"') {
-      inQuotes = true;
-    } else if (ch === ',') {
-      row.push(field);
-      field = '';
-    } else if (ch === '\n' || ch === '\r') {
-      if (ch === '\r' && text[i + 1] === '\n') i++;
-      row.push(field);
-      rows.push(row);
-      field = '';
-      row = [];
+      const raw = text.slice(i + 1, j);
+      value = hasEscaped ? raw.replaceAll('""', '"') : raw;
+      i = j < n ? j + 1 : n; // za zamykającym cudzysłowem
     } else {
-      field += ch;
+      let j = i;
+      while (j < n) {
+        const c = text.charCodeAt(j);
+        if (c === 44 || c === 10 || c === 13) break;
+        j++;
+      }
+      value = text.slice(i, j);
+      i = j;
     }
-  }
-  if (field !== '' || row.length > 0) {
-    row.push(field);
+    row.push(value);
+    fieldStarted = true;
+    if (i >= n) break;
+    const c = text.charCodeAt(i);
+    if (c === 44) {
+      i++;
+      fieldStarted = false;
+      if (i >= n) {
+        row.push('');
+        fieldStarted = true;
+      }
+      continue;
+    }
+    if (c === 13 && text.charCodeAt(i + 1) === 10) i++;
+    if (c === 10 || c === 13) {
+      i++;
+      rows.push(row);
+      row = [];
+      fieldStarted = false;
+      continue;
+    }
+    // Śmieci po cudzysłowie zamykającym (niezgodne z RFC) — doklejamy do pola jak stary parser.
+    let j = i;
+    while (j < n) {
+      const cc = text.charCodeAt(j);
+      if (cc === 44 || cc === 10 || cc === 13) break;
+      j++;
+    }
+    row[row.length - 1] += text.slice(i, j);
+    i = j;
+    if (i >= n) break;
+    const c2 = text.charCodeAt(i);
+    if (c2 === 44) {
+      i++;
+      fieldStarted = false;
+      if (i >= n) {
+        row.push('');
+        fieldStarted = true;
+      }
+      continue;
+    }
+    if (c2 === 13 && text.charCodeAt(i + 1) === 10) i++;
+    i++;
     rows.push(row);
+    row = [];
+    fieldStarted = false;
   }
+  if (row.length > 0 || fieldStarted) rows.push(row);
   return rows;
 }
 
