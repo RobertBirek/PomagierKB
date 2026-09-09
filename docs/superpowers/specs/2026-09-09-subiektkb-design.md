@@ -37,6 +37,13 @@ Na prośbę użytkownika dodano publiczne FAQ producenta: 5 888 artykułów dla 
 program × kategoria (`prepare-epomoc.mjs`), typ dokumentu „FAQ e-Pomoc". Stan po buildzie: 743 dokumenty,
 22 661 chunków, quality gate OK; eval fts przechodzi (MRR 0,86).
 
+## Rozszerzenie 2026-09-10: forum.insert.com.pl
+
+Sekcje GT forum (9 sekcji, 8 635 wątków, 0 błędów pobierania) → 7 695 wątków z odpowiedzią (6 756 z odpowiedzią
+pracownika InsERT), 940 pominiętych (bez odpowiedzi/krótkie) → 226 dokumentów sekcja × rok, typ „forum
+użytkowników". Zapisywana rola autora, nie nazwisko; cytaty usuwane; wątek do 12 000 zn. Stan po buildzie:
+969 dokumentów, 34 972 chunki, quality gate OK (build 21 min); eval fts MRR 0,88.
+
 ## Weryfikacja
 
 `npm test` (w tym 40 testów narzędzi), lint, quality gate OK po każdym buildzie, goldens `SubiektKB.jsonl`,
