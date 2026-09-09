@@ -3,19 +3,64 @@
   "name": "InsERT GT — dokumentacja (Subiekt, Rewizor, Rachmistrz, Gratyfikant, Gestor, Sfera)",
   "description": "Pełna dokumentacja linii InsERT GT w wersji 1.89 HF1: podręczniki użytkownika i system pomocy (Subiekt GT, Rachmistrz GT, Rewizor GT, Gratyfikant GT, Gestor GT, Kasiarz GT, Biuro GT), dokumentacja programistyczna Sfery (model obiektowy COM), Własne COM/XML, EDI++, HomeBanking, HopWin, sterowniki urządzeń, lista zmian w wersjach oraz dokumentacja bazy danych (opisy tabel i kolumn z dokumentacji producenta scalone z katalogiem żywej bazy MSSQL, definicje widoków i procedur ze skryptów SQL).",
   "documentTypes": [
-    { "name": "podręcznik użytkownika", "description": "Podręczniki i system pomocy programów InsERT GT: obsługa modułów, okna, pola, procedury pracy." },
-    { "name": "dokumentacja Sfera/COM/XML/EDI", "description": "Dokumentacja programistyczna: model obiektowy Sfery, własne rozwiązania COM i XML, formaty wymiany EDI++, HomeBanking, HopWin." },
-    { "name": "opis tabeli bazy danych", "description": "Opis tabel, kolumn, kluczy i indeksów bazy danych InsERT GT (SQL Server) oraz różnice dokumentacja vs żywa baza." },
-    { "name": "skrypt SQL", "description": "Definicje widoków, funkcji, procedur i triggerów bazy InsERT GT." },
-    { "name": "przykład kodu", "description": "Przykładowe skrypty i projekty (VBScript, VB6, C++/COM, XML/XSL) korzystające ze Sfery i rozszerzeń." },
-    { "name": "zmiany w wersji", "description": "Listy zmian, nowości i informacje o wersjach programów InsERT GT." },
-    { "name": "instalacja i parametry", "description": "Instalacja, wymagania, parametry uruchomieniowe, praca z Microsoft SQL Server." },
-    { "name": "sterowniki i urządzenia", "description": "Drukarki i kasy fiskalne, czytniki, wagi, centrale telefoniczne, fiskalizacja." }
+    {
+      "name": "podręcznik użytkownika",
+      "description": "Podręczniki i system pomocy programów InsERT GT: obsługa modułów, okna, pola, procedury pracy."
+    },
+    {
+      "name": "dokumentacja Sfera/COM/XML/EDI",
+      "description": "Dokumentacja programistyczna: model obiektowy Sfery, własne rozwiązania COM i XML, formaty wymiany EDI++, HomeBanking, HopWin."
+    },
+    {
+      "name": "opis tabeli bazy danych",
+      "description": "Opis tabel, kolumn, kluczy i indeksów bazy danych InsERT GT (SQL Server) oraz różnice dokumentacja vs żywa baza."
+    },
+    {
+      "name": "skrypt SQL",
+      "description": "Definicje widoków, funkcji, procedur i triggerów bazy InsERT GT."
+    },
+    {
+      "name": "przykład kodu",
+      "description": "Przykładowe skrypty i projekty (VBScript, VB6, C++/COM, XML/XSL) korzystające ze Sfery i rozszerzeń."
+    },
+    {
+      "name": "zmiany w wersji",
+      "description": "Listy zmian, nowości i informacje o wersjach programów InsERT GT."
+    },
+    {
+      "name": "instalacja i parametry",
+      "description": "Instalacja, wymagania, parametry uruchomieniowe, praca z Microsoft SQL Server."
+    },
+    {
+      "name": "sterowniki i urządzenia",
+      "description": "Drukarki i kasy fiskalne, czytniki, wagi, centrale telefoniczne, fiskalizacja."
+    },
+    {
+      "name": "FAQ e-Pomoc",
+      "description": "Artykuły e-Pomocy technicznej InsERT (insert.com.pl): pytanie → procedura krok po kroku, z datą modyfikacji i kategorią."
+    }
   ],
   "routingKeywords": [
-    "subiekt", "rewizor", "rachmistrz", "gratyfikant", "gestor", "insert gt", "sfera", "biuro gt",
-    "edi++", "hopwin", "homebanking", "własne com", "własne xml", "wydruki tekstowe", "fiskalizacja",
-    "tw__towar", "dok__dokument", "kh__kontrahent", "kasiarz", "infosfera"
+    "subiekt",
+    "rewizor",
+    "rachmistrz",
+    "gratyfikant",
+    "gestor",
+    "insert gt",
+    "sfera",
+    "biuro gt",
+    "edi++",
+    "hopwin",
+    "homebanking",
+    "własne com",
+    "własne xml",
+    "wydruki tekstowe",
+    "fiskalizacja",
+    "tw__towar",
+    "dok__dokument",
+    "kh__kontrahent",
+    "kasiarz",
+    "infosfera"
   ],
   "piiPolicy": "flag"
 }

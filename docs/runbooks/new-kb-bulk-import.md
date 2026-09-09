@@ -83,6 +83,16 @@ kuracja plików tekstowych (`curateArchiveFile`), binaria/arkusze pominięte.
 `WITH ENCRYPTION`) → `.md` per moduł (prefiks tabeli), `99-roznice-dokumentacja-vs-baza.md`,
 `98-zmiany-bazy-danych.md`. Kolumny renderowane jako listy (chunker rozcina tabele markdown).
 
+Źródło WWW — e-Pomoc techniczna InsERT (~5 900 publicznych artykułów FAQ dla linii GT):
+
+```bash
+node tools/kb-import/fetch-epomoc.mjs --out $E/epomoc --programs 1,2,3,4,5,6,7,8 --delay-ms 700   # ~1,5 h, wznawialne
+node tools/kb-import/prepare-epomoc.mjs --in $E/epomoc --out $E/out/epomoc                          # grupy program × kategoria
+```
+
+Crawler chodzi po listach `?program=<id>&offset=<strona>` (27/strona), 1 żądanie na `--delay-ms`, z User-Agentem
+z kontaktem; `robots.txt` serwisu blokuje tylko wyszukiwarkę. Typ dokumentu `FAQ e-Pomoc` musi być w `documentTypes` KB.
+
 Sprawdź `out/*/manifest.json` (liczba plików, znaki, `skipped`). Orientacja: 1 000 znaków ≈ 0,6 chunka.
 
 ## 4. Upload → kontrola → promocja → build (partiami, 3-4 buildy łącznie)
