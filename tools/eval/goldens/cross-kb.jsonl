@@ -7,3 +7,6 @@
 {"question": "jak zrotować klucz MCP", "expectedIds": ["CHUNK_4AFE60C4C42D7CF7_005"], "namespaces": ["StagingSmoke", "PomagierOps"], "expectedNamespace": "PomagierOps", "kind": "routing"}
 {"question": "co zrobić gdy weryfikacja backupu fałszywie failuje", "expectedIds": ["CHUNK_DB8AF7220E600A69_005"], "namespaces": ["StagingSmoke", "PomagierOps"], "expectedNamespace": "PomagierOps", "kind": "routing"}
 {"question": "dlaczego OpenSPG jest zamrożony", "namespaces": ["StagingSmoke", "PomagierOps"], "expectedNamespace": "PomagierOps", "kind": "routing"}
+{"question": "jakie kolumny ma tabela tw__Towar w bazie Subiekta", "expectedIds": ["DOC_2E60F54EBB87A38F"], "namespaces": ["SubiektKB", "PomagierOps", "StagingSmoke"], "expectedNamespace": "SubiektKB", "kind": "routing"}
+{"question": "specyfikacja formatu EDI++ do importu dokumentów", "expectedIds": ["DOC_D8FD09B63DDE1181"], "namespaces": ["SubiektKB", "PomagierOps", "StagingSmoke"], "expectedNamespace": "SubiektKB", "kind": "routing"}
+{"question": "dlaczego obraz OpenSPG jest zamrożony i jak go aktualizować", "expectedIds": ["DOC_9B7DFDA6B1987C20"], "namespaces": ["SubiektKB", "PomagierOps"], "expectedNamespace": "PomagierOps", "kind": "routing"}

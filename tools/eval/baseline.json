@@ -144,5 +144,62 @@
       "mustContain": 1.0,
       "nearMissAccuracy": "brak (mierzone)"
     }
+  },
+  "remeasured": {
+    "measuredAt": "2026-09-09",
+    "$comment": "Po imporcie SubiektKB (371 dok., 14 603 chunków) — EVAL_CHANNELS=full na produkcji, 133 pytania z goldens (94 on-topic / 2 near-miss / 37 off-topic). Skrypt: tools/eval/gate-calibration.mjs.",
+    "corpus": {
+      "SubiektKB": {
+        "documents": 371,
+        "chunks": 14603
+      },
+      "PomagierOps": {
+        "documents": 6,
+        "chunks": 48
+      },
+      "StagingSmoke": {
+        "documents": 1,
+        "chunks": 2
+      }
+    },
+    "quality": {
+      "hit1": 0.854,
+      "hit5": 0.958,
+      "mrr": 0.905,
+      "namespaceAccuracy": 1.0,
+      "mustContainAccuracy": 0.97,
+      "negativeAccuracy": 0.811
+    },
+    "gateCalibration": {
+      "onTopic": {
+        "n": 94,
+        "min": 0.619,
+        "p10": 0.709,
+        "p50": 0.818,
+        "p90": 0.878,
+        "max": 0.922
+      },
+      "nearMiss": {
+        "n": 2,
+        "min": 0.711,
+        "max": 0.74
+      },
+      "offTopic": {
+        "n": 37,
+        "min": 0.513,
+        "p10": 0.585,
+        "p50": 0.652,
+        "p90": 0.733,
+        "max": 0.844
+      },
+      "confusion": {
+        "0.68": "4/94 fałszywych odmów | 8/37 fałszywych odpowiedzi",
+        "0.70": "8/94 | 7/37",
+        "0.72": "12/94 | 5/37",
+        "0.74": "17/94 | 3/37",
+        "0.76": "22/94 | 2/37"
+      },
+      "decision": "próg 0.70 ZOSTAJE: przy 14 600 chunkach maksimum kosinusa pytań spoza bazy rośnie (0.844 dla „hasło do bazy MSSQL” w KB dokumentującej bazę MSSQL), a każde podniesienie progu kosztuje 4-9 pkt proc. realnych pytań (krótkie hasła StagingSmoke 0.62-0.69). Fałszywe odmowy przy 0.70 to wyłącznie 1-2-wyrazowe zapytania StagingSmoke; obrona przed fałszywymi odpowiedziami zostaje w warstwie cytowań/noAnswer (gate.ts). negativeAccuracy 0.81 w trybie full jest znanym stanem, nie regresją bramki CI (tryb fts: 1.0)."
+    }
   }
 }

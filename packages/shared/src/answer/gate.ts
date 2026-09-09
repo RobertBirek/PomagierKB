@@ -40,6 +40,13 @@
  * `results[0].vectorScore`, czyli wynik wektorowy tego, co wygrało fuzję RRF; te dwie
  * wielkości potrafią różnić się o 0.1. Mierząc próg, czytaj to samo pole co produkcja.
  *
+ * POMIAR 2026-09-09 (korpus 14 650 chunków po imporcie SubiektKB; 94 on-topic / 37 off-topic,
+ * tools/eval/gate-calibration.mjs): on-topic p10 0.709 p50 0.818; off-topic p50 0.652 p90 0.733
+ * max 0.844. Macierz: 0.70 → 8/94 odmów (same 1-2-wyrazowe hasła StagingSmoke) | 7/37 fałszywych
+ * odpowiedzi; 0.74 → 17/94 | 3/37. Próg 0.70 ZOSTAJE — duży korpus podnosi maksimum kosinusa pytań
+ * spoza bazy (semantycznie „blisko" jest teraz prawie wszystko), a wyższy próg płaci realnymi
+ * pytaniami. Szczegóły: tools/eval/baseline.json → remeasured.
+ *
  * Po każdym istotnym wzroście korpusu POWTÓRZYĆ pomiar — patrz tools/eval/baseline.json.
  *
  * Gdy sygnału semantycznego nie ma (tryb zdegradowany: sam FTS5, brak embeddingów),
