@@ -77,9 +77,24 @@ export function looksHumanText(text: string): boolean {
   return letters >= 3 && printableRatio(text) >= QUALITY_MIN_PRINTABLE_RATIO;
 }
 
-/** Próg jakości kaskady: length ≥120 && looksHumanText. */
+/**
+ * Artefakty konwersji, które NIE są treścią: znaczniki Stirlinga `<image redacted: …>` dla obrazów
+ * oraz samotne `!` (resztki składni obrazka markdown). Skan bez warstwy tekstu dawał po convert
+ * wyłącznie takie znaczniki, a printableRatio liczył je jako tekst (jakość 1.0) — kaskada nigdy
+ * nie schodziła do OCR (czerwony_PLUS.pdf, SubiektKB 2026-09-09).
+ */
+export function stripExtractionArtifacts(text: string): string {
+  return text
+    .replace(/<image redacted:[^>]*>/gi, '')
+    .replace(/^\s*!\s*$/gm, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+/** Próg jakości kaskady: length ≥120 && looksHumanText — mierzony BEZ artefaktów konwersji. */
 export function passesQualityThreshold(text: string): boolean {
-  return text.length >= QUALITY_MIN_LENGTH && looksHumanText(text);
+  const clean = stripExtractionArtifacts(text);
+  return clean.length >= QUALITY_MIN_LENGTH && looksHumanText(clean);
 }
 
 /** Strip XHTML z odpowiedzi Tiki: usuwa script/style, tagi, dekoduje encje. */
@@ -261,7 +276,8 @@ export async function extractContent(input: ExtractInput, deps: ExtractDeps): Pr
     // 1) Stirling convert — PDF z warstwą tekstu.
     const converted = await stirlingConvert(deps, buffer, filename);
     if (converted !== null && passesQualityThreshold(converted)) {
-      return { text: converted.trim(), provider: 'stirling', quality: printableRatio(converted) };
+      const text = stripExtractionArtifacts(converted);
+      return { text, provider: 'stirling', quality: printableRatio(text) };
     }
 
     // 2) Skan bez warstwy tekstu → OCR pol → ponowny convert.
@@ -269,11 +285,8 @@ export async function extractContent(input: ExtractInput, deps: ExtractDeps): Pr
     if (ocred !== null) {
       const reconverted = await stirlingConvert(deps, ocred, filename);
       if (reconverted !== null && passesQualityThreshold(reconverted)) {
-        return {
-          text: reconverted.trim(),
-          provider: 'stirling_ocr',
-          quality: printableRatio(reconverted),
-        };
+        const text = stripExtractionArtifacts(reconverted);
+        return { text, provider: 'stirling_ocr', quality: printableRatio(text) };
       }
     }
 

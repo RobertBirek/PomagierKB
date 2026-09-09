@@ -4,11 +4,14 @@
   "private": true,
   "type": "module",
   "description": "Host-side bulk import for a KB: fetch a public Google Drive folder, convert PDF/CHM/ZIP/DDL to Markdown fragments, upload them through the panel API, promote drafts.",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "dependencies": {
     "adm-zip": "^0.5.16",
     "cheerio": "^1.0.0",
     "iconv-lite": "^0.6.3",
+    "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^4.10.38",
     "turndown": "^7.2.0",
     "turndown-plugin-gfm": "^1.0.2"
