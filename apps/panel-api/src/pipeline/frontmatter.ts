@@ -37,9 +37,20 @@ const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 /** Limit pojedynczej wartości metadanej — front-matter bywa wklejany maszynowo. */
 const VALUE_MAX = 200;
 
+const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/;
+
+/**
+ * Zdejmuje blok front-mattera z początku treści (zwraca resztę). Wywoływane PRZED czyszczeniem,
+ * bo reguła BASE_DROP `^[-–—•.\s]*$` kasuje linie `---` i front-matter zostawał w treści jako
+ * gołe „owner: …" bez metadanych (parser widział już tekst bez ograniczników).
+ */
+export function stripFrontmatter(content: string): string {
+  return FRONTMATTER_RE.test(content) ? content.replace(FRONTMATTER_RE, '') : content;
+}
+
 /** Płaskie pary klucz→wartość z pierwszego bloku `---`…`---` (klucze lowercase). */
 function frontmatterFields(content: string): Map<string, string> | null {
-  const m = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(content);
+  const m = FRONTMATTER_RE.exec(content);
   if (!m) return null;
   const fields = new Map<string, string>();
   for (const line of m[1]!.split(/\r?\n/)) {

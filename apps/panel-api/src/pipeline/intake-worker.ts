@@ -28,7 +28,7 @@ import { extractContent, ExtractError } from './extract.js';
 import { detectPii, summarize } from '@pomagierkb/shared/pii';
 import { aiCleanPass, cleanContent } from './clean.js';
 import { pickProfile } from './cleanProfiles.js';
-import { parseSourceFrontmatter } from './frontmatter.js';
+import { parseSourceFrontmatter, stripFrontmatter } from './frontmatter.js';
 import { analyzeContent } from './analyze.js';
 
 /**
@@ -197,7 +197,11 @@ export async function processIntake(
         ? llmFromSettings(db, config, 'llm.openie')
         : null;
   const profile = pickProfile({ mime: row.mime, sourceUrl: row.source_url });
-  const regexCleaned = cleanContent(extracted.text, profile);
+  // GAP-03: metadane źródła (właściciel/licencja/data) czytane PRZED czyszczeniem — cleaner kasuje
+  // ograniczniki `---`, więc po nim front-matter jest nie do odczytania, a jego linie zostawały w treści.
+  const sourceMeta = parseSourceFrontmatter(extracted.text);
+  const bodyText = stripFrontmatter(extracted.text);
+  const regexCleaned = cleanContent(bodyText, profile);
 
   // D7-06: limit długości egzekwowany TU — przed przebiegiem LLM i przed analyze.
   // Dotąd sprawdzał go dopiero createDraft, więc dokument 40+ stron przechodził
@@ -220,7 +224,7 @@ export async function processIntake(
   const piiReport = summarize(detectPii(regexCleaned.text));
   const piiPolicy = strictestPiiPolicy(listKbs(db).filter((r) => r.status === 'active').map(kbPiiPolicy));
 
-  const cleaned = await aiCleanPass(extracted.text, regexCleaned, {
+  const cleaned = await aiCleanPass(bodyText, regexCleaned, {
     llm: aiClean ? openieLlm : null,
     piiPolicy,
   });
@@ -269,8 +273,6 @@ export async function processIntake(
       `intake ${row.id} zmienił stan w trakcie przetwarzania (${currentStatus ?? 'brak'}) — szkic nie został utworzony`,
     );
   }
-  // GAP-03: metadane źródła (właściciel/licencja/data dokumentu) z front-mattera.
-  const sourceMeta = parseSourceFrontmatter(cleaned.text);
   const draft = createDraft(db, {
     title: analysis.title,
     content: cleaned.text,
