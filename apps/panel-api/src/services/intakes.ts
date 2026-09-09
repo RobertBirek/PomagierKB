@@ -49,6 +49,7 @@ export const ALLOWED_EXTENSIONS = [
   'pdf',
   'html',
   'docx',
+  'doc', // starsze Word (InsERT: HOMEBANKING.doc, GTA_dla_poczatkujacych.doc) — Tika czyta OLE2
   'xlsx',
   'pptx',
   'csv',
@@ -63,6 +64,7 @@ const EXT_TO_MIME: Record<(typeof ALLOWED_EXTENSIONS)[number], string> = {
   pdf: 'application/pdf',
   html: 'text/html',
   docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  doc: 'application/msword',
   xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
   csv: 'text/csv',

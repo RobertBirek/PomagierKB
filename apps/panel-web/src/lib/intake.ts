@@ -13,6 +13,7 @@ export const UPLOAD_EXTENSIONS = [
   'pdf',
   'html',
   'docx',
+  'doc',
   'xlsx',
   'pptx',
   'csv',

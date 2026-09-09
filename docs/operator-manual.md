@@ -8,7 +8,7 @@ Codzienna pętla pracy z bazą wiedzy — dla operatora/kuratora treści.
 Trzy drogi, wszystkie kończą się SZKICEM w Inboxie (nic nie trafia do bazy bez recenzji):
 
 - **Tekst** — wklej treść (+opcjonalny tytuł i URL źródła jako metadana);
-- **Plik** — PDF/DOCX/MD/TXT… ≤50 MB; skany przechodzą OCR (pol); kolejka
+- **Plik** — PDF/DOCX/DOC/MD/TXT… ≤50 MB; skany przechodzą OCR (pol); kolejka
   przetwarza małe pliki przed dużymi, nieudane można **Ponowić** (max 3 próby);
 - **Adres URL** — publiczny http(s); system pobiera treść sam (limit 10 MB,
   tylko HTML/tekst/Markdown/PDF/JSON; adresy sieci wewnętrznych są odrzucane).
