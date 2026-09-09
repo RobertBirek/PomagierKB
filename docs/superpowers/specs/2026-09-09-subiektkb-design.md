@@ -30,6 +30,13 @@ Pominięte świadomie: `GTA.chm` w korzeniu (starsza kopia), `Pomoc.zip` i rozpa
 `czerwony_PLUS.pdf` (skan) wszedł przez OCR pipeline'u (`upload-file.mjs`) po trzech poprawkach ekstrakcji;
 26 stron ze zrzutami ekranu z `Zmiany_w_InsERT_GT.pdf` odrzucone (OCR daje same nagłówki).
 
+## Rozszerzenie 2026-09-09 (wieczór): e-Pomoc techniczna InsERT
+
+Na prośbę użytkownika dodano publiczne FAQ producenta: 5 888 artykułów dla linii GT (crawler
+`tools/kb-import/fetch-epomoc.mjs`, 1 żądanie/0,7 s, User-Agent z kontaktem), pogrupowane w 369 dokumentów
+program × kategoria (`prepare-epomoc.mjs`), typ dokumentu „FAQ e-Pomoc". Stan po buildzie: 743 dokumenty,
+22 661 chunków, quality gate OK; eval fts przechodzi (MRR 0,86).
+
 ## Weryfikacja
 
 `npm test` (w tym 40 testów narzędzi), lint, quality gate OK po każdym buildzie, goldens `SubiektKB.jsonl`,
