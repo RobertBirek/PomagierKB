@@ -115,7 +115,10 @@ Odrzucone po kontroli: `--exclude plik-z-draftId`. Build to pełny eksport promo
 | Objaw | Przyczyna | Co robić |
 |---|---|---|
 | `Login failed for user` mimo otwartego portu | inna interpretacja poświadczeń (login SQL vs nazwa bazy) | `list-dbs.mjs` z `MSSQL_ENV_FILE`; nigdy nie zgaduj haseł w argv |
-| linie `owner:`/`license:` w treści szkicu | front-matter był czytany PO cleanerze, który kasuje `---` (naprawione: `intake-worker.ts` czyta i zdejmuje blok PRZED czyszczeniem) | do wdrożenia poprawki `prepare*.mjs` nie dodaje front-mattera — proweniencja zdaniem we wstępie |
+| linie `owner:`/`license:` w treści szkicu | front-matter był czytany PO cleanerze, który kasuje `---` | naprawione i wdrożone 2026-09-09 (`intake-worker.ts` czyta i zdejmuje blok PRZED czyszczeniem); `prepare*.mjs` i tak podaje proweniencję zdaniem we wstępie |
+| build pada „heap out of memory" w fazie quality | (a) sterta potomka ~256 MB przy `PANEL_MEM_LIMIT` 512m; (b) `parseCsv` sklejał pola znak po znaku (cons-stringi) | `JOB_NODE_MAX_OLD_SPACE_MB=1024`, `PANEL_MEM_LIMIT=1536m`, parser na wycinkach (wdrożone 2026-09-09) |
+| quality gate FAIL `no_literal_newlines` na widokach SQL | samotny CR w definicjach ze skryptów producenta | `graphText` spłaszcza też CR (wdrożone); `stripScriptWrapper` normalizuje CR |
+| `EVAL_CHANNELS=full`: negativeAccuracy < 0.9 | duży korpus podnosi maksimum kosinusa pytań spoza bazy; próg 0.70 celowo bez zmian | pomiar `tools/eval/gate-calibration.mjs`, wynik w `baseline.json → remeasured`; bramka CI to tryb fts |
 | ponowny upload zwraca stary (odrzucony) szkic | `Idempotency-Key` z samego `sourceUrl` | klucz = sha256 treści (naprawione w `upload.mjs`) |
 | 6 000 plików w folderze Drive | rozpakowane kopie CHM w podfolderach | `--exclude` + `.chm` z `Pomoc/` |
 | `.hhc` z „krzakami" | encje HTML nazywają kody Latin-1, które są bajtami cp1250 | `decodeCp1250WithEntities` (encje → bajty → cp1250) |
