@@ -34,7 +34,7 @@ try {
         /* global atob, FormData, Blob */
         const bin = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
         const fd = new FormData();
-        fd.append('file', new Blob([bin], { type: 'application/pdf' }), name);
+        fd.append('file', new Blob([bin], { type: name.toLowerCase().endsWith('.doc') ? 'application/msword' : 'application/pdf' }), name);
         const r = await fetch('/api/v1/content', { method: 'POST', credentials: 'include', body: fd });
         const text = await r.text();
         try {
