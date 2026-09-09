@@ -8,7 +8,7 @@ export default tseslint.config(
   {
     // Skrypty node (.mjs) — globals node i dopuszczalny console.log (narzędzia CLI)
     files: ['tools/**/*.mjs', 'deploy/**/*.mjs'],
-    languageOptions: { globals: { process: 'readonly', console: 'readonly', fetch: 'readonly', localStorage: 'readonly', document: 'readonly', window: 'readonly' } },
+    languageOptions: { globals: { process: 'readonly', console: 'readonly', fetch: 'readonly', localStorage: 'readonly', document: 'readonly', window: 'readonly', Buffer: 'readonly', setTimeout: 'readonly', clearTimeout: 'readonly', URL: 'readonly' } },
     rules: { 'no-console': 'off' },
   },
   {

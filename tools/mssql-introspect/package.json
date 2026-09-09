@@ -1,0 +1,11 @@
+{
+  "name": "@pomagierkb/tools-mssql-introspect",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Read-only catalog introspection of a Microsoft SQL Server reachable from the VPS host (WireGuard). Emits Markdown for the KB pipeline.",
+  "engines": { "node": ">=22" },
+  "dependencies": {
+    "mssql": "^11.0.1"
+  }
+}
