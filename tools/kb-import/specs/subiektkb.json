@@ -38,6 +38,10 @@
     {
       "name": "FAQ e-Pomoc",
       "description": "Artykuły e-Pomocy technicznej InsERT (insert.com.pl): pytanie → procedura krok po kroku, z datą modyfikacji i kategorią."
+    },
+    {
+      "name": "forum użytkowników",
+      "description": "Wątki forum.insert.com.pl: pytania użytkowników i odpowiedzi (w tym pracowników InsERT); treść społeczności, nie oficjalna dokumentacja."
     }
   ],
   "routingKeywords": [

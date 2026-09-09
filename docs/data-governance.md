@@ -58,6 +58,13 @@ systemowy** (`sys.*`, `INFORMATION_SCHEMA`); zapytania są stałymi w `src/queri
 wierszy tabel modułów kadrowo-płacowych są pomijane (`ROWCOUNT_SKIP_PREFIX`). Poświadczenie
 żyje w `/etc/kag/mssql-optima.env` (0600 root, poza repo); nazwa użytkownika i hasło nie trafiają
 do logów ani do treści dokumentów (`sourceUrl` wskazuje folder dokumentacji producenta).
+**Źródła WWW (SubiektKB, 2026-09-09):** e-Pomoc techniczna InsERT (oficjalne FAQ, publiczne) oraz
+forum.insert.com.pl (publiczne wątki). Z forum importowana jest treść postów i ROLA autora
+(InsERT / użytkownik) — nazwiska i profile są pomijane w `fetch-forum.mjs`; cytaty usuwane. Treść
+postów może zawierać dane wpisane przez użytkowników (np. NIP w pytaniu) — obowiązuje polityka PII
+bazy (`flag`) na wyjściu do LLM, a usunięcie na żądanie idzie ścieżką §3.1 (dokument = grupa
+sekcja × rok, re-import po wykluczeniu wątku).
+
 Retencja: jak dokumentacja produktowa (§2). Nie uruchamia progu DPIA z §5, dopóki zakres =
 metadane; rozszerzenie o zawartość tabel (nawet słownikowych) wymaga wpisu tutaj i decyzji
 właściciela bazy.

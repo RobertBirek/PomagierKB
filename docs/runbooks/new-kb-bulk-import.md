@@ -93,6 +93,16 @@ node tools/kb-import/prepare-epomoc.mjs --in $E/epomoc --out $E/out/epomoc      
 Crawler chodzi po listach `?program=<id>&offset=<strona>` (27/strona), 1 żądanie na `--delay-ms`, z User-Agentem
 z kontaktem; `robots.txt` serwisu blokuje tylko wyszukiwarkę. Typ dokumentu `FAQ e-Pomoc` musi być w `documentTypes` KB.
 
+Źródło WWW — forum.insert.com.pl (sekcje GT, ~8 600 wątków; treść społeczności):
+
+```bash
+node tools/kb-import/fetch-forum.mjs --out $E/forum --delay-ms 600 --max-topic-pages 4   # kilka godzin, wznawialne
+node tools/kb-import/prepare-forum.mjs --in $E/forum --out $E/out/forum                  # grupy sekcja × rok
+```
+
+Zapisywana jest rola autora (InsERT / użytkownik), nie nazwisko; cytaty usuwane; wątki bez odpowiedzi pomijane;
+limity długości wątku w nagłówku `prepare-forum.mjs`. Typ dokumentu `forum użytkowników`.
+
 Sprawdź `out/*/manifest.json` (liczba plików, znaki, `skipped`). Orientacja: 1 000 znaków ≈ 0,6 chunka.
 
 ## 4. Upload → kontrola → promocja → build (partiami, 3-4 buildy łącznie)
