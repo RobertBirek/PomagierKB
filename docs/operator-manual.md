@@ -14,7 +14,8 @@ Trzy drogi, wszystkie kończą się SZKICEM w Inboxie (nic nie trafia do bazy be
   tylko HTML/tekst/Markdown/PDF/JSON; adresy sieci wewnętrznych są odrzucane).
 
 Bazę docelową dobiera analiza treści (słowa kluczowe routingu z konfiguracji KB);
-w recenzji można ją zmienić.
+w recenzji można ją zmienić. **Import setek dokumentów** (folder Drive, CHM, ZIP, żywa baza
+SQL) idzie narzędziami hostowymi — `docs/runbooks/new-kb-bulk-import.md`.
 
 ## 2. Recenzja Inboxu (/inbox)
 

@@ -49,6 +49,18 @@ panel-api i mcp-server), **pliki na dysku** (`/srv/kag-data/kag/panel/*`), **Ope
 | encje i właściwości grafu (**w tym pełne treści chunków i wektory**) | Neo4j/DozerDB (projekt per baza) |
 | metadane projektów, jobów, harmonogramu | MariaDB OpenSPG |
 | logi akcji pipeline'u (mogą zawierać fragmenty treści) | pliki `actions/<rok>/<mies>/<actionId>.log` |
+| **metadane katalogu zewnętrznej bazy MSSQL** (SubiektKB, od 2026-09-09): nazwy tabel/kolumn, typy, klucze, indeksy, liczności z `sys.partitions`, sygnatury procedur — **bez danych wierszowych** | pliki robocze `/srv/kag-data/import/<kb>/` (host), potem jak każdy dokument: `drafts`, `chunks_mirror`, Neo4j |
+
+**Źródło zewnętrzne — żywa baza MSSQL (SubiektKB).** Narzędzie `tools/mssql-introspect/`
+czyta z hosta VPS (przez WireGuard; kontenery nie mają drogi — `wg_guard.sh`) **wyłącznie katalog
+systemowy** (`sys.*`, `INFORMATION_SCHEMA`); zapytania są stałymi w `src/queries.mjs`, a test
+`test/queries-readonly.test.mjs` odrzuca każde DML/DDL i każde odwołanie poza `sys`. Liczności
+wierszy tabel modułów kadrowo-płacowych są pomijane (`ROWCOUNT_SKIP_PREFIX`). Poświadczenie
+żyje w `/etc/kag/mssql-optima.env` (0600 root, poza repo); nazwa użytkownika i hasło nie trafiają
+do logów ani do treści dokumentów (`sourceUrl` wskazuje folder dokumentacji producenta).
+Retencja: jak dokumentacja produktowa (§2). Nie uruchamia progu DPIA z §5, dopóki zakres =
+metadane; rozszerzenie o zawartość tabel (nawet słownikowych) wymaga wpisu tutaj i decyzji
+właściciela bazy.
 
 ### 1.3 Przepływ do dostawcy LLM (poza EOG)
 

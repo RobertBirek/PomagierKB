@@ -39,6 +39,8 @@ deploy/scripts/smoke.sh   # smoke test po deployu
 npm run eval              # hit@k/MRR retrievalu; domyślnie KATALOG tools/eval/goldens/<Ns>.jsonl (DATA_DIR wskazuje bazę)
 node tools/ux-audit/e2e.mjs         # E2E klikalne na produkcji (10 checków, login akadmin)
 node tools/ux-audit/screenshot.mjs  # zrzuty produkcji (--pages /kb,... --out katalog)
+node tools/kb-import/{fetch-drive,prepare,prepare-db,create-kb,upload,promote,build}.mjs   # import masowy KB z hosta (runbook docs/runbooks/new-kb-bulk-import.md)
+node tools/mssql-introspect/{list-dbs,dump-schema}.mjs   # katalog żywej bazy MSSQL z hosta (tylko sys.*; /etc/kag/mssql-optima.env)
 ```
 
 **UWAGA:** workspace'y (`apps/*`, `packages/shared`) mają wyłącznie skrypty
@@ -60,6 +62,9 @@ node tools/ux-audit/screenshot.mjs  # zrzuty produkcji (--pages /kb,... --out ka
   (mobile-first), add, inbox(+luki), kb, mcp, settings. Design system v2 (Linear-like):
   tokeny Tailwind v4 w src/styles/app.css, kit komponentów w src/ui/, shell (sidebar/
   topbar/⌘K) w components/shell/ — nowe UI buduj Z KITU, nie gołym HTML/CSS ani .btn.
+- **tools/kb-import, tools/mssql-introspect** — narzędzia HOSTOWE (własne package.json, testy w
+  tools/*/test przez root vitest): konwersja Drive/PDF/CHM/ZIP/DDL → Markdown, upload przez API,
+  promocja, build; katalog MSSQL przez WireGuard (kontenery są celowo odcięte — wg_guard).
 - **packages/shared** — db (better-sqlite3 WAL, migracje SQL), audit (hash-chain), crypto,
   openspg (client [z auto-loginem] / projects / models / schemas / search / builder / query),
   llm (openai-compatible), answer (retrieval, verify), schemas, errors.

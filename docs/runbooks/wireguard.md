@@ -141,6 +141,32 @@ docker exec release-openspg-server curl -s -m 4 -o /dev/null -w '%{http_code}' h
 # oczekiwane: 000 i exit 28 (timeout). 308 oznacza, że guard nie zna adresu tunelu.
 ```
 
+## Podsieć MSSQL (10.10.254.0/24) — drugi skok przez peera biurowego
+
+Od 2026-09-09 VPS dociera do SQL Servera `10.10.254.87:49604` (instancja `OPTIMA`) przez peera
+`pomagier` (10.90.0.3), który ma własny tunel do `PX-ROBIR` i robi NAT. Po stronie VPS-a potrzebne
+są DWIE rzeczy i obie muszą być w plikach, nie tylko w runtime:
+
+1. `AllowedIPs` peera w `/etc/wireguard/wg0.conf` zawiera `10.10.254.0/24` — inaczej restart
+   `wg-quick@wg0` gubi cryptokey routing (identyczny mechanizm jak incydent 2026-09-08). Sam
+   `wg set … allowed-ips` NIE wystarcza. Po zmianie pliku: `systemctl restart kag-wg-guard
+   kag-egress-guard` (guard bierze sumę pliku i runtime'u, ale plik ma przetrwać restart).
+2. Trasa: `wg-quick` dodaje ją z `AllowedIPs` sam; `wg-optima-route.service` (ręcznie dodany
+   `ip route add 10.10.254.0/24 dev wg0`) staje się wtedy zbędny i może zostać jako pas bezpieczeństwa.
+
+Kontrola (z hosta, NIE z kontenera):
+
+```bash
+grep AllowedIPs /etc/wireguard/wg0.conf | grep -c 10.10.254.0/24      # 1
+ip route get 10.10.254.87 | grep -c 'dev wg0'                          # 1
+timeout 5 bash -c 'echo > /dev/tcp/10.10.254.87/49604' && echo OPEN    # port DYNAMICZNY — może się zmienić po restarcie SQL
+iptables -S DOCKER-USER | grep kag-wg-guard | grep -c 10.10.254.0/24   # > 0 (kontenery odcięte)
+docker exec release-openspg-server curl -m 4 -o /dev/null http://10.10.254.87:49604/ ; echo $?   # 28 = timeout, tak ma być
+```
+
+Jedynym konsumentem tej trasy jest `tools/mssql-introspect` (host, tylko `sys.*`), poświadczenie
+w `/etc/kag/mssql-optima.env`. Żaden kontener nie ma i nie ma mieć drogi do tej podsieci.
+
 ## Rotacja kluczy
 
 ```bash
