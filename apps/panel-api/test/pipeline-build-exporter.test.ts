@@ -220,3 +220,11 @@ describe('pomocniki eksportu', () => {
     expect(roundtrip[1]).toEqual(['x,"\ny', 'z']);
   });
 });
+
+describe('graphText — samotny CR (bez LF) też jest nową linią', () => {
+  it('CR, LF i CRLF spłaszczają się do jednej spacji, bez pozostawiania \\r', () => {
+    expect(graphText('SELECT a\r,b\r\nFROM t\nWHERE 1')).toBe('SELECT a ,b FROM t WHERE 1');
+    expect(/[\r\n]/.test(graphText('x\r y\r'))).toBe(false);
+  });
+});
+

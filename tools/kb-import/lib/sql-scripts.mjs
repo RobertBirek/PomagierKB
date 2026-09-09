@@ -7,7 +7,7 @@ import { join } from 'node:path';
 
 /** Usuwa opakowanie SET QUOTED_IDENTIFIER/ANSI_NULLS + GO i zostawia właściwą definicję. */
 export function stripScriptWrapper(sql) {
-  const lines = sql.replace(/\r\n/g, '\n').split('\n');
+  const lines = sql.replace(/\r\n?/g, '\n').split('\n');
   const out = [];
   for (const line of lines) {
     const t = line.trim();

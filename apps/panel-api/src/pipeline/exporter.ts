@@ -169,7 +169,9 @@ export function topicIdFor(tag: string): string {
  * Kanoniczna, pełna treść (z podziałem na linie) zostaje w mirrorze FTS.
  */
 export function graphText(value: string): string {
-  return value.replace(/\s*\r?\n\s*/g, ' ').replace(/[ \t]{2,}/g, ' ').trim();
+  // Także samotny CR (stare skrypty SQL, pliki z Maca) — check no_literal_newlines łapie `[\r\n]`,
+  // a poprzedni wzorzec `\r?\n` zostawiał CR bez LF (build SubiektKB 2026-09-09: widoki SQL).
+  return value.replace(/\s*(?:\r\n|\r|\n)\s*/g, ' ').replace(/[ \t]{2,}/g, ' ').trim();
 }
 
 /** Escape pola CSV wg RFC 4180 (cudzysłowy podwajane; cytowanie gdy separator/quote/nowa linia). */
