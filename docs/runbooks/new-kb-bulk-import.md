@@ -74,7 +74,8 @@ node tools/kb-import/prepare-db.mjs --live $E/out/schema-live/catalog.json \
 `prepare.mjs` klasyfikuje pliki regułami w `lib/sources.mjs` (tytuł, kategoria, produkt, słowa
 kluczowe, streszczenie); plik bez reguły jest raportowany jako pominięty — dopisz regułę. CHM:
 rozdziały spisu treści (`.hhc`) + strony spoza spisu (≥300 zn.) jako „pozostałe strony". PDF:
-pdfjs (tekstowe), podział po nagłówkach; skany są zgłaszane jako wymagające OCR. ZIP z przykładami:
+pdfjs (tekstowe), podział po nagłówkach; skany są raportowane w `skipped` — wyślij je
+`node tools/kb-import/upload-file.mjs --file <pdf> --state out/scans/state.json` (OCR robi pipeline). ZIP z przykładami:
 kuracja plików tekstowych (`curateArchiveFile`), binaria/arkusze pominięte.
 
 `prepare-db.mjs` scala: żywy katalog (typy, klucze, indeksy, liczności) + opisy tabel/kolumn z
@@ -118,6 +119,7 @@ Odrzucone po kontroli: `--exclude plik-z-draftId`. Build to pełny eksport promo
 | linie `owner:`/`license:` w treści szkicu | front-matter był czytany PO cleanerze, który kasuje `---` | naprawione i wdrożone 2026-09-09 (`intake-worker.ts` czyta i zdejmuje blok PRZED czyszczeniem); `prepare*.mjs` i tak podaje proweniencję zdaniem we wstępie |
 | build pada „heap out of memory" w fazie quality | (a) sterta potomka ~256 MB przy `PANEL_MEM_LIMIT` 512m; (b) `parseCsv` sklejał pola znak po znaku (cons-stringi) | `JOB_NODE_MAX_OLD_SPACE_MB=1024`, `PANEL_MEM_LIMIT=1536m`, parser na wycinkach (wdrożone 2026-09-09) |
 | quality gate FAIL `no_literal_newlines` na widokach SQL | samotny CR w definicjach ze skryptów producenta | `graphText` spłaszcza też CR (wdrożone); `stripScriptWrapper` normalizuje CR |
+| skan PDF: szkic z samych `<image redacted>` albo `extraction_below_quality_threshold` | (a) znaczniki obrazów liczyły się jako tekst → OCR nie startował; (b) ocrmypdf odmawia przy szczątkowej warstwie tekstu; (c) OCR trwał dłużej niż 30 s | wdrożone 2026-09-09: próg mierzony bez znaczników, `ocrType=force-ocr`, osobny timeout OCR 5 min. Skany wysyłaj `upload-file.mjs` (multipart), nie przez `prepare.mjs` |
 | `EVAL_CHANNELS=full`: negativeAccuracy < 0.9 | duży korpus podnosi maksimum kosinusa pytań spoza bazy; próg 0.70 celowo bez zmian | pomiar `tools/eval/gate-calibration.mjs`, wynik w `baseline.json → remeasured`; bramka CI to tryb fts |
 | ponowny upload zwraca stary (odrzucony) szkic | `Idempotency-Key` z samego `sourceUrl` | klucz = sha256 treści (naprawione w `upload.mjs`) |
 | 6 000 plików w folderze Drive | rozpakowane kopie CHM w podfolderach | `--exclude` + `.chm` z `Pomoc/` |

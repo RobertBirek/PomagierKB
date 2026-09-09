@@ -26,8 +26,9 @@ Drive oraz dokumentacja bazy danych potwierdzona na żywej instancji MSSQL (`OPT
 Wchodzi: 20 PDF (pdfjs), `Pomoc/InsERTGT.chm` (pomoc, 97 fragmentów), `Pomoc/gta.chm` (model obiektowy
 Sfery, 56), `Pomoc/InfoGT.chm` (8), ZIP-y z HTML/XML/XSD/skryptami (kurowane), dokumentacja bazy (160 fragmentów).
 Pominięte świadomie: `GTA.chm` w korzeniu (starsza kopia), `Pomoc.zip` i rozpakowane podfoldery (duplikaty),
-`Opis_struktury_zbiorow_danych.htm` (duplikat XML), `Lista_zmian.htm` (podzbiór), `czerwony_PLUS.pdf` (skan bez
-tekstu — wymaga OCR), `.doc`/`.xls`/`.mdb` (brak konwertera na hoście).
+`Opis_struktury_zbiorow_danych.htm` (duplikat XML), `Lista_zmian.htm` (podzbiór), `.doc`/`.xls`/`.mdb` (brak konwertera na hoście).
+`czerwony_PLUS.pdf` (skan) wszedł przez OCR pipeline'u (`upload-file.mjs`) po trzech poprawkach ekstrakcji;
+26 stron ze zrzutami ekranu z `Zmiany_w_InsERT_GT.pdf` odrzucone (OCR daje same nagłówki).
 
 ## Weryfikacja
 
