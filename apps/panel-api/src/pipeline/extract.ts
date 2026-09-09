@@ -200,7 +200,10 @@ async function stirlingOcr(deps: ExtractDeps, buffer: Buffer, filename: string):
         const res = await timedFetch(deps, `${deps.stirlingUrl}/api/v1/misc/ocr-pdf`, {
           method: 'POST',
           headers: stirlingHeaders(deps),
-          body: pdfFormData(buffer, filename, { languages: 'pol' }),
+          // force-ocr: ocrmypdf odmawia („page already has text") przy szczątkowej warstwie tekstu
+          // (same numery stron), a skip-text pomija takie strony. Kaskada wchodzi tu dopiero, gdy
+          // warstwa tekstu nie przeszła progu jakości — wymuszenie OCR całości jest właściwe.
+          body: pdfFormData(buffer, filename, { languages: 'pol', ocrType: 'force-ocr' }),
         });
         if (RETRYABLE_STATUS.has(res.status)) throw new RetryableError(`stirling ocr HTTP ${res.status}`);
         if (!res.ok) return null;
