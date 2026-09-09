@@ -29,7 +29,9 @@ try {
     const b64 = readFileSync(path).toString('base64');
     await client.throttle();
     const res = await client.page.evaluate(
+      // Wykonuje się w PRZEGLĄDARCE (Playwright) — atob/FormData/Blob to globale strony, nie Node.
       async ({ name, b64 }) => {
+        /* global atob, FormData, Blob */
         const bin = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
         const fd = new FormData();
         fd.append('file', new Blob([bin], { type: 'application/pdf' }), name);
