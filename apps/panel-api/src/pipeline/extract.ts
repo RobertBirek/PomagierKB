@@ -32,6 +32,8 @@ export interface ExtractDeps {
   fetchImpl?: typeof globalThis.fetch;
   /** Timeout pojedynczego wywołania zewnętrznego (default 30 000 ms). */
   timeoutMs?: number;
+  /** Limit samego wywołania OCR (domyślnie 5 min — patrz OCR_TIMEOUT_MS). */
+  ocrTimeoutMs?: number;
   /** Opcjonalny nagłówek X-API-KEY Stirlinga. */
   stirlingApiKey?: string;
 }
@@ -51,6 +53,12 @@ export class ExtractError extends Error {
 import { RETRYABLE_STATUS, RetryableError, withRetry } from './retry.js';
 
 const DEFAULT_TIMEOUT_MS = 30_000;
+/**
+ * OCR ma własny limit: force-ocr rasteryzuje i rozpoznaje KAŻDĄ stronę (~2 s/stronę na tym VPS,
+ * 27 stron = 60 s), a wspólne 30 s zrywało połączenie („Broken pipe" po stronie Stirlinga) i skan
+ * lądował w Tice bez szans. Deadline całego intake'u to 10 min (intake-worker), stąd 5 min.
+ */
+const OCR_TIMEOUT_MS = 5 * 60_000;
 export const QUALITY_MIN_LENGTH = 120;
 export const QUALITY_MIN_PRINTABLE_RATIO = 0.72;
 
@@ -146,10 +154,11 @@ async function timedFetch(
   deps: ExtractDeps,
   url: string,
   init: RequestInit,
+  timeoutMs: number = deps.timeoutMs ?? DEFAULT_TIMEOUT_MS,
 ): Promise<Response> {
   const fetchImpl = deps.fetchImpl ?? globalThis.fetch;
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), deps.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
     return await fetchImpl(url, { ...init, signal: ctrl.signal });
   } finally {
@@ -197,14 +206,19 @@ async function stirlingOcr(deps: ExtractDeps, buffer: Buffer, filename: string):
   return withOcrSlot(async () => {
     try {
       return await withRetry(async () => {
-        const res = await timedFetch(deps, `${deps.stirlingUrl}/api/v1/misc/ocr-pdf`, {
-          method: 'POST',
-          headers: stirlingHeaders(deps),
-          // force-ocr: ocrmypdf odmawia („page already has text") przy szczątkowej warstwie tekstu
-          // (same numery stron), a skip-text pomija takie strony. Kaskada wchodzi tu dopiero, gdy
-          // warstwa tekstu nie przeszła progu jakości — wymuszenie OCR całości jest właściwe.
-          body: pdfFormData(buffer, filename, { languages: 'pol', ocrType: 'force-ocr' }),
-        });
+        const res = await timedFetch(
+          deps,
+          `${deps.stirlingUrl}/api/v1/misc/ocr-pdf`,
+          {
+            method: 'POST',
+            headers: stirlingHeaders(deps),
+            // force-ocr: ocrmypdf odmawia („page already has text") przy szczątkowej warstwie tekstu
+            // (same numery stron), a skip-text pomija takie strony. Kaskada wchodzi tu dopiero, gdy
+            // warstwa tekstu nie przeszła progu jakości — wymuszenie OCR całości jest właściwe.
+            body: pdfFormData(buffer, filename, { languages: 'pol', ocrType: 'force-ocr' }),
+          },
+          deps.ocrTimeoutMs ?? OCR_TIMEOUT_MS,
+        );
         if (RETRYABLE_STATUS.has(res.status)) throw new RetryableError(`stirling ocr HTTP ${res.status}`);
         if (!res.ok) return null;
         return Buffer.from(await res.arrayBuffer());
