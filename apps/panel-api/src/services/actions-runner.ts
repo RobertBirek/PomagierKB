@@ -119,7 +119,12 @@ export function startAction(deps: RunnerDeps, input: StartActionInput): ActionRo
     fd = openSync(logPath, 'a');
     writeSync(fd, `[runner] ${nowIso()} start akcji ${inserted.id}: type=${input.type} resource=${input.resource}\n`);
 
-    const child = spawn(process.execPath, [jobEntry, '--type', input.type, '--action', inserted.id], {
+    // Sterta procesu potomnego: V8 w kontenerze 512 MB przydziela ~256 MB i build 14 600 chunków
+    // padał na OOM w trakcie pollingu buildera (2026-09-09, SubiektKB). Limit jawny, konfigurowalny
+    // JOB_NODE_MAX_OLD_SPACE_MB (compose: 1024 przy PANEL_MEM_LIMIT 1536m) — rodzic go nie dziedziczy.
+    const heapMb = Number(process.env['JOB_NODE_MAX_OLD_SPACE_MB'] ?? '');
+    const execArgs = Number.isInteger(heapMb) && heapMb >= 128 ? [`--max-old-space-size=${heapMb}`] : [];
+    const child = spawn(process.execPath, [...execArgs, jobEntry, '--type', input.type, '--action', inserted.id], {
       detached: true, // własna grupa procesów → cancel może zabić całą grupę (-pid)
       stdio: ['ignore', fd, fd], // log pisany wprost przez deskryptor, bez pamięci rodzica
       env: { ...process.env, ACTION_ID: inserted.id, DATA_DIR: deps.dataDir },

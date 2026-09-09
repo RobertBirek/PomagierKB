@@ -324,7 +324,7 @@ services:
         BUILT_AT: ${BUILT_AT:-unknown}
     container_name: kag-panel
     restart: unless-stopped
-    mem_limit: ${PANEL_MEM_LIMIT:-512m}
+    mem_limit: ${PANEL_MEM_LIMIT:-1536m}   # 512m → 1536m (2026-09-09): build 14 600 chunków = OOM potomka przy 256 MB sterty
     pids_limit: 512     # baseline 11; jobs/ spawnuje procesy potomne (ekstrakcja, eksport)
     cpus: 2
     user: "10001:10001"
@@ -335,6 +335,8 @@ services:
       TZ: ${TZ:-Europe/Warsaw}
       NODE_ENV: production
       PORT: "8080"
+      # sterta V8 procesów potomnych jobs/ (build/eksport) — patrz services/actions-runner.ts
+      JOB_NODE_MAX_OLD_SPACE_MB: ${JOB_NODE_MAX_OLD_SPACE_MB:-1024}
       # SQLite WAL + inbox + exporty CSV + audyt JSONL
       DATA_DIR: /data
       # nazwy env czytane przez apps/panel-api/src/config.ts; wartości z .env (PANEL_*)
