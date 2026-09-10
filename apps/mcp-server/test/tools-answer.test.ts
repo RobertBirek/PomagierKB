@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { clearAnswerCache } from '@pomagierkb/shared/answer';
 import { kbAnswerTool } from '../src/tools/index.js';
-import { makeCtx, mockLlm, seedKb, seedLightingChunks, testDb } from './helpers-tools.js';
+import { assertMatchesOutputSchema, makeCtx, mockLlm, seedKb, seedLightingChunks, testDb } from './helpers-tools.js';
 
 interface AnswerOut {
   answer: string;
@@ -34,8 +34,11 @@ describe('kb_answer', () => {
 
     const res = await kbAnswerTool.handler(ctx, { question: QUESTION });
     expect(res.isError).toBeUndefined();
+    assertMatchesOutputSchema(kbAnswerTool, res.structured);
     const out = res.structured as AnswerOut;
     expect(out.noAnswer).toBe(false);
+    // cytowanie niesie kontekst dokumentu — pola muszą być w schemacie (klient MCP waliduje)
+    expect(out.citations[0]).toMatchObject({ docId: expect.any(String) });
     expect(out.answer).toContain('[1]');
     expect(out.answerId).toMatch(/^ans_/);
     expect(out.citations).toHaveLength(1);

@@ -65,6 +65,8 @@ export const kbAnswerTool: KbTool = {
             namespace: { type: 'string' },
             snippet: { type: 'string' },
             sourceRef: { type: 'string' },
+            docId: { type: 'string', description: 'Dokument źródłowy fragmentu (DOC_…)' },
+            sectionHeading: { type: 'string', description: 'Nagłówek sekcji, z której pochodzi fragment' },
           },
         },
       },

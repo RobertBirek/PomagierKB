@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { kbSearchTool } from '../src/tools/index.js';
-import { makeCtx, seedKb, seedLightingChunks, testDb } from './helpers-tools.js';
+import { assertMatchesOutputSchema, makeCtx, seedKb, seedLightingChunks, testDb } from './helpers-tools.js';
 
 interface SearchOut {
   results: {
@@ -27,6 +27,7 @@ describe('kb_search', () => {
 
     // zapytanie w dopełniaczu, dokument ma miejscownik ('szynoprzewodach')
     const res = await kbSearchTool.handler(ctx, { query: 'maksymalne obciążenie szynoprzewodów' });
+    assertMatchesOutputSchema(kbSearchTool, res.structured);
     expect(res.isError).toBeUndefined();
     const out = res.structured as SearchOut;
     expect(out.degraded).toBe(true);

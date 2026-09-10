@@ -1,3 +1,4 @@
+import Ajv from 'ajv';
 import { fileURLToPath } from 'node:url';
 import {
   KNOWN_MCP_TOOLS,
@@ -152,4 +153,18 @@ export function makeCtx(db: Db, opts: MakeCtxOpts = {}): ToolCtx {
     config: toolTestConfig,
     log: stubLog(),
   };
+}
+
+/**
+ * Walidacja `structured` narzędzia względem jego `outputSchema` — DOKŁADNIE to robi klient MCP
+ * (SDK odrzuca odpowiedź: „Structured content does not match the tool's output schema").
+ * Dryf schematu wykryty 2026-09-10: cytowania kb_answer dostały docId/sectionHeading, a schemat
+ * z additionalProperties:false ich nie znał — curl przechodził, Claude Code odrzucał każdą odpowiedź.
+ */
+export function assertMatchesOutputSchema(tool: { name: string; outputSchema: object }, structured: unknown): void {
+  const ajv = new Ajv({ strict: false, allErrors: true });
+  const validate = ajv.compile(tool.outputSchema);
+  if (!validate(structured)) {
+    throw new Error(`${tool.name}: structured nie pasuje do outputSchema: ${ajv.errorsText(validate.errors)}`);
+  }
 }
