@@ -46,7 +46,11 @@ Skrypt bierze listę **wyłącznie** z rejestru (`graph_ids` gdzie `live = 0`), 
 w grafie już nie ma (nagrobki zostają w rejestrze na zawsze), i dopiero wtedy tnie partię do
 `--limit` (domyślnie 1000). Dużą zaległość usuwa się więc **powtarzając tę samą komendę**
 (`--limit 3000 --apply`) aż do komunikatu „wszystkie wycofane id są już poza grafem" — po każdej
-partii skrypt sprawdza, że ubyło dokładnie tyle węzłów, ile było na liście. Skala zaległości:
+partii skrypt sprawdza, że ubyło dokładnie tyle węzłów, ile było na liście. Kasowanie idzie w
+podpartiach po 200 węzłów w osobnych transakcjach: chunk niesie treść i wektor, więc jedna
+transakcja na 3 000 węzłów wysypała Neo4j (heap 2G, `OutOfMemoryError`) 2026-09-10 — usunięcie
+zdążyło się zatwierdzić, serwer wymagał `docker restart release-openspg-neo4j`, a wpis audytu
+trzeba było odtworzyć ręcznie. Skala zaległości:
 liczba wierszy `live = 0` w rejestrze (2026-09-10, SubiektKB po 14 przebudowach: 11 734), nie „20"
 z bramki jakości — bramka sprawdza w grafie tylko próbkę 20 id. Nie da się nim
 skasować węzła należącego do stanu docelowego — podanie żywego id przez `--ids` kończy się

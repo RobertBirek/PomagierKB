@@ -124,8 +124,12 @@ if [[ ${APPLY} -eq 0 ]]; then
 fi
 
 # --- 3. Usunięcie (DETACH na wszelki wypadek; w tym wdrożeniu graf nie ma relacji) ---
-log "usuwam ${COUNT} węzłów z bazy ${NEO4J_DB}..."
-cypher "MATCH (n) WHERE n.id IN ${ID_LIST} DETACH DELETE n;" | tail -2
+# Podpartie po 200 węzłów w OSOBNYCH transakcjach: chunk niesie treść + wektor embeddingu,
+# a jedna transakcja na 3000 takich węzłów wysypała Neo4j (heap 2G) OutOfMemoryError
+# 2026-09-10 — kasowanie się zatwierdziło, serwer padł tuż po nim. Wymaga Neo4j 5 (CALL … IN
+# TRANSACTIONS) i auto-commitu cypher-shell (domyślnie).
+log "usuwam ${COUNT} węzłów z bazy ${NEO4J_DB} (podpartie po 200)..."
+cypher "MATCH (n) WHERE n.id IN ${ID_LIST} CALL { WITH n DETACH DELETE n } IN TRANSACTIONS OF 200 ROWS;" | tail -2
 
 # --- 4. Weryfikacja: znikły wycofane, a NIC innego nie ubyło ---
 LEFT="$(cypher "MATCH (n) WHERE n.id IN ${ID_LIST} RETURN count(n) AS zostalo;" | tail -1 | tr -d '[:space:]')"
