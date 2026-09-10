@@ -180,8 +180,12 @@ function emitByHeading(markdown, meta, sourceBase, sourceFile, pageName) {
     const version = heading.match(/\d+\.\d+(?:\s+(?:SP|HF|Hotfix)\s*[\w.]+)*/i)?.[0]?.trim() ?? heading;
     const title = `${cfg.titlePrefix} ${version}`.trim();
     const slug = `${meta.slug}-${slugify(cfg.titlePrefix)}-${slugify(version)}`;
-    const intro = `${meta.summary} Fragment strony „${pageName}" pomocy ${basename(sourceFile)}: ${heading}. Wersja programu: 1.89 HF1.`;
-    files += emit({ slug, title, intro, sections: [{ name: heading, text: `## ${heading}\n\n${body}\n\n` }], sourceBase, category: CATEGORIES[cfg.category] ?? meta.category, product: meta.product, keywords: [...meta.keywords, 'lista zmian', version], sourceFile });
+    // Numer wersji powtórzony w kilku formach: retrieval mylił 1.84 SP1 z 1.48 SP1 (podobne tokeny).
+    const spelled = version.replace(/\s*SP\s*(\d+)/i, ' Service Pack $1').replace(/\s*HF\s*(\d+)/i, ' Hotfix $1');
+    const intro = `${meta.summary} Fragment strony „${pageName}" pomocy ${basename(sourceFile)}: ${heading}. Dotyczy wersji ${version} (InsERT GT ${spelled}, wersja ${version.replace(/\s+/g, '')}). Wersja bieżąca programu: 1.89 HF1.`;
+    // Bez nagłówka H2 w treści: chunker tnie po nagłówkach i pierwszy chunk (H1+wstęp) nie miał ani jednej
+    // pozycji listy — retrieval trafiał w „pusty" chunk. Wstęp i pierwsze pozycje mają być w jednym chunku.
+    files += emit({ slug, title, intro, sections: [{ name: heading, text: `${body}\n\n` }], sourceBase, category: CATEGORIES[cfg.category] ?? meta.category, product: meta.product, keywords: [...meta.keywords, 'lista zmian', version], sourceFile });
   }
   return files;
 }
