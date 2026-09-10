@@ -36,6 +36,7 @@ docker compose -f deploy/edge/compose.yaml config -q   # walidacja compose (wyma
 docker compose -f deploy/kag/compose.yaml config -q
 docker compose -f compose.dev.yaml up    # dev: panel+mcp+SQLite+stub OpenSPG (bez pełnego stacka)
 deploy/scripts/smoke.sh   # smoke test po deployu
+node tools/eval/answer-offline.mjs tools/eval/probes/SubiektKB.jsonl   # answerQuestion OFFLINE na kopii bazy (żywy OpenSPG+LLM, zero zapisu) — iteracja promptu PRZED deployem
 npm run eval              # hit@k/MRR retrievalu; domyślnie KATALOG tools/eval/goldens/<Ns>.jsonl (DATA_DIR wskazuje bazę)
 node tools/ux-audit/e2e.mjs         # E2E klikalne na produkcji (10 checków, login akadmin)
 node tools/ux-audit/screenshot.mjs  # zrzuty produkcji (--pages /kb,... --out katalog)

@@ -66,7 +66,7 @@ TLS oraz karta **„Jakość odpowiedzi — tydzień"** (odśwież: akcja `quali
 
 Uruchomienie: `DATA_DIR=/srv/kag-data/kag/panel npm run eval` (bramka:
 `EVAL_MIN_HIT5=0.8`). Tryb `EVAL_CHANNELS=full` mierzy produkcyjny hybrid.
-Ocena odpowiedzi LLM-sędzią (budżetowana): `node tools/eval/judge.mjs`.
+Ocena odpowiedzi LLM-sędzią (budżetowana): `node tools/eval/judge.mjs`. Iteracja promptu odpowiedzi bez dotykania produkcji: `tools/eval/answer-offline.mjs` (kopia bazy przez backup API, żywy OpenSPG i LLM, zero wierszy answers/luk).
 
 ## 8. Ustawienia (/settings)
 
