@@ -79,13 +79,26 @@ function toolErrorCode(err: unknown): ToolErrorCode {
   return 'internal';
 }
 
-/** Wynik narzędzia → kształt CallToolResult (content + structuredContent + isError). */
+/**
+ * Wynik narzędzia → kształt CallToolResult (content + structuredContent + isError).
+ *
+ * Błąd (isError:true) NIE dostaje structuredContent: klient SDK (Client.callTool, 1.30) waliduje
+ * structuredContent względem outputSchema ZAWSZE, gdy jest obecny — isError zwalnia tylko
+ * z obowiązku jego posiadania. `{errorCode}` nie spełnia żadnego outputSchema, więc każdy błąd
+ * narzędzia docierał do Claude Code jako McpError -32602 „Structured content does not match…"
+ * zamiast jako czytelny wynik isError (potwierdzone 2026-09-10 przez InMemoryTransport + Client).
+ * Maszynowo czytelny kod błędu (+errorId, +problems) jedzie w `_meta` — pole protokołu MCP,
+ * którego klient nie waliduje schematem; tekst PL zostaje w content.
+ */
 function toCallToolResult(out: ToolResult): ServerResult {
   const result: Record<string, unknown> = { content: [{ type: 'text', text: out.text }] };
-  if (typeof out.structured === 'object' && out.structured !== null) {
-    result.structuredContent = out.structured;
+  const structured = typeof out.structured === 'object' && out.structured !== null ? out.structured : null;
+  if (out.isError === true) {
+    result.isError = true;
+    if (structured !== null) result._meta = structured;
+  } else if (structured !== null) {
+    result.structuredContent = structured;
   }
-  if (out.isError === true) result.isError = true;
   return result as ServerResult;
 }
 

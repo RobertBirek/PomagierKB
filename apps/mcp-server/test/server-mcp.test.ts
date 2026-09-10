@@ -85,10 +85,13 @@ describe('shell MCP: transport i kontrakt tools/list', () => {
     );
     expect(res.statusCode).toBe(200);
     const body = res.json() as {
-      result: { isError?: boolean; structuredContent: { errorCode: string } };
+      result: { isError?: boolean; structuredContent?: unknown; _meta: { errorCode: string } };
     };
     expect(body.result.isError).toBe(true);
-    expect(body.result.structuredContent.errorCode).toBe('validation');
+    // Kod błędu w _meta, NIE w structuredContent: klient SDK waliduje structuredContent
+    // schematem także przy isError i odrzucałby cały wynik (2026-09-10).
+    expect(body.result.structuredContent).toBeUndefined();
+    expect(body.result._meta.errorCode).toBe('validation');
   });
 
   it('narzędzie spoza profilu / nieistniejące → JSON-RPC -32601', async () => {

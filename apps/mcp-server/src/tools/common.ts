@@ -13,7 +13,8 @@ export interface ToolOutcome {
 }
 
 /**
- * Kody błędów narzędzi (§7.4): błąd = wynik z isError:true + structuredContent:{errorCode},
+ * Kody błędów narzędzi (§7.4): błąd = wynik z isError:true + `_meta:{errorCode}` (shell mcp.ts
+ * przenosi `structured` błędu do _meta — structuredContent przy isError odrzuca klient SDK),
  * nigdy błąd protokołu (ten zarezerwowany dla auth/transportu). Słownik komunikatów
  * i generator identyfikatora zdarzenia — w ./messages.ts.
  */

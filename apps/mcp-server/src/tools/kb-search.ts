@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { DEGRADED_REASONS, RETRIEVAL_SOURCES } from '@pomagierkb/shared/answer';
 import { listKbs } from '@pomagierkb/shared/db';
 import { hybridSearch } from '../retrieval.js';
 import type { RetrievalHit } from '../retrieval.js';
@@ -95,7 +96,8 @@ export const kbSearchTool: KbTool = {
             kbName: { type: 'string' },
             label: { type: 'string' },
             score: { type: 'number' },
-            source: { type: 'string', enum: ['openspg_text', 'openspg_vector', 'fallback_fts', 'exact_match'] },
+            // enum = RUNTIME lista z packages/shared (RetrievalSource jest jej pochodną) — dryf niemożliwy
+            source: { type: 'string', enum: [...RETRIEVAL_SOURCES] },
             sourceRef: { type: 'string' },
           },
         },
@@ -105,12 +107,11 @@ export const kbSearchTool: KbTool = {
       // D8-03/D8-10: 'embed_failed' realnie występuje w DegradedReason (padł dostawca
       // embeddingów przy zdrowym OpenSPG) — bez niego walidacja wyniku wywracała
       // odpowiedź narzędzia dokładnie wtedy, gdy diagnostyka była najbardziej potrzebna.
+      // Dlatego enum = RUNTIME lista DEGRADED_REASONS z packages/shared (typ DegradedReason
+      // jest jej pochodną): nowa wartość w retrievalu nie może ominąć schematu.
       degradedReasons: {
         type: 'array',
-        items: {
-          type: 'string',
-          enum: ['openspg_down', 'openspg_no_hits', 'embed_failed', 'snippet_only', 'kb_dirty'],
-        },
+        items: { type: 'string', enum: [...DEGRADED_REASONS] },
       },
       matchedRouting: { type: 'array', items: { type: 'string' } },
     },

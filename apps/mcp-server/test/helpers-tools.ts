@@ -7,11 +7,12 @@ import {
   createProfile,
   nowIso,
   openDb,
+  replaceEdgesForNamespace,
   replaceForDocument,
   resolveNamespaces,
   runMigrations,
 } from '@pomagierkb/shared/db';
-import type { Db } from '@pomagierkb/shared/db';
+import type { ChunkInput, Db, GraphEdge } from '@pomagierkb/shared/db';
 import type { ChatRequest, ChatResult } from '@pomagierkb/shared/llm';
 import type { ToolCtx, ToolLlm } from '../src/tools/types.js';
 
@@ -47,12 +48,24 @@ export function seedKb(db: Db, namespace: string, opts: { embeddingModel?: strin
   db.prepare("UPDATE kb_registry SET status = 'active' WHERE namespace = ?").run(namespace);
 }
 
+export interface SeedLightingChunksOpts {
+  /** Identyfikator dokumentu w mirrorze (domyślnie 'doc1'). */
+  docId?: string;
+  /** Nagłówki sekcji per id chunka — domyślnie żaden chunk nie ma sectionHeading. */
+  sectionHeadings?: Record<string, string>;
+}
+
 /** Chunki po polsku (odmiana ≠ zapytanie → trafienie przez tokenizer trigram). */
-export function seedLightingChunks(db: Db): void {
-  replaceForDocument(db, 'LightingDocs', 'doc1', [
+export function seedLightingChunks(db: Db, opts: SeedLightingChunksOpts = {}): void {
+  const heading = (id: string): Pick<ChunkInput, 'sectionHeading'> => {
+    const h = opts.sectionHeadings?.[id];
+    return h === undefined ? {} : { sectionHeading: h };
+  };
+  replaceForDocument(db, 'LightingDocs', opts.docId ?? 'doc1', [
     {
       id: 'CHUNK_ld000001_001',
       title: 'Montaż szynoprzewodów',
+      ...heading('CHUNK_ld000001_001'),
       content:
         'Przy montażu na szynoprzewodach trójfazowych maksymalne obciążenie toru wynosi 16 amperów na fazę.',
       sourceRef: 'https://example.com/karta.pdf',
@@ -60,9 +73,32 @@ export function seedLightingChunks(db: Db): void {
     {
       id: 'CHUNK_ld000001_002',
       title: 'Sterowanie DALI',
+      ...heading('CHUNK_ld000001_002'),
       content: 'Magistrala DALI pozwala sterować oprawami indywidualnie i grupowo.',
     },
   ]);
+}
+
+export const GRAPH_DOC_ID = 'DOC_g1';
+export const GRAPH_TOPIC_ID = 'TOPIC_HIGHBAY';
+
+/** Domyślne chunki mini-grafu (bez sekcji/źródła — testy dokładają metadane przez `chunks`). */
+export const GRAPH_CHUNKS = [
+  { id: 'CHUNK_g1_001', title: 'Karta HighBay', content: 'Strumień 21000 lm.' },
+  { id: 'CHUNK_g1_002', title: 'Karta HighBay', content: 'Sterowanie DALI-2.' },
+] as const satisfies readonly ChunkInput[];
+
+/**
+ * Mini-graf w mirrorze + graph_edges: DOC_g1 z chunkami (każdy `in_document` → DOC_g1)
+ * i DOC_g1 `about_topic` → TOPIC_HIGHBAY. Krawędzie namespace'u są ZASTĘPOWANE.
+ */
+export function seedGraph(db: Db, chunks: readonly ChunkInput[] = GRAPH_CHUNKS): void {
+  replaceForDocument(db, 'LightingDocs', GRAPH_DOC_ID, [...chunks]);
+  const edges: GraphEdge[] = [
+    ...chunks.map((c): GraphEdge => ({ srcId: c.id, rel: 'in_document', dstId: GRAPH_DOC_ID })),
+    { srcId: GRAPH_DOC_ID, rel: 'about_topic', dstId: GRAPH_TOPIC_ID },
+  ];
+  replaceEdgesForNamespace(db, 'LightingDocs', edges);
 }
 
 export interface MockLlm {

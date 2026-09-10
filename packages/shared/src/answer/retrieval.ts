@@ -43,7 +43,15 @@ export interface AnswerCtx {
   log: AnswerLog;
 }
 
-export type RetrievalSource = 'fallback_fts' | 'openspg_vector' | 'openspg_text' | 'exact_match';
+/**
+ * Źródła trafień — RUNTIME źródło prawdy dla `enum` pola `results[].source` w outputSchema
+ * kb_search (i dla testu kontraktu). Typ jest pochodną tablicy, nie odwrotnie: nowa wartość
+ * dopisana tu trafia do schematu automatycznie, a test kontraktu (fixture per wartość) robi
+ * się czerwony, dopóki ktoś jej realnie nie wyemituje — `satisfies`/typy nie dają tej
+ * gwarancji, bo pliki test/ nie są objęte tsc w CI.
+ */
+export const RETRIEVAL_SOURCES = ['fallback_fts', 'openspg_vector', 'openspg_text', 'exact_match'] as const;
+export type RetrievalSource = (typeof RETRIEVAL_SOURCES)[number];
 export type RetrievalMode = 'hybrid' | 'text' | 'vector';
 
 export interface RetrievalHit {
@@ -88,13 +96,20 @@ export interface HybridSearchParams {
   mode?: RetrievalMode;
 }
 
-/** Powody degradacji — do diagnostyki agenta/panelu (degraded = reasons.length > 0). */
-export type DegradedReason =
-  | 'openspg_down' // żaden kanał OpenSPG nie zadziałał (awaria/timeout/breaker)
-  | 'openspg_no_hits' // OpenSPG działał, ale nic nie znalazł, a lokalny mirror tak
-  | 'embed_failed' // embed zapytania zawiódł → kanał wektorowy pominięty (OpenSPG zdrowy!)
-  | 'snippet_only' // któryś wynik bez pełnej treści (tylko 300-znakowy snippet)
-  | 'kb_dirty'; // przeszukana KB ma zmiany nie wbudowane w graf (mirror może wyprzedzać)
+/**
+ * Powody degradacji — do diagnostyki agenta/panelu (degraded = reasons.length > 0).
+ * Tablica = RUNTIME źródło prawdy dla `enum degradedReasons[]` w outputSchema kb_search
+ * i kb_answer (dryf D8-03/D8-10: 'embed_failed' emitowany przez retrieval, nieznany schematowi,
+ * wywracał walidację odpowiedzi u klienta). Typ `DegradedReason` jest pochodną tej tablicy.
+ */
+export const DEGRADED_REASONS = [
+  'openspg_down', // żaden kanał OpenSPG nie zadziałał (awaria/timeout/breaker)
+  'openspg_no_hits', // OpenSPG działał, ale nic nie znalazł, a lokalny mirror tak
+  'embed_failed', // embed zapytania zawiódł → kanał wektorowy pominięty (OpenSPG zdrowy!)
+  'snippet_only', // któryś wynik bez pełnej treści (tylko 300-znakowy snippet)
+  'kb_dirty', // przeszukana KB ma zmiany nie wbudowane w graf (mirror może wyprzedzać)
+] as const;
+export type DegradedReason = (typeof DEGRADED_REASONS)[number];
 
 export interface RetrievalResult {
   results: RetrievalHit[];

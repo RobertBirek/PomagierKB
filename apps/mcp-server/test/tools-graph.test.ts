@@ -1,26 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { replaceEdgesForNamespace, replaceForDocument } from '@pomagierkb/shared/db';
+import { replaceEdgesForNamespace } from '@pomagierkb/shared/db';
 import { sanitizeEntityProperties } from '@pomagierkb/shared/openspg';
 import {
   kbEntityGetTool,
   kbGraphNeighborsTool,
   kbSubmitDraftTool,
 } from '../src/tools/index.js';
-import { makeCtx, seedKb, testDb } from './helpers-tools.js';
+import { makeCtx, seedGraph, seedKb, testDb } from './helpers-tools.js';
 
 /** Modernizacja MCP: kb_entity_get / kb_graph_neighbors / idempotencyKey. */
-
-function seedGraph(db: ReturnType<typeof testDb>): void {
-  replaceForDocument(db, 'LightingDocs', 'DOC_g1', [
-    { id: 'CHUNK_g1_001', title: 'Karta HighBay', content: 'Strumień 21000 lm.' },
-    { id: 'CHUNK_g1_002', title: 'Karta HighBay', content: 'Sterowanie DALI-2.' },
-  ]);
-  replaceEdgesForNamespace(db, 'LightingDocs', [
-    { srcId: 'CHUNK_g1_001', rel: 'in_document', dstId: 'DOC_g1' },
-    { srcId: 'CHUNK_g1_002', rel: 'in_document', dstId: 'DOC_g1' },
-    { srcId: 'DOC_g1', rel: 'about_topic', dstId: 'TOPIC_HIGHBAY' },
-  ]);
-}
 
 describe('sanitizeEntityProperties (quirki serwera OpenSPG)', () => {
   it('odcina pola wektorowe/underscore i literalne cudzysłowy', () => {

@@ -97,14 +97,14 @@ describe('shell MCP: wyjątek narzędzia nie przenosi treści upstreamu do klien
     const body = res.json() as {
       result: {
         isError: boolean;
-        structuredContent: { errorCode: string; errorId: string };
+        _meta: { errorCode: string; errorId: string };
         content: { text: string }[];
       };
     };
     expect(body.result.isError).toBe(true);
-    expect(body.result.structuredContent.errorCode).toBe('upstream_unavailable');
-    expect(body.result.structuredContent.errorId).toMatch(/^[0-9a-f]{8}$/);
-    expect(body.result.content[0]!.text).toContain(body.result.structuredContent.errorId);
+    expect(body.result._meta.errorCode).toBe('upstream_unavailable');
+    expect(body.result._meta.errorId).toMatch(/^[0-9a-f]{8}$/);
+    expect(body.result.content[0]!.text).toContain(body.result._meta.errorId);
   });
 
   it('zwykły TypeError → errorCode internal, treść wyjątku nie opuszcza serwera', async () => {
@@ -112,8 +112,8 @@ describe('shell MCP: wyjątek narzędzia nie przenosi treści upstreamu do klien
     const res = await mcpRequest(h.bundle.app, 'default', raw, toolsCallBody('kb_list'));
     expect(res.body).not.toContain('Cannot read properties');
     expect(res.body).not.toContain('release-openspg-server');
-    const body = res.json() as { result: { structuredContent: { errorCode: string } } };
-    expect(body.result.structuredContent.errorCode).toBe('internal');
+    const body = res.json() as { result: { _meta: { errorCode: string } } };
+    expect(body.result._meta.errorCode).toBe('internal');
   });
 
   it('REGRESJA: błąd walidacji wejścia nadal niesie konkret (to nasz komunikat, nie upstream)', async () => {
@@ -125,9 +125,9 @@ describe('shell MCP: wyjątek narzędzia nie przenosi treści upstreamu do klien
       toolsCallBody('kb_list', { nieznanePole: 1 }),
     );
     const body = res.json() as {
-      result: { isError: boolean; structuredContent: { errorCode: string; problems: string[] } };
+      result: { isError: boolean; _meta: { errorCode: string; problems: string[] } };
     };
-    expect(body.result.structuredContent.errorCode).toBe('validation');
-    expect(body.result.structuredContent.problems.join(' ')).toContain('nieznanePole');
+    expect(body.result._meta.errorCode).toBe('validation');
+    expect(body.result._meta.problems.join(' ')).toContain('nieznanePole');
   });
 });

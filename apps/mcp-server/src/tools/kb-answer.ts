@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { DEGRADED_REASONS } from '@pomagierkb/shared/answer';
 import { answerQuestion } from '../answer.js';
 import type { AnswerResult } from '../answer.js';
 import { appErrorToResult, errorResult, parseInput, resolveRequestedNamespaces } from './common.js';
@@ -88,12 +89,11 @@ export const kbAnswerTool: KbTool = {
       // D8-03/D8-10: CO jest zdegradowane — agent bez tego nie wie, czy odpowiedź
       // powstała na okrojonym kontekście, czy przy padniętym OpenSPG.
       // Pole DODANE obok boola `degraded`; jego kontrakt zostaje bez zmian.
+      // enum = RUNTIME lista DEGRADED_REASONS z packages/shared (typ DegradedReason jest jej
+      // pochodną) — nowa wartość w retrievalu trafia do schematu bez ręcznego przepisywania.
       degradedReasons: {
         type: 'array',
-        items: {
-          type: 'string',
-          enum: ['openspg_down', 'openspg_no_hits', 'embed_failed', 'snippet_only', 'kb_dirty'],
-        },
+        items: { type: 'string', enum: [...DEGRADED_REASONS] },
       },
       gapRecorded: { type: 'boolean' },
       answerId: { type: 'string' },

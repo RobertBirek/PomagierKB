@@ -526,7 +526,7 @@ wyjście (`required`: `draftId`, `status`, `reviewRequired`):
 — `duplicate:true` oznacza, że identyczna treść już czekała w Inboxie. Insert do `drafts`
 z `source_type='mcp'`, `submitted_by_key`; audyt do łańcucha.
 
-Błędy narzędzi: zwracane jako wynik z `isError:true` i tekstem PL + `structuredContent:{errorCode}` (`namespace_not_allowed`, `upstream_unavailable`, `rate_limited`, `validation`) — nie jako błędy protokołu (te tylko dla auth/transportu).
+Błędy narzędzi: zwracane jako wynik z `isError:true` i tekstem PL + `_meta:{errorCode[,errorId][,problems]}` (`namespace_not_allowed`, `upstream_unavailable`, `rate_limited`, `validation`, `forbidden`, `internal`) — nie jako błędy protokołu (te tylko dla auth/transportu). **Nie** `structuredContent`: klient SDK (Client.callTool) waliduje `structuredContent` względem `outputSchema` zawsze, gdy jest obecny, więc `{errorCode}` tam zamieniał każdy błąd narzędzia w McpError -32602 u klienta (zmiana 2026-09-10; test kontraktu `apps/mcp-server/test/contract-output-schema.test.ts`, blok „prawdziwy klient SDK").
 
 ### 7.5 Klient search OpenSPG — payloady ZWERYFIKOWANE, klient defensywny na kształt ODPOWIEDZI
 `packages/shared/src/openspg/search.ts`:

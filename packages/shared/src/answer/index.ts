@@ -5,6 +5,8 @@
  */
 export {
   hybridSearch,
+  DEGRADED_REASONS,
+  RETRIEVAL_SOURCES,
   extractExactTokens,
   applyExactTokenBoost,
   EXACT_TOKEN_FTS_POOL,
