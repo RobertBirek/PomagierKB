@@ -42,7 +42,13 @@ sudo deploy/scripts/purge_graph_nodes.sh --namespace <NS>
 sudo deploy/scripts/purge_graph_nodes.sh --namespace <NS> --apply
 ```
 
-Skrypt bierze listę **wyłącznie** z rejestru (`graph_ids` gdzie `live = 0`). Nie da się nim
+Skrypt bierze listę **wyłącznie** z rejestru (`graph_ids` gdzie `live = 0`), odsiewa id, których
+w grafie już nie ma (nagrobki zostają w rejestrze na zawsze), i dopiero wtedy tnie partię do
+`--limit` (domyślnie 1000). Dużą zaległość usuwa się więc **powtarzając tę samą komendę**
+(`--limit 3000 --apply`) aż do komunikatu „wszystkie wycofane id są już poza grafem" — po każdej
+partii skrypt sprawdza, że ubyło dokładnie tyle węzłów, ile było na liście. Skala zaległości:
+liczba wierszy `live = 0` w rejestrze (2026-09-10, SubiektKB po 14 przebudowach: 11 734), nie „20"
+z bramki jakości — bramka sprawdza w grafie tylko próbkę 20 id. Nie da się nim
 skasować węzła należącego do stanu docelowego — podanie żywego id przez `--ids` kończy się
 odrzuceniem:
 

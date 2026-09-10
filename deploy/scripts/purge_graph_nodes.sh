@@ -61,9 +61,13 @@ CANDIDATES_JSON="$(docker exec -e PURGE_NS="${NAMESPACE}" -e PURGE_IDS="${ONLY_I
 const db = require("better-sqlite3")(process.env.DATA_DIR ? process.env.DATA_DIR + "/db/kag.db" : "/data/db/kag.db", { readonly: true });
 const ns = process.env.PURGE_NS;
 const only = (process.env.PURGE_IDS || "").split(",").map((s) => s.trim()).filter(Boolean);
+// Bez LIMIT: usunięte id zostają w rejestrze jako nagrobki (live=0) na zawsze, więc limit
+// stosowany TU zwracał w każdym przebiegu tę samą, już pustą partię — purge partiami nie
+// posuwał się naprzód (2026-09-10, SubiektKB: 11 734 nagrobków). Limit nakłada krok 1b,
+// po odsianiu id, których w grafie już nie ma.
 let rows = db
-  .prepare("SELECT id, entity FROM graph_ids WHERE namespace = ? AND live = 0 ORDER BY id LIMIT ?")
-  .all(ns, Number(process.env.PURGE_LIMIT) || 1000);
+  .prepare("SELECT id, entity FROM graph_ids WHERE namespace = ? AND live = 0 ORDER BY id")
+  .all(ns);
 if (only.length > 0) {
   const allowed = new Set(rows.map((r) => r.id));
   const rejected = only.filter((id) => !allowed.has(id));
@@ -81,13 +85,25 @@ if [[ "${COUNT}" -eq 0 ]]; then
   exit 0
 fi
 log "kandydatów z rejestru (live=0): ${COUNT}"
-printf '%s' "${CANDIDATES_JSON}" | jq -r '.[] | "  \(.entity)\t\(.id)"'
 
-# --- 2. Stan grafu PRZED (tylko te id; potwierdzenie, że faktycznie tam są) ---
+# --- 1b. Tylko te, które FAKTYCZNIE są w grafie; potem limit partii ---
 cypher() { # cypher <zapytanie>
   printf '%s\n' "$1" | docker exec -i "${NEO4J_CTR}" sh -c \
     'NEO4J_USERNAME="$OPENSPG_NEO4J_USER" NEO4J_PASSWORD="$OPENSPG_NEO4J_PASSWORD" exec cypher-shell -d '"${NEO4J_DB}"' --format plain'
 }
+ALL_IDS="$(printf '%s' "${CANDIDATES_JSON}" | jq -c '[.[].id]')"
+PRESENT_JSON="$(cypher "MATCH (n) WHERE n.id IN ${ALL_IDS} RETURN collect(DISTINCT n.id) AS ids;" | tail -1)"
+CANDIDATES_JSON="$(printf '%s' "${CANDIDATES_JSON}" | jq -c --argjson present "${PRESENT_JSON}" --argjson lim "${LIMIT}" \
+  '($present | map({key: ., value: true}) | from_entries) as $m | [.[] | select($m[.id])] | .[:$lim]')"
+COUNT="$(printf '%s' "${CANDIDATES_JSON}" | jq 'length')"
+if [[ "${COUNT}" -eq 0 ]]; then
+  log "wszystkie wycofane id są już poza grafem — nic do zrobienia"
+  exit 0
+fi
+log "z tego nadal w grafie (do tej partii, limit ${LIMIT}): ${COUNT}"
+printf '%s' "${CANDIDATES_JSON}" | jq -r '.[] | "  \(.entity)\t\(.id)"'
+
+# --- 2. Stan grafu PRZED (tylko te id; potwierdzenie, że faktycznie tam są) ---
 
 # Tablica JSON stringów jest jednocześnie poprawną listą Cyphera (["a","b"]) — bez ręcznego
 # sklejania cudzysłowów, więc id z apostrofem czy przecinkiem nie rozwali zapytania.
