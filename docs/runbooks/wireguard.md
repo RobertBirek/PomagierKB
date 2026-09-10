@@ -164,8 +164,11 @@ iptables -S DOCKER-USER | grep kag-wg-guard | grep -c 10.10.254.0/24   # > 0 (ko
 docker exec release-openspg-server curl -m 4 -o /dev/null http://10.10.254.87:49604/ ; echo $?   # 28 = timeout, tak ma być
 ```
 
-Jedynym konsumentem tej trasy jest `tools/mssql-introspect` (host, tylko `sys.*`), poświadczenie
-w `/etc/kag/mssql-optima.env`. Żaden kontener nie ma i nie ma mieć drogi do tej podsieci.
+Jedynym konsumentem tej trasy był `tools/mssql-introspect` (host, tylko `sys.*` + słowniki `sl_*`).
+**2026-09-10: trasa tymczasowa — zrzut wykonany, poświadczenie usunięte z hosta.** Zamknięcie po stronie
+VPS: `systemctl disable --now wg-optima-route.service`, usunięcie `10.10.254.0/24` z `AllowedIPs` peera
+(jeśli było dopisane) i `systemctl restart kag-wg-guard kag-egress-guard`. Żaden kontener nie ma i nie ma
+mieć drogi do tej podsieci.
 
 ## Rotacja kluczy
 

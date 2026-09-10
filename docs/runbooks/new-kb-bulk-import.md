@@ -40,7 +40,9 @@ DATA_DIR=/srv/kag-data/kag/panel npm run eval      # BASELINE przed importem (no
 ```
 
 Podsieć bazy musi być w `AllowedIPs` peera w `/etc/wireguard/wg0.conf` (nie tylko w runtime `wg set`),
-inaczej restart `wg-quick` zabija trasę — patrz `wireguard.md` § „Podsieć MSSQL".
+inaczej restart `wg-quick` zabija trasę — patrz `wireguard.md` § „Podsieć MSSQL". **Stan 2026-09-10:** tunel do
+MSSQL OPTIMA był tymczasowy i został zamknięty po pełnym zrzucie (katalog + słowniki + CHECK w
+`/srv/kag-data/import/subiektkb/out/schema-live/`); plik poświadczeń usunięty.
 
 ## 2. Baza w rejestrze + limity na czas importu
 
