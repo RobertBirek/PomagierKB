@@ -91,7 +91,7 @@ więc pytanie „co obowiązywało w maju" nie miałoby o co zahaczyć.
 negativeAccuracy < 0.9, namespaceAccuracy < 0.9, mustContainAccuracy < 1, a także
 gdy zbiór nie zawiera ani jednego pozytywu albo ani jednego negatywu. Progi
 nadpisuje się przez `EVAL_MIN_HIT5` / `EVAL_MIN_MRR` / `EVAL_MIN_NEG` /
-`EVAL_MIN_NS`; `EVAL_NO_GATE=1` wyłącza bramki (tylko eksploracja, nigdy CI).
+`EVAL_MIN_NS`; `EVAL_NO_GATE=1` wyłącza bramki (tylko eksploracja, nigdy CI); `EVAL_RANKS=1` dopisuje do JSON pozycję trafienia per pytanie (`ranks[]`) — do porównań A/B zmian retrievalu (przykład: `tools/eval/baseline.json` → `exactTokens`).
 
 ## OGRANICZENIE KORPUSU (stan 2026-09-06)
 

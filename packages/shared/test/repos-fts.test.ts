@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildMatchExpression, replaceForDocument, searchFts } from '../src/db/index.js';
+import { buildMatchExpression, replaceForDocument, searchFts, searchFtsExact } from '../src/db/index.js';
 import { testDb } from './helpers.js';
 
 describe('repos/chunksMirror (FTS5 trigram)', () => {
@@ -79,5 +79,26 @@ describe('polskie stopwordy i OR-fallback', () => {
     ]);
     const hits = searchFts(db, 'zasilacz transformator', ['X'], 8);
     expect(hits.length).toBeGreaterThan(0);
+  });
+});
+
+describe('searchFtsExact — frazy-podciągi dokładnych tokenów', () => {
+  it('trafia w numer wersji i identyfikator, których zwykłe termy nie widzą; wymaga wszystkich tokenów', () => {
+    const db = testDb();
+    replaceForDocument(db, 'S', 'd1', [
+      { id: 'C1', title: 'Zmiany 1.84 SP1', content: 'Lista zmian w wersji 1.84 SP1: kolumna tw_Typ w tabeli tw__Towar.' },
+      { id: 'C2', title: 'Zmiany 1.48 SP1', content: 'Lista zmian w wersji 1.48 SP1: nowe wydruki.' },
+    ]);
+    // Zwykłe termy: „1" i „84" za krótkie dla trigramu, zostaje „sp1" — obie wersje pasują tak samo.
+    expect(searchFts(db, 'wersji 1.84 SP1', ['S'], 8).map((r) => r.id).sort()).toEqual(['C1', 'C2']);
+    const exact = searchFtsExact(db, ['1.84 SP1'], ['S'], 8);
+    expect(exact.map((r) => r.id)).toEqual(['C1']);
+    expect(exact[0]?.matchKind).toBe('exact');
+    expect(searchFtsExact(db, ['TW__TOWAR'], ['S'], 8).map((r) => r.id)).toEqual(['C1']);
+    expect(searchFtsExact(db, ['1.48 SP1', 'tw__Towar'], ['S'], 8)).toEqual([]);
+    expect(searchFtsExact(db, ['SP'], ['S'], 8)).toEqual([]);
+    // trigram dopasowuje podciąg („1.4" ⊂ „1.48") — granice tokenu egzekwuje filtr regex
+    expect(searchFtsExact(db, ['1.4'], ['S'], 8)).toEqual([]);
+    expect(searchFtsExact(db, ['1.84'], ['S'], 8).map((r) => r.id)).toEqual(['C1']);
   });
 });

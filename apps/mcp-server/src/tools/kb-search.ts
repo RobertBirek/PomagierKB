@@ -95,7 +95,7 @@ export const kbSearchTool: KbTool = {
             kbName: { type: 'string' },
             label: { type: 'string' },
             score: { type: 'number' },
-            source: { type: 'string', enum: ['openspg_text', 'openspg_vector', 'fallback_fts'] },
+            source: { type: 'string', enum: ['openspg_text', 'openspg_vector', 'fallback_fts', 'exact_match'] },
             sourceRef: { type: 'string' },
           },
         },

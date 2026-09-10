@@ -463,7 +463,7 @@ wyjście:
         "snippet":{"type":"string"}, "namespace":{"type":"string"},
         "kbName":{"type":"string"}, "label":{"type":"string"},
         "score":{"type":"number"},
-        "source":{"type":"string","enum":["openspg_text","openspg_vector","fallback_fts"]},
+        "source":{"type":"string","enum":["openspg_text","openspg_vector","fallback_fts","exact_match"]},
         "sourceRef":{"type":"string"} }}},
     "tookMs":{"type":"integer"}, "degraded":{"type":"boolean"},
     "degradedReasons":{"type":"array","items":{"type":"string",
@@ -542,6 +542,7 @@ Błędy narzędzi: zwracane jako wynik z `isError:true` i tekstem PL + `structur
 - **Normalizator odpowiedzi (POWÓD defensywności — kształt ODPOWIEDZI, nie żądania)**: akceptuje `{success:true,result:[...]}` | `{data:[...]}` | goły array; element mapowany elastycznie: id z `docId|id|node.id`, score z `score`, pola z `fields|properties|node.properties`; nieznany kształt → log surowej odpowiedzi (poziom warn, obcięty) + traktowanie jako pustego wyniku.
 - **Sonda przy starcie i co 10 min**: wywołanie testowe na aktywnym namespace; wynik (`textOk`, `vectorOk`, wykryty wariant) cachowany i raportowany w `/readyz` oraz w cockpicie `/api/v1/status`.
 - **Łańcuch fallbacków w kb_search**: hybrid = text + vector równolegle (timeout 5 s każdy), scalanie **RRF** (k=60), dedup po id/hash → gdy oba niedostępne lub 0 wyników przy niepustym mirrorze → **FTS5 po `chunks_fts`** (`bm25`, snippet() do podświetleń) z `source:'fallback_fts'` i `degraded:true`. Fallback jest jawnie oznaczony — to bezpiecznik, nie substytut OpenSPG (lekcja: „retrieval przez grep CSV" jako jedyna droga było błędem optimaKB).
+- **Dokładne tokeny w kb_search/kb_answer** (2026-09-10, po imporcie SubiektKB — 42 tys. chunków): pytanie z numerem wersji (`1.84 SP1`) lub identyfikatorem z podkreśleniem (`tw__Towar`, `dok_Typ`) dostaje (1) dodatkową listę FTS z frazami-podciągami tokenów (trigram, `searchFtsExact`, tokeny w nagłówku sekcji/tytule przed resztą) jako osobny kanał fuzji RRF i (2) stały bonus `2/(k+1)` do score każdego kandydata, którego tytuł+treść zawierają komplet tokenów — taki hit ma `source:'exact_match'`. Bonus wygrywa z pojedynczym kanałem, ale nie z konsensusem trzech; bramka odmowy NIE patrzy na listę dokładnych tokenów. Kod: `packages/shared/src/answer/retrieval.ts` (`extractExactTokens`, `applyExactTokenBoost`), pomiar A/B w `tools/eval/baseline.json` (`exactTokens`).
 
 ### 7.6 kb_answer — pipeline
 1. Retrieval: wewnętrzne `kb_search(mode:'hybrid', limit: maxSources*2)`.

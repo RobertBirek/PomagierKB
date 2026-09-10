@@ -34,6 +34,9 @@ const dataDir = process.env.DATA_DIR ?? './data';
 const dbPath = process.env.EVAL_DB ?? join(dataDir, 'db', 'kag.db');
 const channels = process.env.EVAL_CHANNELS === 'full' ? 'full' : 'fts';
 const noGate = process.env.EVAL_NO_GATE === '1';
+// EVAL_RANKS=1 — do JSON trafia też pozycja trafienia per pytanie (porównania A/B zmian retrievalu).
+const withRanks = process.env.EVAL_RANKS === '1';
+const ranks = [];
 const num = (env, fallback) => (process.env[env] ? Number(process.env[env]) : fallback);
 const thresholds = {
   hit5: num('EVAL_MIN_HIT5', 0.8),
@@ -181,6 +184,7 @@ for (const g of goldens) {
     return expected.some((e) => ids.some((x) => x === e || x.startsWith(e)));
   };
   const rank = results.findIndex(matches);
+  if (withRanks) ranks.push({ q: g.question, kind: g.kind ?? null, rank, top: results[0]?.id ?? null });
   // Multihop: KAŻDY oczekiwany dokument musi być w top-5, nie którykolwiek.
   if (g.requireAllDocs === true) {
     mhTotal++;
@@ -240,6 +244,7 @@ const report = {
     ]),
   ),
   misses,
+  ...(withRanks ? { ranks } : {}),
   skipped,
 };
 console.log(JSON.stringify(report, null, 2));

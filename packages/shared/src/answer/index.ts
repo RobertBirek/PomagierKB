@@ -5,6 +5,9 @@
  */
 export {
   hybridSearch,
+  extractExactTokens,
+  applyExactTokenBoost,
+  EXACT_TOKEN_FTS_POOL,
   stripLiteralQuotes,
   resolveExportId,
   buildOpenSpgTextQuery,

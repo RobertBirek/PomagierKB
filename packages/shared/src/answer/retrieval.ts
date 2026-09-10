@@ -1,5 +1,5 @@
 import type { Db } from '../db/index.js';
-import { foldPolish, listKbs, searchFts, type KbRow } from '../db/index.js';
+import { exactTokenRegex, foldPolish, listKbs, searchFts, searchFtsExact, type FtsResult, type KbRow } from '../db/index.js';
 import { PL_QUERY_STOPWORDS } from '../text/stopwords.js';
 import { rrfFuse, searchText, searchVector } from '../openspg/index.js';
 import type { OpenSpgClient, RankedList, SearchHit } from '../openspg/index.js';
@@ -43,7 +43,7 @@ export interface AnswerCtx {
   log: AnswerLog;
 }
 
-export type RetrievalSource = 'fallback_fts' | 'openspg_vector' | 'openspg_text';
+export type RetrievalSource = 'fallback_fts' | 'openspg_vector' | 'openspg_text' | 'exact_match';
 export type RetrievalMode = 'hybrid' | 'text' | 'vector';
 
 export interface RetrievalHit {
@@ -323,7 +323,71 @@ function withdrawnIds(db: Db, ids: string[]): Set<string> {
 }
 
 /** Priorytet oznaczenia źródła: OpenSPG przed fallbackiem lokalnym. */
+// ── Wzmocnienie dokładnych tokenów (wersje, identyfikatory) ─────────────────
+//
+// Przy 42 tys. chunków (SubiektKB) pytania o konkretną wersję („nowości w 1.84 SP1") trafiały
+// w sąsiednie numery (1.48 SP1, 1.06 SP1): embeddingi nie rozróżniają numerów, trigram gubi
+// „1" i „84" jako za krótkie, a RRF mierzy zgodność kanałów, nie obecność tokenu. Dwa mechanizmy:
+// (1) osobna lista FTS z frazami-podciągami tokenów (`searchFtsExact`) wchodzi do fuzji RRF jak
+// dodatkowy kanał, (2) każdy kandydat, którego tytuł+treść zawiera WSZYSTKIE tokeny, dostaje
+// stały bonus do score RRF. Bonus = dwa „pierwsze miejsca" w kanale: wygrywa z pojedynczym
+// kanałem, ale NIE z konsensusem trzech kanałów — token obecny w setkach chunków (widoki SQL
+// z `tw__Towar`) nie może wyprzeć kandydata, który pasuje leksykalnie i semantycznie. Zwykłe
+// liczby, daty i kwoty NIE są tokenami — tylko wersje `d.d[ SPn][ HFn]` i identyfikatory z „_".
+
+const VERSION_TOKEN_RE = /\b\d+\.\d+(?:\s*(?:SP|HF)\s*\d+)*\b/gi;
+const IDENT_TOKEN_RE = /\b[A-Za-z][A-Za-z0-9]*_+[A-Za-z0-9_]*[A-Za-z0-9]\b/g;
+/** Pula FTS przy dokładnych tokenach — krotność limitu. */
+export const EXACT_TOKEN_FTS_POOL = 3;
+/** Bonus RRF za komplet tokenów w tytule+treści (k=60 jak w `rrfFuse`): 2 × 1/(k+1). */
+export const EXACT_TOKEN_BONUS = 2 / 61;
+
+/** Dokładne tokeny z pytania: wersje i identyfikatory, w kolejności wystąpienia, bez duplikatów. */
+export function extractExactTokens(query: string): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const add = (t: string): void => {
+    const norm = t.toLowerCase().replace(/\s+/g, '');
+    if (norm.length < 3 || seen.has(norm)) return;
+    seen.add(norm);
+    out.push(t.trim());
+  };
+  // „1.5 mln" też pasuje do wzorca wersji — akceptowany szum: bonus działa tylko, gdy kandydat
+  // faktycznie zawiera token, więc fałszywy token nie zmienia rankingu.
+  for (const m of query.matchAll(VERSION_TOKEN_RE)) add(m[0]);
+  for (const m of query.matchAll(IDENT_TOKEN_RE)) add(m[0]);
+  return out;
+}
+
+/**
+ * Kandydaci zawierający wszystkie tokeny (w tytule lub treści) dostają `EXACT_TOKEN_BONUS` do
+ * score i źródło 'exact_match' (widoczne w kb_search/kokpicie); lista jest sortowana ponownie
+ * po score (stabilnie — remis zachowuje kolejność wejściową). Bez tokenów lub bez dopasowań
+ * zwraca wejście bez zmian.
+ */
+export function applyExactTokenBoost<T extends { id: string; score: number; sources: string[] }>(
+  ranked: T[],
+  tokens: string[],
+  textOf: (id: string) => string,
+): T[] {
+  if (tokens.length === 0 || ranked.length === 0) return ranked;
+  const regexes = tokens.map(exactTokenRegex);
+  let matched = 0;
+  const boosted = ranked.map((hit) => {
+    const text = textOf(hit.id);
+    if (text === '' || !regexes.every((re) => re.test(text))) return hit;
+    matched++;
+    return { ...hit, score: hit.score + EXACT_TOKEN_BONUS, sources: [...hit.sources, 'exact_match'] };
+  });
+  if (matched === 0) return ranked;
+  return boosted
+    .map((hit, i) => ({ hit, i }))
+    .sort((a, b) => b.hit.score - a.hit.score || a.i - b.i)
+    .map((x) => x.hit);
+}
+
 function pickSource(sources: string[]): RetrievalSource {
+  if (sources.includes('exact_match')) return 'exact_match';
   if (sources.includes('openspg_vector')) return 'openspg_vector';
   if (sources.includes('openspg_text')) return 'openspg_text';
   return 'fallback_fts';
@@ -379,10 +443,10 @@ export async function hybridSearch(
    * po surowych score'ach — nieporównywalne między projektami OpenSPG: najgęstsza
    * baza dominowała top-k). Każda KB wnosi ranking, routing hints ważą wkład.
    */
-  const fusePerNamespace = (byNs: Map<string, ChannelHit[]>): ChannelHit[] => {
+  const fusePerNamespace = (byNs: Map<string, ChannelHit[]>, cap = limit): ChannelHit[] => {
     if (byNs.size <= 1) {
       const only = [...byNs.values()][0] ?? [];
-      return only.slice(0, limit);
+      return only.slice(0, cap);
     }
     const lists: RankedList[] = [...byNs.entries()].map(([ns, items]) => ({
       source: ns,
@@ -392,7 +456,7 @@ export async function hybridSearch(
     const byId = new Map<string, ChannelHit>();
     for (const items of byNs.values()) for (const h of items) if (!byId.has(h.id)) byId.set(h.id, h);
     return rrfFuse(lists)
-      .slice(0, limit)
+      .slice(0, cap)
       .map((f) => byId.get(f.id))
       .filter((h): h is ChannelHit => h !== undefined);
   };
@@ -410,24 +474,33 @@ export async function hybridSearch(
   let ftsHits: ChannelHit[] = [];
   let lexicalStrict = false;
   const ftsStartedAt = Date.now();
-  try {
-    const ftsRows = searchFts(ctx.db, textQuery, namespaces, limit);
-    // AND = wszystkie rdzenie zapytania w chunku; OR to luźny fallback (słaby dowód).
-    lexicalStrict = ftsRows.length > 0 && ftsRows.every((r) => r.matchKind === 'and');
-    const raw = ftsRows.map((r) => ({
-      id: r.id,
-      namespace: r.namespace,
-      snippet: r.snippet,
-      ...(r.title !== null ? { title: r.title } : {}),
-    }));
-    // Re-ważenie routingiem także w kanale lokalnym (spójnie z kanałami OpenSPG).
+  const exactTokens = extractExactTokens(params.query);
+  // Przy dokładnych tokenach kanał lokalny dostaje szerszą pulę i drugą listę (frazy-podciągi
+  // tokenów przez trigram) — osobną w fuzji RRF, żeby zgodność z listą zwykłych termów była
+  // nagradzana jak zgodność kanałów, a nie żeby sama fraza dominowała ranking.
+  const ftsLimit = exactTokens.length > 0 ? limit * EXACT_TOKEN_FTS_POOL : limit;
+  let ftsExactHits: ChannelHit[] = [];
+  /** Re-ważenie routingiem także w kanale lokalnym (spójnie z kanałami OpenSPG). */
+  const toChannelHits = (rows: FtsResult[], cap: number): ChannelHit[] => {
     const byNs = new Map<string, ChannelHit[]>();
-    for (const h of raw) {
+    for (const r of rows) {
+      const h: ChannelHit = { id: r.id, namespace: r.namespace, snippet: r.snippet, ...(r.title !== null ? { title: r.title } : {}) };
       const list = byNs.get(h.namespace);
       if (list === undefined) byNs.set(h.namespace, [h]);
       else list.push(h);
     }
-    ftsHits = fusePerNamespace(byNs);
+    return fusePerNamespace(byNs, cap);
+  };
+  try {
+    const ftsRows = searchFts(ctx.db, textQuery, namespaces, ftsLimit);
+    // AND = wszystkie rdzenie zapytania w chunku; OR to luźny fallback (słaby dowód).
+    lexicalStrict = ftsRows.length > 0 && ftsRows.every((r) => r.matchKind === 'and');
+    ftsHits = toChannelHits(ftsRows, ftsLimit);
+    if (exactTokens.length > 0) {
+      // Bramka odmowy (`lexicalStrict`) ŚWIADOMIE nie patrzy na tę listę: sama obecność
+      // „1.2" w korpusie nie czyni pytania o Fiata Punto 1.2 pytaniem na temat.
+      ftsExactHits = toChannelHits(searchFtsExact(ctx.db, exactTokens, namespaces, ftsLimit), ftsLimit);
+    }
   } catch (err) {
     ctx.log.warn(
       { err: err instanceof Error ? err.message : String(err) },
@@ -552,18 +625,26 @@ export async function hybridSearch(
   // Fuzja RRF + dedup po id (rrfFuse deduplikuje w obrębie i między listami).
   const lists: RankedList[] = [];
   if (ftsHits.length > 0) lists.push({ source: 'fallback_fts', items: ftsHits });
+  if (ftsExactHits.length > 0) lists.push({ source: 'fallback_fts', items: ftsExactHits });
   if (vectorHits !== null) lists.push({ source: 'openspg_vector', items: vectorHits });
   if (textHits !== null) lists.push({ source: 'openspg_text', items: textHits });
   // Wycofane id odsiewamy PRZED przycięciem do `limit`, żeby martwy węzeł nie zajmował
   // miejsca żywemu — inaczej wycofanie dokumentu obniżałoby liczbę realnych trafień.
-  const ranked = rrfFuse(lists);
-  const withdrawn = withdrawnIds(ctx.db, ranked.map((f) => f.id));
-  const fused = ranked.filter((f) => !withdrawn.has(f.id)).slice(0, limit);
+  const rankedRaw = rrfFuse(lists);
+  const withdrawn = withdrawnIds(ctx.db, rankedRaw.map((f) => f.id));
+  const alive = rankedRaw.filter((f) => !withdrawn.has(f.id));
+  // Mirror dla WSZYSTKICH żywych kandydatów (nie tylko top-limit): boost dokładnych tokenów
+  // musi widzieć treść także tych, których fuzja zepchnęła poniżej limitu.
+  const mirror = mirrorLookup(ctx.db, alive.map((f) => f.id));
+  const ranked = applyExactTokenBoost(alive, exactTokens, (id) => {
+    const m = mirror.get(id);
+    return m === undefined ? '' : `${m.title ?? ''}\n${m.content}`;
+  });
+  const fused = ranked.slice(0, limit);
 
-  const ftsMap = new Map(ftsHits.map((h) => [h.id, h]));
+  const ftsMap = new Map([...ftsExactHits, ...ftsHits].map((h) => [h.id, h]));
   const vectorMap = new Map((vectorHits ?? []).map((h) => [h.id, h]));
   const textMap = new Map((textHits ?? []).map((h) => [h.id, h]));
-  const mirror = mirrorLookup(ctx.db, fused.map((f) => f.id));
 
   let snippetOnly = false;
   const results: RetrievalHit[] = fused.map((f) => {

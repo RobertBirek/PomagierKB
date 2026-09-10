@@ -201,5 +201,44 @@
       },
       "decision": "próg 0.70 ZOSTAJE: przy 14 600 chunkach maksimum kosinusa pytań spoza bazy rośnie (0.844 dla „hasło do bazy MSSQL” w KB dokumentującej bazę MSSQL), a każde podniesienie progu kosztuje 4-9 pkt proc. realnych pytań (krótkie hasła StagingSmoke 0.62-0.69). Fałszywe odmowy przy 0.70 to wyłącznie 1-2-wyrazowe zapytania StagingSmoke; obrona przed fałszywymi odpowiedziami zostaje w warstwie cytowań/noAnswer (gate.ts). negativeAccuracy 0.81 w trybie full jest znanym stanem, nie regresją bramki CI (tryb fts: 1.0)."
     }
+  },
+  "exactTokens": {
+    "measuredAt": "2026-09-10",
+    "$comment": "A/B przed/po wzmocnieniu dokładnych tokenów (searchFtsExact jako osobna lista RRF + bonus 2/61 za komplet tokenów w tytule+treści). Korpus: SubiektKB 1 327 dok. / ~35 tys. chunków (+ e-Pomoc, forum), PomagierOps, StagingSmoke; 144 goldens. Pomiar: EVAL_RANKS=1 node tools/eval/run-eval.mjs (fts) oraz EVAL_CHANNELS=full na produkcyjnym OpenSPG.",
+    "fts": {
+      "before": {
+        "hit1": 0.793,
+        "hit5": 0.885,
+        "mrr": 0.835,
+        "negativeAccuracy": 1.0
+      },
+      "after": {
+        "hit1": 0.805,
+        "hit5": 0.908,
+        "mrr": 0.849,
+        "negativeAccuracy": 1.0
+      }
+    },
+    "full": {
+      "before": {
+        "hit1": 0.813,
+        "hit5": 0.925,
+        "mrr": 0.863,
+        "negativeAccuracy": 0.811,
+        "multihopCoverage": 0.75
+      },
+      "after": {
+        "hit1": 0.85,
+        "hit5": 0.935,
+        "mrr": 0.89,
+        "negativeAccuracy": 0.811,
+        "multihopCoverage": 1.0
+      }
+    },
+    "fixed": [
+      "Zmiany w InsERT GT w wersji 1.84 SP1 - co dodano w Subiekcie (miss -> rank 1)",
+      "identyfikatory i klucze glowne tabel tw__Towar oraz kh__Kontrahent (multihop-partial -> pelne pokrycie)"
+    ],
+    "knownRegression": "fts: 'jakie kolumny ma tabela tw__Towar' rank 3 -> 5 (forum z tw__Towar w tytule watku wygrywa konsensusem list; w trybie pelnym bez zmian). Negatywy 0.811 w trybie pelnym bez zmian - sprawa bramki 0.70 (sekcja recalibration), nie fuzji."
   }
 }

@@ -123,7 +123,8 @@ export function listDocuments(
 }
 
 /** Sposób dopasowania wiersza: 'and' = wszystkie rdzenie (mocne), 'or' = luźny fallback. */
-export type FtsMatchKind = 'and' | 'or';
+/** 'exact' — fraza dokładnego tokenu (wersja „1.84 SP1", identyfikator `tw__Towar`) jako podciąg. */
+export type FtsMatchKind = 'and' | 'or' | 'exact';
 
 export interface FtsResult {
   id: string;
@@ -330,6 +331,57 @@ export function searchFts(db: Db, query: string, namespaces: string[], limit = 8
   return runFtsQuery(db, loose, namespaces, limit, stems, 'or');
 }
 
+/**
+ * Regex dokładnego tokenu (wersja „1.84 SP1", identyfikator `tw__Towar`): bez wielkości liter,
+ * spacje między segmentami (cyfry/litery/inne) dowolne („1.84SP1" = „1.84 SP1"), granice słowa
+ * po obu stronach („1.8" nie pasuje do „1.84", „dok_Typ" nie pasuje do „dok_TypX").
+ */
+export function exactTokenRegex(token: string): RegExp {
+  const segments = token.toLowerCase().replace(/\s+/g, '').match(/[a-z]+|\d+|[^a-z\d]+/g) ?? [];
+  const body = segments.map((seg) => seg.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('\\s*');
+  return new RegExp(`(?<![\\p{L}\\p{N}_])${body}(?![\\p{L}\\p{N}_])`, 'iu');
+}
+
+/**
+ * Dokładne tokeny (wersje, identyfikatory) jako frazy-podciągi: tokenizer trigram dopasowuje
+ * cytowaną frazę jako ciąg znaków, więc „1.84 sp1" trafia w treść z „1.84 SP1" niezależnie od
+ * tego, że zwykłe termy zapytania (`queryTerms`) gubią „1" i „84" jako za krótkie. Wszystkie
+ * tokeny muszą wystąpić (AND). Tokeny krótsze niż 3 znaki są pomijane (trigram ich nie widzi).
+ */
+export function searchFtsExact(db: Db, tokens: string[], namespaces: string[], limit = 8): FtsResult[] {
+  if (namespaces.length === 0) return [];
+  const phrases = [...new Set(tokens.map((t) => foldPolish(t).replace(/\s+/g, ' ').trim()))].filter(
+    (t) => t.length >= MIN_TOKEN_LEN,
+  );
+  if (phrases.length === 0) return [];
+  // Trigram dopasowuje PODCIĄG („1.2" trafia w „1.22") — granice tokenu egzekwuje regex na
+  // tytule+treści; pula z FTS jest większa, żeby po odsiewie zostało `limit` wierszy.
+  const regexes = tokens.map(exactTokenRegex);
+  const keep = (r: FtsRow): boolean => regexes.every((re) => re.test(`${r.title ?? ''}\n${r.content}`));
+  // Pas nagłówkowy: LIKE w SQL to wstępny odsiew (podciąg), granice tokenu sprawdza regex —
+  // `InsSearch.len_tw__Towar` nie jest nagłówkiem o tabeli `tw__Towar`.
+  const keepHeading = (r: FtsRow): boolean =>
+    regexes.every((re) => re.test(`${r.title ?? ''}\n${r.section_heading ?? ''}`)) && keep(r);
+  const match = phrases.map(quote).join(' AND ');
+  // Najpierw chunki z tokenem w NAGŁÓWKU sekcji/tytule (opis tabeli `dbo.tw__Towar`, changelog
+  // „Zmiany w InsERT GT 1.84 SP1"), potem reszta po bm25 — bm25 samo promuje chunki z wieloma
+  // wystąpieniami (widoki SQL z `dbo.tw__Towar.` w każdej linii), a opis tabeli ma jedno.
+  const inHeading = runFtsQuery(db, match, namespaces, limit, phrases, 'exact', keepHeading, phrases);
+  const seen = new Set(inHeading.map((r) => r.id));
+  const rest = runFtsQuery(db, match, namespaces, limit * 2, phrases, 'exact', keep).filter((r) => !seen.has(r.id));
+  return [...inHeading, ...rest].slice(0, limit);
+}
+
+interface FtsRow {
+  id: string;
+  doc_id: string;
+  namespace: string;
+  title: string | null;
+  content: string;
+  section_heading: string | null;
+  score: number;
+}
+
 function runFtsQuery(
   db: Db,
   match: string,
@@ -337,33 +389,36 @@ function runFtsQuery(
   limit: number,
   stems: readonly string[],
   matchKind: FtsMatchKind,
+  keep: (row: FtsRow) => boolean = () => true,
+  headingPhrases: readonly string[] = [],
 ): FtsResult[] {
   const placeholders = namespaces.map(() => '?').join(',');
+  // LIKE po nagłówku sekcji/tytule (kolumny spoza indeksu FTS); `_` i `%` w tokenie escapowane.
+  const likeOf = (phrase: string): string => `%${phrase.replace(/[\\%_]/g, '\\$&')}%`;
+  const headingClause = headingPhrases
+    .map(() => " AND (coalesce(c.section_heading, '') LIKE ? ESCAPE '\\' OR coalesce(c.title, '') LIKE ? ESCAPE '\\')")
+    .join('');
+  const headingParams = headingPhrases.flatMap((p) => [likeOf(p), likeOf(p)]);
   const rows = db
     .prepare(
-      `SELECT c.id, c.doc_id, c.namespace, c.title, c.content,
+      `SELECT c.id, c.doc_id, c.namespace, c.title, c.content, c.section_heading,
               bm25(chunks_fts) AS score
        FROM chunks_fts
        JOIN chunks_mirror c ON c.rowid = chunks_fts.rowid
-       WHERE chunks_fts MATCH ? AND c.namespace IN (${placeholders})
+       WHERE chunks_fts MATCH ? AND c.namespace IN (${placeholders})${headingClause}
        ORDER BY bm25(chunks_fts)
        LIMIT ?`,
     )
-    .all(match, ...namespaces, Math.min(Math.max(limit, 1), 50)) as {
-    id: string;
-    doc_id: string;
-    namespace: string;
-    title: string | null;
-    content: string;
-    score: number;
-  }[];
-  return rows.map((r) => ({
-    id: r.id,
-    docId: r.doc_id,
-    namespace: r.namespace,
-    title: r.title,
-    snippet: buildFtsSnippet(r.content, stems),
-    bm25: r.score,
-    matchKind,
-  }));
+    .all(match, ...namespaces, ...headingParams, Math.min(Math.max(limit, 1), 50)) as FtsRow[];
+  return rows
+    .filter(keep)
+    .map((r) => ({
+      id: r.id,
+      docId: r.doc_id,
+      namespace: r.namespace,
+      title: r.title,
+      snippet: buildFtsSnippet(r.content, stems),
+      bm25: r.score,
+      matchKind,
+    }));
 }
