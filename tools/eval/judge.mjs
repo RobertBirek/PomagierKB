@@ -2,7 +2,9 @@
 // LLM-judge jakości odpowiedzi (program ewaluacji F10.4) — BUDŻETOWANY, ręczny/miesięczny.
 // Próbkuje odpowiedzi z tabeli answers (próbkowanie STRATYFIKOWANE) i ocenia rubryką 1-5:
 //   groundedness (czy twierdzenia odpowiedzi mają pokrycie w cytowanych chunkach),
-//   relevance (czy odpowiada na pytanie), refusalCorrect (czy odmowa/odpowiedź była zasadna).
+//   relevance (czy odpowiada na pytanie; poprawna ODMOWA ZAKRESU oceniana jako „czy odmowa jest
+//   właściwa i pomocna" — rubryka z 2026-09-10, wyniki sprzed niej NIE są porównywalne),
+//   refusalCorrect (czy odmowa/odpowiedź była zasadna).
 // Użycie: DATA_DIR=/srv/kag-data/kag/panel TOKEN_ENC_KEY=... node tools/eval/judge.mjs
 // Env: JUDGE_MAX (default 20 — twardy budżet wywołań chat), JUDGE_OUT (plik raportu JSON,
 //      domyślnie POZA repozytorium: $DATA_DIR/exports/judge-report-<data>.json — raport
@@ -84,6 +86,11 @@ const SYSTEM = [
   '- groundedness: czy TREŚĆ ODPOWIEDZI ma pokrycie w dostarczonych źródłach (5 = każde twierdzenie),',
   '- relevance: czy TREŚĆ ODPOWIEDZI odpowiada na zadane pytanie (5 = wprost i kompletnie),',
   '- refusalCorrect: czy decyzja odpowiedz/odmów była słuszna wobec źródeł (5 = idealna).',
+  'ODMOWA ZAKRESU: gdy odpowiedź mówi wprost, że źródła nie obejmują pytania (brak informacji,',
+  'inny produkt, inna technologia) i ta ocena jest ZGODNA ze źródłami, to jest to poprawna odmowa —',
+  'relevance oceniaj wtedy jako „czy odmowa jest właściwa i pomocna" (jasno mówi, czego brakuje,',
+  'nie odpowiada o czymś podobnym, nie dokłada domysłów), NIE jako „czy odpowiedziano na pytanie".',
+  'Odpowiedź o produkcie podobnym do pytanego (np. o linii GT, gdy pytano o nexo) to relevance 1-2.',
   'KRYTYCZNE: gdy blok ODPOWIEDŹ jest oznaczony jako NIEDOSTĘPNA, NIE ZGADUJ —',
   'zwróć groundedness: null i relevance: null. Oceń wtedy wyłącznie refusalCorrect',
   '(czy przy TAKICH źródłach decyzja o odpowiedzi/odmowie była zasadna).',
@@ -136,6 +143,7 @@ const avg = (k) => {
 };
 const report = {
   at: new Date().toISOString(),
+  rubric: 'judge-v2', // v2 (2026-09-10): odmowa zakresu oceniana jako odmowa, nie jako brak odpowiedzi
   samples: answers.length,
   scored: scored.length,
   withAnswerText: results.filter((r) => r.hasAnswerText).length,

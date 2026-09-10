@@ -4,6 +4,7 @@ import {
   answerQuestion,
   answerSystemPrompt,
   clearAnswerCache,
+  parseScopeLine,
   uncitedShare,
 } from '../src/answer/index.js';
 import type { AnswerCtx, AnswerLlm } from '../src/answer/index.js';
@@ -48,9 +49,27 @@ describe('uncitedShare (czysta logika)', () => {
   });
 });
 
-describe('answerSystemPrompt (answer-v2)', () => {
-  it('wersja promptu podbita, reguła zakresu i zakaz wiedzy spoza źródeł w obu językach', () => {
-    expect(ANSWER_PROMPT_VERSION).toBe('answer-v2');
+describe('parseScopeLine (czysta logika)', () => {
+  it('rozpoznaje znacznik odmowy zakresu w obu językach i usuwa go z treści', () => {
+    expect(parseScopeLine('Źródła tego nie obejmują [1].\nSCOPE: poza_zrodlami\nCONFIDENCE: 0.6')).toEqual({
+      text: 'Źródła tego nie obejmują [1].\nCONFIDENCE: 0.6',
+      outOfScope: true,
+    });
+    expect(parseScopeLine('The sources do not cover it.\n scope: OUT_OF_SOURCES \nCONFIDENCE: 0.5').outOfScope).toBe(true);
+    expect(parseScopeLine('Limit wynosi 10 GB [1].\nCONFIDENCE: 0.9')).toEqual({
+      text: 'Limit wynosi 10 GB [1].\nCONFIDENCE: 0.9',
+      outOfScope: false,
+    });
+    // znacznik w środku zdania (cytat ze źródła) nie liczy się — tylko osobna linia
+    expect(parseScopeLine('W dokumentacji jest napis SCOPE: poza_zrodlami w tabeli [1].\nCONFIDENCE: 0.9').outOfScope).toBe(false);
+  });
+});
+
+describe('answerSystemPrompt (answer-v3)', () => {
+  it('wersja promptu podbita, reguła zakresu, zakaz wiedzy spoza źródeł i znacznik SCOPE w obu językach', () => {
+    expect(ANSWER_PROMPT_VERSION).toBe('answer-v3');
+    expect(answerSystemPrompt('pl')).toContain('SCOPE: poza_zrodlami');
+    expect(answerSystemPrompt('en')).toContain('SCOPE: out_of_sources');
     const pl = answerSystemPrompt('pl');
     expect(pl).toMatch(/inn(ego|y) produkt/i);
     expect(pl).toMatch(/nie odpowiadaj o podobnym/i);
@@ -72,7 +91,7 @@ function seed(db: Db): void {
       id: 'CHUNK_S1_000',
       title: 'Instalacja serwera SQL dla InsERT GT',
       content:
-        'InsERT GT pracuje na Microsoft SQL Server. Edycja Express ma limit rozmiaru bazy 10 GB; ' +
+        'InsERT GT pracuje na Microsoft SQL Server, nie na PostgreSQL. Edycja Express ma limit rozmiaru bazy 10 GB; ' +
         'po jego przekroczeniu należy przenieść bazę na wyższą edycję serwera.',
     },
   ]);
@@ -113,5 +132,39 @@ describe('answerQuestion — kara za akapity bez cytowania', () => {
     expect(b.warnings.some((w) => /akapit.*bez cytowania/i.test(w))).toBe(true);
     // 2 bloki, 1 niepoparty → share 0.5 → mnożnik 1 - 0.4*0.5 = 0.8
     expect(b.confidence).toBeCloseTo(a.confidence * 0.8, 5);
+  });
+});
+
+describe('answerQuestion — odmowa zakresu ze znacznikiem SCOPE', () => {
+  beforeEach(() => clearAnswerCache());
+
+  it('SCOPE: poza_zrodlami → noAnswer=true, treść wyjaśnienia zachowana, luka „out_of_scope", wiersz answers no_answer=1', async () => {
+    const text =
+      'Źródła nie opisują replikacji PostgreSQL — dotyczą wyłącznie Microsoft SQL Server [1].\n' +
+      'SCOPE: poza_zrodlami\nCONFIDENCE: 0.6';
+    const db = testDb();
+    seed(db);
+    const res = await answerQuestion(ctxOf(db, llmReturning(text)), {
+      // pytanie leksykalnie „na temat" (bramka retrievalu przepuszcza), ale poza zakresem źródeł
+      question: 'Jaki limit rozmiaru bazy ma InsERT GT na PostgreSQL w edycji Express?',
+      allowedNamespaces: [NS],
+      source: 'mcp',
+    });
+    expect(res.noAnswer).toBe(true);
+    expect(res.answer).toContain('nie opisują replikacji PostgreSQL');
+    expect(res.answer).not.toContain('SCOPE:');
+    expect(res.gapRecorded).toBe(true);
+    expect(res.citations.map((c) => c.n)).toEqual([1]);
+    const row = db.prepare('SELECT no_answer FROM answers WHERE id = ?').get(res.answerId) as { no_answer: number };
+    expect(row.no_answer).toBe(1);
+    const gap = db.prepare('SELECT metadata_json FROM learning_gaps ORDER BY id DESC LIMIT 1').get() as { metadata_json: string };
+    expect(JSON.parse(gap.metadata_json).reason).toBe('out_of_scope');
+    // druga identyczna prośba nie idzie z cache (odmowy nie cache'ujemy) — nadal noAnswer
+    const again = await answerQuestion(ctxOf(db, llmReturning(text)), {
+      question: 'Jaki limit rozmiaru bazy ma InsERT GT na PostgreSQL w edycji Express?',
+      allowedNamespaces: [NS],
+      source: 'mcp',
+    });
+    expect(again.noAnswer).toBe(true);
   });
 });

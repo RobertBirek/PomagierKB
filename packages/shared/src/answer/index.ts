@@ -37,6 +37,7 @@ export {
   answerQuestion,
   toStoredCitations,
   answerSystemPrompt,
+  parseScopeLine,
   NO_ANSWER_TEXT,
   ANSWER_PROMPT_VERSION,
   UNCITED_PENALTY,
