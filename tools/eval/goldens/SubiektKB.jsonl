@@ -3,8 +3,8 @@
 {"question":"tabela kh__Kontrahent kolumny i klucze","expectedIds":["DOC_B0C0B4E0824C4A87"],"mustContain":["kh_"],"namespaces":["SubiektKB"],"expectedNamespace":"SubiektKB","kind":"keyword"}
 {"question":"przegląd modułów bazy danych InsERT GT — lista tabel i typów aliasowych","expectedIds":["DOC_7D428073FAA8DD7A"],"mustContain":["TNazwa"],"namespaces":["SubiektKB"],"expectedNamespace":"SubiektKB","kind":"keyword"}
 {"question":"które tabele są w żywej bazie pomagier, a nie ma ich w dokumentacji InsERT","expectedIds":["DOC_E0CD38BD85ACAC2B"],"mustContain":["żywej bazie"],"namespaces":["SubiektKB"],"expectedNamespace":"SubiektKB","kind":"paraphrase"}
-{"question":"co zmieniło się w strukturze bazy danych w wersji 1.89 HF1","expectedIds":["DOC_FCEA0620891F81D5"],"namespaces":["SubiektKB"],"expectedNamespace":"SubiektKB","kind":"paraphrase","requires":"full"}
-{"question":"zmiany w bazie danych 1.8900.0.7104 → 1.8901.1.7130 vat__EwidVAT","expectedIds":["DOC_FCEA0620891F81D5"],"mustContain":["ev_MiesiacGodzinaOdliczVAT"],"namespaces":["SubiektKB"],"expectedNamespace":"SubiektKB","kind":"keyword"}
+{"question":"co zmieniło się w strukturze bazy danych w wersji 1.89 HF1","expectedIds":["DOC_68AC365F35FD0DAD"],"namespaces":["SubiektKB"],"expectedNamespace":"SubiektKB","kind":"paraphrase","requires":"full"}
+{"question":"zmiany w bazie danych 1.8900.0.7104 → 1.8901.1.7130 vat__EwidVAT","expectedIds":["DOC_68AC365F35FD0DAD"],"mustContain":["ev_MiesiacGodzinaOdliczVAT"],"namespaces":["SubiektKB"],"expectedNamespace":"SubiektKB","kind":"keyword"}
 {"question":"co to jest Sfera dla InsERT GT i jak ją zarejestrować","expectedIds":["DOC_9D1FCAD536D4B634"],"mustContain":["Sfer"],"namespaces":["SubiektKB"],"expectedNamespace":"SubiektKB","kind":"paraphrase","requires":"full"}
 {"question":"specyfikacja formatu EDI++ wersja 1.12 import eksport dokumentów","expectedIds":["DOC_75B541C00D2CFE1F"],"mustContain":["EDI"],"namespaces":["SubiektKB"],"expectedNamespace":"SubiektKB","kind":"keyword"}
 {"question":"jak napisać własne rozwiązanie COM osadzone w Subiekcie GT","expectedIds":["DOC_842B7FFD4A3CD5D7"],"mustContain":["COM"],"namespaces":["SubiektKB"],"expectedNamespace":"SubiektKB","kind":"paraphrase","requires":"full"}
@@ -41,4 +41,4 @@
 {"question":"Ile kosztuje licencja Subiekta GT na 5 stanowisk w 2026 roku?","negative":true,"namespaces":["SubiektKB"],"kind":"near-miss"}
 {"question":"Jak skonfigurować replikację bazy PostgreSQL dla InsERT GT?","negative":true,"namespaces":["SubiektKB"],"kind":"near-miss"}
 {"question":"Jak w Subiekcie nexo wystawić fakturę zaliczkową?","negative":true,"namespaces":["SubiektKB"],"kind":"near-miss"}
-{"question":"Zmiany w InsERT GT w wersji 1.84 SP1 — co dodano w Subiekcie","expectedIds":["DOC_3A7DD76D45068A5A","DOC_DF3ABAF0EDAB1553"],"namespaces":["SubiektKB"],"expectedNamespace":"SubiektKB","kind":"keyword"}
+{"question":"Zmiany w InsERT GT w wersji 1.84 SP1 — co dodano w Subiekcie","expectedIds":["DOC_36ECF52346DF238B","DOC_435785C6983721D2"],"namespaces":["SubiektKB"],"expectedNamespace":"SubiektKB","kind":"keyword"}
