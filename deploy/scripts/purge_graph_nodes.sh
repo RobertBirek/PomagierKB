@@ -92,9 +92,13 @@ cypher() { # cypher <zapytanie>
     'NEO4J_USERNAME="$OPENSPG_NEO4J_USER" NEO4J_PASSWORD="$OPENSPG_NEO4J_PASSWORD" exec cypher-shell -d '"${NEO4J_DB}"' --format plain'
 }
 ALL_IDS="$(printf '%s' "${CANDIDATES_JSON}" | jq -c '[.[].id]')"
-PRESENT_JSON="$(cypher "MATCH (n) WHERE n.id IN ${ALL_IDS} RETURN collect(DISTINCT n.id) AS ids;" | tail -1)"
-CANDIDATES_JSON="$(printf '%s' "${CANDIDATES_JSON}" | jq -c --argjson present "${PRESENT_JSON}" --argjson lim "${LIMIT}" \
-  '($present | map({key: ., value: true}) | from_entries) as $m | [.[] | select($m[.id])] | .[:$lim]')"
+# Lista obecnych id idzie przez PLIK (--slurpfile), nie przez argument: przy ~12 tys. id
+# przekracza limit długości pojedynczego argumentu (jq: "Argument list too long").
+PRESENT_FILE="$(mktemp)"
+cypher "MATCH (n) WHERE n.id IN ${ALL_IDS} RETURN collect(DISTINCT n.id) AS ids;" | tail -1 > "${PRESENT_FILE}"
+CANDIDATES_JSON="$(printf '%s' "${CANDIDATES_JSON}" | jq -c --slurpfile present "${PRESENT_FILE}" --argjson lim "${LIMIT}" \
+  '($present[0] | map({key: ., value: true}) | from_entries) as $m | [.[] | select($m[.id])] | .[:$lim]')"
+rm -f "${PRESENT_FILE}"
 COUNT="$(printf '%s' "${CANDIDATES_JSON}" | jq 'length')"
 if [[ "${COUNT}" -eq 0 ]]; then
   log "wszystkie wycofane id są już poza grafem — nic do zrobienia"
