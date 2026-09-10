@@ -12,7 +12,7 @@ import AdmZip from 'adm-zip';
 import { packSections } from './lib/catalog-md.mjs';
 import { extractPdfLines, linesToMarkdown, splitMarkdownSections } from './lib/pdf-md.mjs';
 import { decodeHtmlFile, htmlToMarkdown, loadChm, planChapters } from './lib/chm-md.mjs';
-import { classifySource, curateArchiveFile, slugify } from './lib/sources.mjs';
+import { CATEGORIES, classifySource, curateArchiveFile, slugify } from './lib/sources.mjs';
 
 const args = process.argv.slice(2);
 const opt = (name, def = null) => {
@@ -114,6 +114,12 @@ function handleChm(chmPath, meta, sourceBase, sourceFile) {
         usedPages.add(p.local.toLowerCase());
         continue;
       }
+      if (meta.splitByHeading && meta.splitByHeading.pages.test(p.local)) {
+        usedPages.add(p.local.toLowerCase());
+        const r0 = mdOf(p.local);
+        if (r0) files += emitByHeading(r0.markdown, meta, sourceBase, sourceFile, p.name);
+        continue;
+      }
       const r = mdOf(p.local);
       if (!r || r.markdown.trim() === '') continue;
       const page = chm.getPage(p.local);
@@ -155,6 +161,27 @@ function handleChm(chmPath, meta, sourceBase, sourceFile) {
   }
   if (extraSections.length > 0) {
     files += emit({ slug: `${meta.slug}-pozostale-strony`, title: `${meta.title} › pozostałe strony pomocy`, intro: `${meta.summary} Strony pomocy ${basename(sourceFile)} spoza spisu treści (okna, podstrony, opisy pól). Wersja programu: 1.89 HF1.`, sections: extraSections, sourceBase, category: meta.category, product: meta.product, keywords: meta.keywords, sourceFile });
+  }
+  return files;
+}
+
+/** Strona z nagłówkami H2 per wersja/temat → osobny dokument per nagłówek (własny slug i sourceUrl). */
+function emitByHeading(markdown, meta, sourceBase, sourceFile, pageName) {
+  const parts = markdown.split(/\n(?=## )/);
+  const cfg = meta.splitByHeading;
+  let files = 0;
+  for (const part of parts) {
+    const m = /^## (.+)$/m.exec(part);
+    if (!m) continue;
+    const heading = m[1].replace(/[_*]/g, '').replace(/\s+/g, ' ').trim();
+    const body = demoteHeadings(part).replace(/^## .*\n/, '').trim();
+    if (body.length < 80) continue;
+    // Wersja z sufiksami (1.22 SP3 HF1, 1.12 Hotfix Win98) — cały ogon po numerze, żeby slugi nie kolidowały.
+    const version = heading.match(/\d+\.\d+(?:\s+(?:SP|HF|Hotfix)\s*[\w.]+)*/i)?.[0]?.trim() ?? heading;
+    const title = `${cfg.titlePrefix} ${version}`.trim();
+    const slug = `${meta.slug}-${slugify(cfg.titlePrefix)}-${slugify(version)}`;
+    const intro = `${meta.summary} Fragment strony „${pageName}" pomocy ${basename(sourceFile)}: ${heading}. Wersja programu: 1.89 HF1.`;
+    files += emit({ slug, title, intro, sections: [{ name: heading, text: `## ${heading}\n\n${body}\n\n` }], sourceBase, category: CATEGORIES[cfg.category] ?? meta.category, product: meta.product, keywords: [...meta.keywords, 'lista zmian', version], sourceFile });
   }
   return files;
 }

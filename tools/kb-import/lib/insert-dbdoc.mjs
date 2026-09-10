@@ -105,11 +105,12 @@ export function parseDbChangesXml(xml) {
 }
 
 /** Render dokumentacji zmian do Markdown (jeden krótki dokument). */
-export function renderDbChanges(changes, productLabel = 'InsERT GT') {
+export function renderDbChanges(changes, productLabel = 'InsERT GT', label = null) {
   const lines = [];
-  lines.push(`# ${productLabel} — zmiany w bazie danych ${changes.oldVersion} → ${changes.newVersion}`);
+  const span = label ? `${label} (numery baz: ${changes.oldVersion} → ${changes.newVersion})` : `${changes.oldVersion} → ${changes.newVersion}`;
+  lines.push(`# ${productLabel} — zmiany w bazie danych ${span}`);
   lines.push('');
-  lines.push(`Dokumentacja zmian struktury bazy danych ${productLabel} między wersją ${changes.oldVersion} a ${changes.newVersion} (wygenerowana ${changes.date}). Wymienia nowe, usunięte i zmienione tabele oraz kolumny.`);
+  lines.push(`Dokumentacja zmian struktury bazy danych ${productLabel} między wersją ${span} (wygenerowana ${changes.date}). Wymienia nowe, usunięte i zmienione tabele oraz kolumny.`);
   lines.push('');
   const section = (title, list, withState) => {
     lines.push(`## ${title}`);

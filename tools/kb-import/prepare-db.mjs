@@ -26,6 +26,7 @@ const changesPath = opt('--changes');
 const outDir = opt('--out');
 const productLabel = opt('--product', 'InsERT GT');
 // sourceUrl musi być http(s) (walidacja POST /content) — baza = folder Drive z dokumentacją producenta.
+const changesLabel = opt('--changes-label', null); // np. "1.89 → 1.89 HF1" — numery buildów w XML nie mówią użytkownikowi nic
 const sourceBase = opt('--source-base', 'https://drive.google.com/drive/folders/1CRdwPl3SMF-sNS2bt83XvMbyFopeRded');
 if (!livePath || !docsPath || !outDir) {
   console.error('użycie: prepare-db.mjs --live catalog.json --docs Dokumentacja_DB.xml [--sql dir] [--changes xml] --out dir');
@@ -75,9 +76,9 @@ for (const p of packSections(diffSections.slice(1), { title: diffTitle, intro: d
 }
 if (changesPath) {
   const changes = parseDbChangesXml(readCp1250(changesPath));
-  const t = fm + renderDbChanges(changes, productLabel);
+  const t = fm + renderDbChanges(changes, productLabel, changesLabel);
   writeFileSync(join(outDir, '98-zmiany-bazy-danych.md'), t);
-  entries.push({ file: '98-zmiany-bazy-danych.md', title: `${productLabel} — zmiany w bazie danych ${changes.oldVersion} → ${changes.newVersion}`, sourceUrl: `${sourceBase}/baza-danych/${database}#dokumentacja/zmiany-bazy/${changes.newVersion}`, category: 'zmiany w wersji', product: productLabel, part: 1, parts: 1, chars: t.length });
+  entries.push({ file: '98-zmiany-bazy-danych.md', title: `${productLabel} — zmiany w bazie danych ${changesLabel ? `${changesLabel} (` : ''}${changes.oldVersion} → ${changes.newVersion}${changesLabel ? ')' : ''}`, sourceUrl: `${sourceBase}/baza-danych/${database}#dokumentacja/zmiany-bazy/${changes.newVersion}`, category: 'zmiany w wersji', product: productLabel, part: 1, parts: 1, chars: t.length });
 }
 writeFileSync(join(outDir, 'manifest.json'), JSON.stringify({ source: sourceName, entries }, null, 2));
 writeFileSync(join(outDir, 'diff.json'), JSON.stringify(diff, null, 1));

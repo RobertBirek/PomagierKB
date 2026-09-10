@@ -55,7 +55,10 @@ const RULES = [
   [/^GTA\.chm$/, null], // starsza kopia gta.chm (2521 vs 2963 stron) — używamy Pomoc/gta.chm
   [/^(Pomoc\/)?InsERTGT\.chm$/i, { title: 'Pomoc InsERT GT', category: 'manual', product: 'InsERT GT', keywords: ['pomoc', 'Subiekt GT', 'Rachmistrz GT', 'Rewizor GT', 'Gratyfikant GT', 'Gestor GT', 'Kasiarz GT', 'mikroGratyfikant GT'], summary: 'System pomocy InsERT GT: informacje ogólne, budowa programów, praca z programem, terminy i pojęcia, moduły Subiekta, Gestora, Rachmistrza, Rewizora, Gratyfikanta, mikroGratyfikanta i Kasiarza GT.',
     // Opis struktury bazy = duplikat Dokumentacja_DB.xml (prepare-db); Lista_zmian.htm = podzbiór Lista_zmian_all.htm (płatne wyróżnione pogrubieniem)
-    skipPages: /^(Opis_struktury_zbiorow_danych|Lista_zmian)\.htm$/i }],
+    skipPages: /^(Opis_struktury_zbiorow_danych|Lista_zmian)\.htm$/i,
+    // Lista_zmian_all: jedna strona ~2 mln zn. z nagłówkiem H2 per wersja → osobny dokument per wersja
+    // (retrieval „nowości w 1.85 SP1" nie trafiał w 80-tysięczne części zbiorcze).
+    splitByHeading: { pages: /^Lista_zmian_all\.htm$/i, category: 'changes', titlePrefix: 'Zmiany w InsERT GT' } }],
   [/^(Pomoc\/)?InfoGT\.chm$/i, { title: 'InfoGT — informacje o produktach i licencjach', category: 'manual', product: 'InsERT GT', keywords: ['InfoGT', 'licencja', 'abonament', 'produkty', 'poprawki'], summary: 'InfoGT: informacje o produktach InsERT GT, licencjach, abonamencie i poprawkach.' }],
   [/^Pomoc\.zip$/i, null], // rozpakowane kopie CHM — te same strony (dedup po sha256)
   [/^Dokumentacja_bazy_danych/i, null], // obsługiwane przez prepare-db.mjs
