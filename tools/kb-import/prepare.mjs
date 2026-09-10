@@ -174,7 +174,8 @@ function emitByHeading(markdown, meta, sourceBase, sourceFile, pageName) {
     const m = /^## (.+)$/m.exec(part);
     if (!m) continue;
     const heading = m[1].replace(/[_*]/g, '').replace(/\s+/g, ' ').trim();
-    const body = demoteHeadings(part).replace(/^## .*\n/, '').trim();
+    // Nagłówek sekcji (po demote: ###) usunięty z treści — tytuł jest w H1, a chunker tnie po KAŻDYM nagłówku.
+    const body = demoteHeadings(part).replace(/^#{2,4} .*\n/, '').trim();
     if (body.length < 80) continue;
     // Wersja z sufiksami (1.22 SP3 HF1, 1.12 Hotfix Win98) — cały ogon po numerze, żeby slugi nie kolidowały.
     const version = heading.match(/\d+\.\d+(?:\s+(?:SP|HF|Hotfix)\s*[\w.]+)*/i)?.[0]?.trim() ?? heading;
