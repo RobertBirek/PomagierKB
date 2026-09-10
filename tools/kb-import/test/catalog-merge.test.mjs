@@ -55,8 +55,9 @@ describe('insert-dbdoc + merge', () => {
     expect(ch.changedTables[0].fields[0]).toEqual({ name: 'ev_X', type: 'datetime', description: 'opis', state: 'NEW', oldType: null });
     const md = renderDbChanges(ch);
     expect(md).toContain('# InsERT GT — zmiany w bazie danych 1.0 → 1.1');
-    expect(md).toContain('- `ev_X` — datetime — opis [NEW]');
-    expect(md).toContain('## Nowe tabele\n\nBrak.');
+    expect(md).toContain('  - `ev_X` — datetime — opis [NEW]');
+    expect(md).toContain('**Nowe tabele:** brak.');
+    expect(md).not.toMatch(/^##/m);
   });
 });
 

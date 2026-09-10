@@ -52,7 +52,9 @@ if (sqlDir) {
 mkdirSync(outDir, { recursive: true });
 const database = catalog.meta?.database ?? '?';
 const host = catalog.meta?.target ?? '?';
-const date = new Date().toISOString().slice(0, 10);
+// Data ZRZUTU katalogu (nie „dzisiaj"): tekst musi być deterministyczny, inaczej każda regeneracja zmienia sha
+// wszystkich 160 fragmentów i upload wysyła je ponownie (build 11 z 2026-09-10 tak zrobił).
+const date = String(catalog.meta?.generatedAt ?? '').slice(0, 10) || new Date().toISOString().slice(0, 10);
 const sourceName = `żywa baza MSSQL ${database} na ${host} + dokumentacja producenta ${docs.version} + skrypty SQL`;
 const entries = renderCatalogToFiles(catalog, {
   outDir,

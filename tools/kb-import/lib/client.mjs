@@ -91,9 +91,17 @@ export class PanelClient {
   async waitAction(actionId, { timeoutMs = 130 * 60_000, onLog = null } = {}) {
     const start = Date.now();
     let seen = 0;
+    let transient = 0;
     while (Date.now() - start < timeoutMs) {
       const r = await this.get(`/api/v1/actions/${actionId}`);
-      if (r.status !== 200) throw new Error(`GET /actions/${actionId} → ${r.status}`);
+      if (r.status !== 200) {
+        // Przejściowe 5xx (SQLite busy w trakcie eksportu) nie mogą zabić obserwatora — akcja idzie dalej.
+        transient += 1;
+        if (transient > 5) throw new Error(`GET /actions/${actionId} → ${r.status} (${transient}× z rzędu)`);
+        await new Promise((res) => setTimeout(res, 5000));
+        continue;
+      }
+      transient = 0;
       const a = r.body.data;
       const tail = Array.isArray(a.logTail) ? a.logTail : String(a.logTail ?? '').split('\n');
       if (onLog && tail.length > seen) {

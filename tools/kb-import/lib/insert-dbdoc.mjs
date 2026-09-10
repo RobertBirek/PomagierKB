@@ -112,22 +112,22 @@ export function renderDbChanges(changes, productLabel = 'InsERT GT', label = nul
   lines.push('');
   lines.push(`Dokumentacja zmian struktury bazy danych ${productLabel} między wersją ${span} (wygenerowana ${changes.date}). Wymienia nowe, usunięte i zmienione tabele oraz kolumny.`);
   lines.push('');
+  // Bez nagłówków H2/H3: chunker tnie po nagłówkach i ten krótki dokument rozpadał się na 5 chunków
+  // („Zmienione tabele" w innym chunku niż lista kolumn) — retrieval trafiał w nagłówek bez treści.
   const section = (title, list, withState) => {
-    lines.push(`## ${title}`);
-    lines.push('');
     if (list.length === 0) {
-      lines.push('Brak.', '');
+      lines.push(`**${title}:** brak.`, '');
       return;
     }
+    lines.push(`**${title}:**`, '');
     for (const t of list) {
-      lines.push(`### ${t.name}${t.description ? ` — ${t.description}` : ''}`);
-      lines.push('');
+      lines.push(`- Tabela \`${t.name}\`${t.description ? ` (${t.description})` : ''}:`);
       for (const f of t.fields) {
         const st = withState && f.state ? ` [${f.state}${f.oldType ? `, poprzednio ${f.oldType}` : ''}]` : '';
-        lines.push(`- \`${f.name}\` — ${f.type ?? '?'}${f.description ? ` — ${f.description}` : ''}${st}`);
+        lines.push(`  - \`${f.name}\` — ${f.type ?? '?'}${f.description ? ` — ${f.description}` : ''}${st}`);
       }
-      lines.push('');
     }
+    lines.push('');
   };
   section('Nowe tabele', changes.newTables, false);
   section('Usunięte tabele', changes.deletedTables, false);
