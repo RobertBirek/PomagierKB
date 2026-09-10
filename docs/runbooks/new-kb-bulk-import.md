@@ -103,6 +103,14 @@ node tools/kb-import/prepare-forum.mjs --in $E/forum --out $E/out/forum         
 Zapisywana jest rola autora (InsERT / użytkownik), nie nazwisko; cytaty usuwane; wątki bez odpowiedzi pomijane;
 limity długości wątku w nagłówku `prepare-forum.mjs`. Typ dokumentu `forum użytkowników`.
 
+Słowniki `sl_*` i ograniczenia CHECK z żywej bazy (wartości, bez kolumn osobowych — bramki w
+`tools/mssql-introspect/src/queries-data.mjs`):
+
+```bash
+node tools/mssql-introspect/dump-dictionaries.mjs <baza> --out $E/out/schema-live
+node tools/kb-import/prepare-dicts.mjs --dicts $E/out/schema-live/dictionaries.json --docs $E/ext/dbdoc/Dokumentacja_DB.xml --out $E/out/dicts
+```
+
 Sprawdź `out/*/manifest.json` (liczba plików, znaki, `skipped`). Orientacja: 1 000 znaków ≈ 0,6 chunka.
 
 ## 4. Upload → kontrola → promocja → build (partiami, 3-4 buildy łącznie)
@@ -121,6 +129,13 @@ NIE po `Idempotency-Key`, który jest mapą w pamięci). `promote.mjs` idzie po 
 PATCH-em, promuje przez `POST /drafts/bulk` (dry-run → apply, ≤50 id) i zapisuje `promoted.json`.
 Odrzucone po kontroli: `--exclude plik-z-draftId`. Build to pełny eksport promowanych szkiców
 (~700 chunków/min na tym VPS); quality gate ma dać OK/WARN, nigdy FAIL.
+
+## 4b. Odświeżanie źródeł WWW (SubiektKB)
+
+`deploy/scripts/refresh_subiektkb.sh` + `deploy/systemd/kag-subiektkb-refresh.{service,timer}` (3. dzień
+miesiąca, 01:30): crawl e-Pomocy i forum (tylko nowe), konwersja, upload (fragment bez zmian = pomijany po
+sha z `state.json`; zmieniony = nowy szkic pod tym samym `sourceUrl`), promocja, build gdy `dirty=1`.
+Limity draftów podnoszone na czas biegu i przywracane w `trap`. Awaria → `kag-alert@`.
 
 ## 5. Po imporcie
 

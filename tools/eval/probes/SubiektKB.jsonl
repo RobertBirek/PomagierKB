@@ -1,0 +1,40 @@
+{"q": "Jak wystawić fakturę zaliczkową w Subiekcie GT i jak ją potem rozliczyć fakturą końcową?", "kind": "procedura"}
+{"q": "Jak w Subiekcie GT wysłać faktury sprzedaży do KSeF i sprawdzić status wysyłki?", "kind": "procedura"}
+{"q": "Co zrobić, gdy chmurka KSeF w Subiekcie GT jest na czerwono mimo poprawnej konfiguracji?", "kind": "problem"}
+{"q": "Jak skonfigurować drukarkę fiskalną w Subiekcie GT, żeby paragony drukowały się na innym stanowisku?", "kind": "procedura"}
+{"q": "Jak w Rewizorze GT zaksięgować fakturę pobraną z KSeF przy użyciu schematu importu?", "kind": "procedura"}
+{"q": "Jak w Rachmistrzu GT rozliczyć ryczałt od przychodów ewidencjonowanych przy kilku stawkach?", "kind": "procedura"}
+{"q": "Jak w Gratyfikancie GT zdefiniować własny składnik płacowy zależny od liczby przepracowanych godzin?", "kind": "procedura"}
+{"q": "Czy mikroGratyfikant GT pozwala wystawić listę płac po dacie rozwiązania umowy o pracę?", "kind": "fakt"}
+{"q": "Jakie kolumny ma tabela tw__Towar i która z nich przechowuje stawkę VAT sprzedaży?", "kind": "baza"}
+{"q": "Jak w bazie Subiekta GT połączyć dokument z jego pozycjami i towarami — które tabele i klucze obce?", "kind": "baza"}
+{"q": "Co oznaczają wartości kolumny dok_Typ w tabeli dok__Dokument?", "kind": "baza"}
+{"q": "Jakie stawki VAT są zdefiniowane w słowniku sl_StawkaVAT i jak rozpoznać stawkę systemową?", "kind": "baza"}
+{"q": "Które tabele w żywej bazie nie są opisane w dokumentacji bazy InsERT GT 1.89?", "kind": "baza"}
+{"q": "Jak z poziomu VBA w Excelu uruchomić Subiekta GT przez Sferę i dodać nowego kontrahenta?", "kind": "sfera"}
+{"q": "Jak przez Sferę wystawić fakturę sprzedaży z konkretnych dostaw (obiekt SuDokument, dyspozycje)?", "kind": "sfera"}
+{"q": "Jakie metody ma obiekt Towar w Sferze dla Subiekta GT i od której wersji są dostępne?", "kind": "sfera"}
+{"q": "Jak zarejestrować i aktywować Sferę dla InsERT GT w wersji próbnej?", "kind": "procedura"}
+{"q": "Jak zbudowany jest plik EDI++ — jakie sekcje ma nagłówek i jak kodowane są pozycje dokumentu?", "kind": "format"}
+{"q": "Jak zdefiniować własny schemat HomeBankingu (transformację XSLT) w Subiekcie GT?", "kind": "format"}
+{"q": "Do czego służy HopWin i jak wygląda wymiana danych XML z hurtownią?", "kind": "format"}
+{"q": "Jak napisać własne rozwiązanie COM osadzane w Subiekcie GT i gdzie je zarejestrować?", "kind": "sfera"}
+{"q": "Jakie są parametry uruchomieniowe programów InsERT GT z wiersza poleceń?", "kind": "fakt"}
+{"q": "Co zmieniło się w strukturze bazy danych między wersją 1.89 a 1.89 HF1?", "kind": "fakt"}
+{"q": "Jakie nowości wprowadzono w Subiekcie GT w wersji 1.85 SP1?", "kind": "fakt"}
+{"q": "Jak w Biurze GT zbiorczo zarchiwizować bazy wszystkich podmiotów?", "kind": "procedura"}
+{"q": "Jak odzyskać hasło szefa w InsERT GT, jeśli nikt go nie pamięta?", "kind": "procedura"}
+{"q": "Jak skonfigurować współpracę centrali SLICAN z Gestorem GT?", "kind": "procedura"}
+{"q": "Co daje czerwony PLUS dla InsERT GT i jak go aktywować?", "kind": "fakt"}
+{"q": "Jak w Subiekcie GT zmienić drukowany blankiet przelewu do urzędu skarbowego na dwuodcinkowy?", "kind": "procedura"}
+{"q": "Jak wygenerować i wysłać plik JPK_V7M z Rachmistrza GT?", "kind": "procedura"}
+{"q": "Jak w Subiekcie GT obsłużyć system kaucyjny na dokumentach sprzedaży?", "kind": "procedura"}
+{"q": "Czy Subiekt GT obsługuje faktury w walucie obcej z automatycznym pobieraniem kursu NBP?", "kind": "fakt"}
+{"q": "Jaki jest maksymalny rozmiar bazy danych w SQL Server Express dla InsERT GT i co zrobić, gdy się skończy?", "kind": "problem"}
+{"q": "Dlaczego po aktualizacji InsERT GT program zgłasza błąd konwersji bazy danych i jak to naprawić?", "kind": "problem"}
+{"q": "Ile kosztuje licencja Subiekta GT na 5 stanowisk w 2026 roku?", "kind": "near-miss"}
+{"q": "Czy Subiekt GT integruje się z Allegro i BaseLinkerem bez dodatkowych programów?", "kind": "near-miss"}
+{"q": "Jak w Subiekcie nexo wystawić fakturę zaliczkową?", "kind": "near-miss"}
+{"q": "Jak skonfigurować replikację bazy PostgreSQL dla InsERT GT?", "kind": "near-miss"}
+{"q": "Jaka jest różnica między Rewizorem GT a Rachmistrzem GT i dla kogo jest który?", "kind": "fakt"}
+{"q": "Jak w Gestorze GT przenieść bazę szans sprzedaży do innego podmiotu?", "kind": "procedura"}

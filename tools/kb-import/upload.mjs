@@ -38,11 +38,14 @@ try {
   const todo = manifest.entries.filter((e) => !only || new RegExp(only).test(e.file)).slice(0, limit);
   for (const e of todo) {
     const st = state.items[e.file] ?? {};
-    if (st.draftId || (st.status && ['drafted'].includes(st.status))) {
+    const text = readFileSync(join(dir, e.file), 'utf8');
+    const sha = createHash('sha256').update(text).digest('hex');
+    // Fragment już wysłany i NIEZMIENIONY → pomijamy; zmieniona treść (nowy sha) idzie ponownie
+    // pod tym samym sourceUrl i zastępuje starą wersję przy buildzie (precedencja source_ref).
+    if ((st.draftId || st.status === 'drafted') && st.sha === sha) {
       skipped += 1;
       continue;
     }
-    const text = readFileSync(join(dir, e.file), 'utf8');
     if (text.length > 100_000) {
       state.items[e.file] = { status: 'too_large', chars: text.length };
       failed += 1;
@@ -51,7 +54,7 @@ try {
       continue;
     }
     const title = e.title.length > TITLE_MAX ? e.title.slice(0, TITLE_MAX - 1) + '…' : e.title;
-    const res = await client.post('/api/v1/content', { text, title, sourceUrl: e.sourceUrl }, { 'idempotency-key': `kb-import:${createHash('sha256').update(text).digest('hex').slice(0, 24)}` });
+    const res = await client.post('/api/v1/content', { text, title, sourceUrl: e.sourceUrl }, { 'idempotency-key': `kb-import:${sha.slice(0, 24)}` });
     let data;
     try {
       data = expectOk(res, `POST /content ${e.file}`);
@@ -63,7 +66,7 @@ try {
       continue;
     }
     const intakeId = data.intakeId ?? data.intake?.id ?? data.id;
-    state.items[e.file] = { intakeId, status: data.status ?? data.intake?.status ?? 'received', draftId: data.draftId ?? null, sentAt: new Date().toISOString(), sourceUrl: e.sourceUrl, title };
+    state.items[e.file] = { intakeId, status: data.status ?? data.intake?.status ?? 'received', draftId: data.draftId ?? null, sentAt: new Date().toISOString(), sourceUrl: e.sourceUrl, title, sha };
     save();
     sent += 1;
     console.log(`+ ${e.file} → ${intakeId}${data.deduplicated ? ' (dedup)' : ''}`);

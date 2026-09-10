@@ -1,0 +1,20 @@
+# kag-subiektkb-refresh.service — miesięczne odświeżenie źródeł WWW bazy SubiektKB
+# (e-Pomoc techniczna InsERT + forum.insert.com.pl; crawlery wznawialne, build tylko gdy są zmiany).
+# Instalacja: cp deploy/systemd/kag-subiektkb-refresh.{service,timer} /etc/systemd/system/
+#             systemctl daemon-reload && systemctl enable --now kag-subiektkb-refresh.timer
+# Wymaga: konto E2E w /etc/kag/e2e.env (upload przez API panelu), Playwright + chromium na hoście.
+[Unit]
+Description=PomagierKB — odswiezenie zrodel WWW bazy SubiektKB
+Documentation=file:/kag/docs/runbooks/new-kb-bulk-import.md
+After=network-online.target docker.service
+Wants=network-online.target
+OnFailure=kag-alert@%n.service
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/kag
+EnvironmentFile=-/etc/kag/alerts.env
+ExecStart=/kag/deploy/scripts/refresh_subiektkb.sh
+TimeoutStartSec=8h
+Nice=10

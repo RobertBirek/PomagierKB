@@ -65,8 +65,15 @@ postów może zawierać dane wpisane przez użytkowników (np. NIP w pytaniu) �
 bazy (`flag`) na wyjściu do LLM, a usunięcie na żądanie idzie ścieżką §3.1 (dokument = grupa
 sekcja × rok, re-import po wykluczeniu wątku).
 
+**Rozszerzenie 2026-09-10 (decyzja właściciela bazy):** oprócz katalogu odczytano WARTOŚCI małych tabel
+słownikowych `sl_*` (stawki VAT, typy ewidencji, kody ZUS/akcyzowe, formy płatności — do 150 wierszy)
+i ograniczenia CHECK. Bramki w `tools/mssql-introspect/src/queries-data.mjs` + test: blacklista tabel
+(użytkownicy, pracownicy, hasła, rejestry publiczne), blacklista kolumn osobowych (nazwisko, PESEL, NIP,
+e-mail, telefon, adres, konto, hasło), limit wierszy/kolumn, wyłącznie `SELECT TOP`. Tunel do bazy był
+tymczasowy i został zamknięty po zrzucie; poświadczenie usunięte z hosta.
+
 Retencja: jak dokumentacja produktowa (§2). Nie uruchamia progu DPIA z §5, dopóki zakres =
-metadane; rozszerzenie o zawartość tabel (nawet słownikowych) wymaga wpisu tutaj i decyzji
+metadane i słowniki bez danych osobowych; rozszerzenie o zawartość tabel (nawet słownikowych) wymaga wpisu tutaj i decyzji
 właściciela bazy.
 
 ### 1.3 Przepływ do dostawcy LLM (poza EOG)
