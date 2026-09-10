@@ -33,7 +33,14 @@ export {
   MIN_RELEVANCE_LEGACY_CUTOFF,
 } from './gate.js';
 export type { GateDecision, GateReason, RelevanceGateInput } from './gate.js';
-export { answerQuestion, toStoredCitations, NO_ANSWER_TEXT } from './answer.js';
+export {
+  answerQuestion,
+  toStoredCitations,
+  answerSystemPrompt,
+  NO_ANSWER_TEXT,
+  ANSWER_PROMPT_VERSION,
+  UNCITED_PENALTY,
+} from './answer.js';
 export type {
   AnswerCitation,
   AnswerParams,
@@ -54,5 +61,5 @@ export {
 export type { AnswerCacheOptions } from './cache.js';
 export { verifyClaim, parseVerdict } from './verify.js';
 export type { ClaimStatus, VerifyClaimResult, VerifyClaimParams } from './verify.js';
-export { extractClaims } from './claims.js';
+export { extractClaims, uncitedShare } from './claims.js';
 export type { AnswerClaim } from './claims.js';

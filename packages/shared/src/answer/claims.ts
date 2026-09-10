@@ -46,3 +46,26 @@ export function extractClaims(answer: string): AnswerClaim[] {
   }
   return claims;
 }
+
+/**
+ * Udział BLOKÓW odpowiedzi (akapit / lista — rozdzielone pustą linią) bez żadnego cytowania [n].
+ * Liczone po blokach, nie po zdaniach: lista z cytowaniem w ostatnim punkcie albo w zdaniu
+ * wprowadzającym jest poparta jako całość (formatowanie nie może obniżać pewności). Nagłówki
+ * i bloki krótsze niż MIN_CLAIM_CHARS są pomijane. Wejście do kary pewności w answer.ts:
+ * sędzia LLM (2026-09-10) łapał akapity dokładające wiedzę spoza źródeł („SQL Server 2025").
+ */
+export function uncitedShare(answer: string): { blocks: number; uncited: number; share: number } {
+  let blocks = 0;
+  let uncited = 0;
+  for (const raw of answer.split(/\n\s*\n/)) {
+    const lines = raw
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l !== '' && !/^#{1,6}\s/.test(l));
+    const text = lines.join(' ').replace(/\s*\[\d{1,3}\]/g, '').trim();
+    if (text.length < MIN_CLAIM_CHARS) continue;
+    blocks++;
+    if (!/\[\d{1,3}\]/.test(raw)) uncited++;
+  }
+  return { blocks, uncited, share: blocks === 0 ? 0 : uncited / blocks };
+}

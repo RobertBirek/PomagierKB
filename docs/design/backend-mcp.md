@@ -548,7 +548,7 @@ Błędy narzędzi: zwracane jako wynik z `isError:true` i tekstem PL + `_meta:{e
 1. Retrieval: wewnętrzne `kb_search(mode:'hybrid', limit: maxSources*2)`.
 2. Budowa kontekstu: sortowanie po score, budżet ~6000 tokenów (przycinanie per chunk do 1200), numeracja [1..n] ze stabilnym mapowaniem na `citations`.
 3. `chat_llm` (OpenAI-compatible `/v1/chat/completions`, non-stream w v1, timeout 60 s, 1 retry na 5xx): system prompt PL — „odpowiadaj WYŁĄCZNIE na podstawie źródeł, cytuj [n], gdy brak podstaw powiedz że nie wiesz"; na końcu wymuszona linia `CONFIDENCE: <0..1>`.
-4. `confidence = 0.5*llmSelf + 0.3*normalizowany_top_score + 0.2*coverage` (udział cytowanych źródeł); parsowanie CONFIDENCE defensywne (brak → licz z samego retrievalu).
+4. `confidence = 0.5*llmSelf + 0.3*normalizowany_top_score + 0.2*coverage` (udział cytowanych źródeł), następnie `× (1 − 0.4·udział akapitów bez żadnego cytowania)` (answer-v2, 2026-09-10: sędzia LLM łapał akapity dokładające wiedzę spoza źródeł; liczone po blokach, żeby lista z cytowaniem na końcu nie była karana); parsowanie CONFIDENCE defensywne (brak → licz z samego retrievalu). Prompt answer-v2 nazywa wprost odmowę zakresu (inny produkt/technologia niż w źródłach) i zakaz wiedzy spoza źródeł; wersja promptu wchodzi do klucza cache.
 5. `confidence < settings['learning.threshold']` (default 0.45) → insert `learning_gaps` (`source:'mcp'`, api_key_id, question, answer_preview 500 zn.) → `gapRecorded:true`. Panel: Uczenie → gap → auto-draft → recenzja (human-in-the-loop).
 6. Wpis do usage-JSONL: `{at, keyId, tool, namespaces, tookMs, confidence, degraded}` — bez treści pytania w łańcuchu audytu.
 
