@@ -148,6 +148,10 @@ PANEL_DATA_HOST="${PANEL_DATA_HOST:-$(docker inspect "${PANEL_CTR}" --format '{{
 [[ -d "${PANEL_DATA_HOST}" ]] || die "nie znajduję katalogu danych panelu (mount /data w ${PANEL_CTR})"
 AUDIT_FILE="purge-audit-$$.json"
 printf '%s' "${CANDIDATES_JSON}" > "${PANEL_DATA_HOST}/${AUDIT_FILE}"
+# Skrypt biegnie jako root (umask → 0600), panel w kontenerze jako nie-root (uid właściciela
+# katalogu danych) — bez zmiany właściciela node dostaje EACCES i partia zostaje bez audytu.
+chown --reference="${PANEL_DATA_HOST}" "${PANEL_DATA_HOST}/${AUDIT_FILE}"
+chmod 0600 "${PANEL_DATA_HOST}/${AUDIT_FILE}"
 docker exec -i -w /app -e PURGE_NS="${NAMESPACE}" -e PURGE_FILE="${AUDIT_FILE}" "${PANEL_CTR}" \
   node --input-type=module <<'NODE' >/dev/null
 import { readFileSync } from 'node:fs';
