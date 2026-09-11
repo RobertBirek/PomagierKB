@@ -69,8 +69,12 @@ sekcja × rok, re-import po wykluczeniu wątku).
 słownikowych `sl_*` (stawki VAT, typy ewidencji, kody ZUS/akcyzowe, formy płatności — do 150 wierszy)
 i ograniczenia CHECK. Bramki w `tools/mssql-introspect/src/queries-data.mjs` + test: blacklista tabel
 (użytkownicy, pracownicy, hasła, rejestry publiczne), blacklista kolumn osobowych (nazwisko, PESEL, NIP,
-e-mail, telefon, adres, konto, hasło), limit wierszy/kolumn, wyłącznie `SELECT TOP`. Tunel do bazy był
-tymczasowy i został zamknięty po zrzucie; poświadczenie usunięte z hosta.
+e-mail, telefon, adres, konto, hasło), limit wierszy/kolumn, wyłącznie `SELECT TOP`. Poświadczenie do bazy DEMO (instancja OPTIMA,
+`/etc/kag/mssql-optima.env`) zostało usunięte z hosta po zrzucie. **Od 2026-09-11 host ma osobny,
+stały dostęp odczytu do bazy PRODUKCYJNEJ Subiekta GT ilovelighting** (`Magnum_Profi` na
+`192.168.1.20\\INSERTGT`, LAN za peerem WireGuard `pomagier`) wyłącznie przez serwer MCP dla Claude
+Code opisany w §1.3 — ta baza NIE jest źródłem żadnej bazy wiedzy (katalog i słowniki SubiektKB
+pochodzą z bazy demo).
 
 Retencja: jak dokumentacja produktowa (§2). Nie uruchamia progu DPIA z §5, dopóki zakres =
 metadane i słowniki bez danych osobowych; rozszerzenie o zawartość tabel (nawet słownikowych) wymaga wpisu tutaj i decyzji
@@ -103,6 +107,31 @@ treści do bazy, więc to właściwe miejsce na tę informację.
 
 Politykę zmienia się przez `PATCH /api/v1/kbs/:namespace` z `{"piiPolicy":"mask"}` (admin);
 panel nie ma na to kontrolki, bo pozostałe pola rejestru KB też są ustawiane wyłącznie przez API.
+
+**Droga 3 (od 2026-09-11): serwer MCP `mssql` dla Claude Code na hoście VPS** — decyzja
+właściciela (delegowana operatorowi, zapis: PLAN.md „Zmiany decyzji" 2026-09-11).
+- *Co:* `tools/mssql-introspect/mcp-server.mjs` (stdio, sterownik tedious) daje sesji Claude Code
+  roota na hoście jedno narzędzie `execute_sql` do produkcyjnej bazy Subiekta GT `Magnum_Profi`
+  (login `pomagier_test`, rola `db_datareader`; poświadczenie `/etc/kag/mssql-ilovelighting.env`,
+  0600, poza repo). Nie widzi go panel Ask ani żaden klucz zdalnego MCP — tylko proces Claude Code
+  na hoście.
+- *Jakie dane wychodzą:* wyniki zapytań idą do dostawcy modelu Claude Code (Anthropic, poza EOG;
+  **inny odbiorca** niż dostawca z dróg 1–2) i zostają w transkryptach sesji
+  `/root/.claude/projects/-kag/*.jsonl` na hoście (§2.4).
+- *Kontrole (bramka `src/mcp-readonly.mjs`, testy `test/mcp-readonly.test.mjs`):* wyłącznie
+  pojedynczy `SELECT`/`WITH`; zakaz DML/DDL/procedur; **deny-lista kolumn osobowych** sprawdzana na
+  każdym identyfikatorze (nazwiska, imiona, PESEL, NIP, REGON, e-mail, telefon, adresy, uwagi,
+  loginy/hasła, symbole i nazwy kontrahentów, kopie nazw kontrahentów w ewidencjach księgowych);
+  zakaz `SELECT *`/`alias.*` na tabelach z danymi osobowymi (`kh__Kontrahent`, `adr__Ewid`,
+  `pr_*`, `pd_Uzytkownik`, ewidencje). Dozwolone: agregaty po flagach/id, dane towarów, dokumentów
+  (bez uwag), słowników. Treść KAŻDEGO zapytania (przyjęte i odrzucone, bez wyników) trafia do
+  `/srv/kag-data/kag/mcp-mssql/queries.jsonl` (0600).
+- *Ograniczenie znane:* login ma `db_datareader`, więc gwarancją jest bramka w kodzie, nie
+  uprawnienia bazy; docelowo login z prawami tylko do widoków bez PII (decyzja administratora
+  Subiekta). Zmiana zakresu (nowe kolumny, tryb inny niż SELECT) wymaga wpisu tutaj.
+- *Rejestr §4:* kategoria danych „dane klientów i dostawców w agregatach; dane towarów i
+  dokumentów"; podstawa: uzasadniony interes (analityka własnej sprzedaży); odbiorca: dostawca
+  modelu Claude Code; retencja: transkrypty sesji (§2.4).
 
 ### Zakres widoczności baz wiedzy
 
@@ -158,6 +187,10 @@ i komunikować** przy realizacji żądania osoby (§3.3).
 - `answers`, `learning_gaps`, `feedback` — trzymane do czasu ręcznej decyzji operatora
   (luki: Rozwiąż/Ignoruj). **Do rozstrzygnięcia:** czy wprowadzić automatyczny okres.
 - `chunks_mirror`, graf w Neo4j, obiekty w MinIO — żyją tak długo, jak treść w bazie wiedzy.
+- **Transkrypty sesji Claude Code** (`/root/.claude/projects/-kag/*.jsonl`, host) — poza aplikacją,
+  bez retencji; od 2026-09-11 mogą zawierać wyniki zapytań do bazy produkcyjnej (§1.3, droga 3) —
+  agregaty i dane towarowo-dokumentowe, bez kolumn osobowych. **Do rozstrzygnięcia:** okres i
+  mechanizm czyszczenia (operator ręcznie albo `find -mtime`).
 
 ---
 

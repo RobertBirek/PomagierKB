@@ -10,6 +10,28 @@ const FORBIDDEN = [
   'OPENROWSET', 'SP_', 'XP_', 'WAITFOR',
 ];
 
+// ── Dane osobowe (decyzja właściciela 2026-09-11, docs/data-governance.md §1.3) ───────────
+// Login w bazie produkcyjnej ma db_datareader, więc obroną jest ta lista, nie uprawnienia.
+// Kolumny osobowe wyprowadzone z realnego katalogu (kh__Kontrahent, adr__Ewid, pr_Pracownik,
+// pd_Uzytkownik, ewidencje księgowe z kopią nazwy/NIP kontrahenta). Sprawdzane na KAŻDYM
+// identyfikatorze zapytania (projekcja, WHERE, ORDER BY — kolejność po nazwisku też ujawnia).
+// Nazwy TOWARÓW i słowników (tw_Nazwa, grt_Nazwa, sl_*) są dozwolone — to nie są dane osób.
+const PII_IDENT_PATTERNS = [
+  /(nazwisko|imie|pesel|regon|e_?mail|telefon|fax|ulica|miejscowosc|kodpoczt|dowod|paszport|iban|rachunek|haslo|login|uwagi|skype|www|urodz|kontakt)/,
+  /nip(?![a-z])/, // kh_NIP, adr_NIP, ev_NIPKh, khp_KontrolaNIP — 'nip' jako segment, nie fragment innego słowa
+  /adres(?!\w*id$)/, // adr_Adres, kh_AdresDostawy (tekst) — ale dok_AdresDostawyId (klucz) przechodzi
+  /^(kh|adr|adrh|pk|pr|pro|pw|uz|ev|oe|zpk|kpr|prz|ppr|ewa|oss)_(kh)?nazwa(pelna)?(kh)?$/, // nazwy kontrahentów/osób/ewidencji
+  /^kh_symbol$/, // symbol kontrahenta = w B2C zwykle nazwisko
+  /(nazwakh|nazwapelnakh|khnazwa|khnazwapelna|ulicakh|kodpocztowykh)$/,
+];
+/** Tabele, na których `*` / `alias.*` ujawniłoby kolumny osobowe. */
+const PII_TABLE_RE = /^(kh__kontrahent|kh_pracownik|kh_kontakt\w*|adr__ewid|adr_historia|pr_\w+|pd_uzytkownik|pd_wspolnik|pd__podmiot|ewa__ewidencjeakcyzowe|kpr__ksiega|oss__ewid|prz__przychod|vat__ewidvat|zpk__ksiega|poj_eksploatacja|kom_parametr)$/;
+
+function isPiiIdentifier(ident) {
+  const id = ident.toLowerCase();
+  return PII_IDENT_PATTERNS.some((re) => re.test(id));
+}
+
 /** Usuwa komentarze, literały tekstowe i identyfikatory w cudzysłowach/nawiasach, by słowa
  *  kluczowe wewnątrz danych nie myliły detekcji (i odwrotnie). */
 function stripNoise(sql) {
@@ -39,6 +61,18 @@ export function checkReadOnly(sql) {
   for (const kw of FORBIDDEN) {
     const re = kw.endsWith('_') ? new RegExp(`\\b${kw}`, 'i') : new RegExp(`\\b${kw}\\b`, 'i');
     if (re.test(upper)) return { ok: false, reason: `słowo zabronione w trybie odczytu: ${kw.replace(/_$/, '_*')}` };
+  }
+  // Dane osobowe: każdy identyfikator (także za aliasem: k.kh_Nazwa → kh_Nazwa)
+  const idents = cleaned.match(/[A-Za-z_][A-Za-z0-9_]*/g) ?? [];
+  const pii = idents.find((id) => isPiiIdentifier(id));
+  if (pii !== undefined) return { ok: false, reason: `kolumna z danymi osobowymi poza zakresem odczytu: ${pii}` };
+  // `*` na tabeli z danymi osobowymi (COUNT(*) nie jest projekcją)
+  const tables = idents.filter((id) => PII_TABLE_RE.test(id.toLowerCase()));
+  if (tables.length > 0) {
+    const withoutCount = cleaned.replace(/count\s*\(\s*\*\s*\)/gi, 'COUNT(1)');
+    if (/(^|[\s,(])\*|\.\*/.test(withoutCount)) {
+      return { ok: false, reason: `SELECT * na tabeli z danymi osobowymi (${tables[0]}) — wskaż kolumny bez danych osobowych` };
+    }
   }
   return { ok: true };
 }

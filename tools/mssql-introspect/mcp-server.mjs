@@ -12,12 +12,25 @@ import { createInterface } from 'node:readline';
 import sql from 'mssql';
 import { parseEnvFile } from './src/env.mjs';
 import { checkReadOnly } from './src/mcp-readonly.mjs';
-import { readFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, readFileSync } from 'node:fs';
+import { dirname } from 'node:path';
 
 const ENV_FILE = process.env.MSSQL_ENV_FILE ?? '/etc/kag/mssql-ilovelighting.env';
+// Log TREŚCI każdego zapytania (przyjęte i odrzucone) — ślad rozliczalności dla governance §1.3;
+// plik 0600 na hoście, poza repo. Bez wyników (te mogą nieść dane).
+const QUERY_LOG = process.env.MSSQL_MCP_QUERY_LOG ?? '/srv/kag-data/kag/mcp-mssql/queries.jsonl';
 const MAX_ROWS = 200;
 const MAX_CHARS = 60_000;
 const log = (...a) => process.stderr.write(`[mcp-mssql] ${a.join(' ')}\n`);
+
+function auditQuery(entry) {
+  try {
+    mkdirSync(dirname(QUERY_LOG), { recursive: true, mode: 0o700 });
+    appendFileSync(QUERY_LOG, `${JSON.stringify({ ts: new Date().toISOString(), ...entry })}\n`, { mode: 0o600 });
+  } catch (err) {
+    log(`log zapytań niedostępny: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
 
 /** Konfiguracja mssql z pliku env; host „adres\\instancja" → server + options.instanceName. */
 function loadConfig() {
@@ -63,10 +76,22 @@ function getPool() {
 
 async function runQuery(text) {
   const gate = checkReadOnly(text);
-  if (!gate.ok) throw new Error(`odrzucone (tryb tylko-do-odczytu): ${gate.reason}`);
-  const pool = await getPool();
-  const res = await pool.request().query(text);
+  const query = text.slice(0, 4000);
+  if (!gate.ok) {
+    auditQuery({ ok: false, reason: gate.reason, query });
+    throw new Error(`odrzucone (tryb tylko-do-odczytu): ${gate.reason}`);
+  }
+  const started = Date.now();
+  let res;
+  try {
+    const pool = await getPool();
+    res = await pool.request().query(text);
+  } catch (err) {
+    auditQuery({ ok: false, reason: `błąd wykonania: ${err instanceof Error ? err.message.slice(0, 300) : String(err)}`, query });
+    throw err;
+  }
   const rows = res.recordset ?? [];
+  auditQuery({ ok: true, rows: rows.length, ms: Date.now() - started, query });
   const capped = rows.slice(0, MAX_ROWS);
   let body = JSON.stringify(capped, null, 1);
   let note = `${rows.length} wierszy`;
