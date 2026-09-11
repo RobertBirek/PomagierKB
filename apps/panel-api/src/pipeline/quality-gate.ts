@@ -14,6 +14,7 @@ import { searchText, querySpgType, type OpenSpgClient } from '@pomagierkb/shared
 import { applyPrecedence, docIdFor } from './exporter.js';
 import {
   confirmedTombstones,
+  countConfirmedTombstones,
   pendingTombstones,
   TOMBSTONE_CONTENT,
   TOMBSTONE_SEMANTIC_TYPE,
@@ -473,12 +474,16 @@ export async function runQualityGate(deps: QualityGateDeps): Promise<QualityGate
       // 2026-09-06 pokazała, że builder OpenSPG kończy job sukcesem, a węzła NIE nadpisuje —
       // stary chunk zachował pełną treść i semanticType. Check pytający wyłącznie rejestr
       // dawał wtedy fałszywą zieleń. Pytamy więc GRAF o próbkę wycofanych id.
+      // Liczba w rejestrze to SKALA zaległości do purge_graph_nodes.sh — próba 20 mówi tylko,
+      // czy ostatnie nagrobki nadal mają treść (2026-09-10: 11 734 stare węzły ukryte za „20").
       const withdrawn = confirmedTombstones(db, namespace, 20);
+      const total = countConfirmedTombstones(db, namespace);
+      const scale = `wycofanych id w rejestrze: ${total}`;
       if (withdrawn.length === 0) {
-        add('graph_stale_nodes', 'warn', true, 'brak wycofanych id — nie ma czego sprawdzać w grafie');
+        add('graph_stale_nodes', 'warn', true, `brak wycofanych id — nie ma czego sprawdzać w grafie (${scale})`);
       } else if (deps.client === undefined || deps.client === null) {
         add('graph_stale_nodes', 'warn', true,
-          `rejestr czysty (${withdrawn.length} wycofanych), ale bez klienta OpenSPG nie dało się sprawdzić grafu`);
+          `rejestr czysty (${scale}), ale bez klienta OpenSPG nie dało się sprawdzić grafu`);
       } else {
         try {
           const projectId = getKb(db, namespace)?.project_id ?? 0;
@@ -499,9 +504,10 @@ export async function runQualityGate(deps: QualityGateDeps): Promise<QualityGate
           }
           add('graph_stale_nodes', 'warn', alive.length === 0,
             alive.length === 0
-              ? `graf nie ma węzłów spoza stanu docelowego (sprawdzono ${withdrawn.length} wycofanych id)`
-              : `UWAGA: ${alive.length} wycofanych węzłów NADAL ma treść w grafie (${limitList(alive)}) — ` +
-                'builder UPSERT nie nadpisał nagrobka; retrieval je odsiewa po graph_ids, ale graf zachowuje treść');
+              ? `graf nie ma węzłów spoza stanu docelowego (sprawdzono próbkę ${withdrawn.length}; ${scale})`
+              : `UWAGA: ${alive.length} z próbki ${withdrawn.length} wycofanych węzłów NADAL ma treść w grafie (${limitList(alive)}; ${scale}) — ` +
+                'builder UPSERT nie nadpisał nagrobka; retrieval je odsiewa po graph_ids, ale graf zachowuje treść; ' +
+                'usunięcie: deploy/scripts/purge_graph_nodes.sh (runbook purge-document)');
         } catch (err) {
           add('graph_stale_nodes', 'warn', true,
             `nie udało się odpytać grafu o wycofane id: ${err instanceof Error ? err.message : String(err)}`);

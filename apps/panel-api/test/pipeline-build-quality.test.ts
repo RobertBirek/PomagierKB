@@ -95,6 +95,8 @@ describe('runQualityGate', () => {
     expect(check(report, 'live_search_sanity').details).toContain('pominięto'); // brak klienta OpenSPG
     // Checki dołożone audytem G3 (D7-02, D7-03/D8-02, GAP-02).
     expect(check(report, 'graph_stale_nodes').ok).toBe(true);
+    // Komunikat zawsze niesie liczbę nagrobków w rejestrze (skala zaległości do purge), nie tylko próbkę.
+    expect(check(report, 'graph_stale_nodes').details).toMatch(/w rejestrze: \d+/);
     expect(check(report, 'no_literal_newlines').ok).toBe(true);
     expect(check(report, 'superseded_documents').ok).toBe(true);
 

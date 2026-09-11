@@ -66,7 +66,7 @@ do łańcucha audytu z listą id.
 
 Kontrola po fakcie — raport jakości powinien przejść na:
 ```
-OK graph_stale_nodes: graf nie ma węzłów spoza stanu docelowego (sprawdzono N wycofanych id)
+OK graph_stale_nodes: graf nie ma węzłów spoza stanu docelowego (sprawdzono próbkę 20; wycofanych id w rejestrze: N)
 ```
 
 ## Poziom 3 — kopie zapasowe

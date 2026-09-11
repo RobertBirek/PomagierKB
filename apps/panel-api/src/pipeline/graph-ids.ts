@@ -123,6 +123,19 @@ export function confirmedTombstones(db: Db, namespace: string, limit = 20): Grap
   );
 }
 
+/**
+ * Liczba WSZYSTKICH potwierdzonych nagrobków w rejestrze — skala zaległości do fizycznego
+ * usunięcia z grafu (`deploy/scripts/purge_graph_nodes.sh`). Nagrobki zostają w rejestrze na
+ * zawsze, a bramka jakości pyta graf tylko o próbkę 20: SubiektKB 2026-09-10 miał 11 734 stare
+ * węzły, raport pokazywał „sprawdzono 20".
+ */
+export function countConfirmedTombstones(db: Db, namespace: string): number {
+  const row = db
+    .prepare('SELECT COUNT(*) AS n FROM graph_ids WHERE namespace = ? AND live = 0 AND tombstoned_at IS NOT NULL')
+    .get(namespace) as { n: number };
+  return row.n;
+}
+
 /** Id żywe w grafie wg rejestru (diagnostyka i testy). */
 export function liveGraphIds(db: Db, namespace: string): GraphIdRef[] {
   return toRefs(

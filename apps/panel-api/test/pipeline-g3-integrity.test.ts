@@ -21,6 +21,7 @@ import {
 } from '../src/pipeline/exporter.js';
 import {
   confirmTombstones,
+  countConfirmedTombstones,
   pendingTombstones,
   TOMBSTONE_CONTENT,
   TOMBSTONE_SEMANTIC_TYPE,
@@ -161,6 +162,9 @@ describe('D7-02/D14-01 — propagacja wycofania do grafu (nagrobki)', () => {
     // Potwierdzony nagrobek nie jest wystawiany po raz drugi.
     const third = runExport({ db, dataDir }, NS);
     expect(third.tombstones).toHaveLength(0);
+    // Skala zaległości w rejestrze: nagrobki zostają na zawsze (live=0), a bramka jakości pyta graf
+    // tylko o próbkę 20 — SubiektKB 2026-09-10 miał 11 734 nagrobki, raport mówił „20".
+    expect(countConfirmedTombstones(db, NS)).toBe(second.tombstones.length);
   });
 
   it('nagrobek NIEpotwierdzony (build padł) wraca w kolejnym eksporcie', () => {
