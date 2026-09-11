@@ -31,7 +31,8 @@ export function loadMssqlConfig(path = process.env.MSSQL_ENV_FILE ?? DEFAULT_ENV
 }
 
 export function configFromEnv(env, source = 'env') {
-  const host = env.MSSQL_HOST;
+  // `adres\\instancja` = instancja nazwana (port z SQL Browser, UDP 1434) — wtedy port NIE jest ustawiany.
+  const [host, instanceName] = String(env.MSSQL_HOST ?? '').split('\\');
   const port = Number(env.MSSQL_PORT ?? 1433);
   const user = env.MSSQL_USER;
   const password = env.MSSQL_PASSWORD;
@@ -41,25 +42,28 @@ export function configFromEnv(env, source = 'env') {
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
     throw new Error(`MSSQL_PORT w ${source} musi być liczbą 1..65535`);
   }
-  return {
+  const cfg = {
     server: host,
-    port,
     user,
     password,
     database: env.MSSQL_DATABASE || 'master',
     connectionTimeout: 15_000,
     requestTimeout: 60_000,
     options: {
-      encrypt: true,
+      encrypt: env.MSSQL_ENCRYPT !== 'false',
       trustServerCertificate: true,
       readOnlyIntent: true,
       appName: 'pomagierkb-mssql-introspect',
     },
     pool: { max: 2, min: 0 },
   };
+  if (instanceName) cfg.options.instanceName = instanceName;
+  else cfg.port = port;
+  return cfg;
 }
 
 /** Opis połączenia do logów — BEZ hasła. */
 export function describeTarget(cfg) {
-  return `${cfg.user}@${cfg.server}:${cfg.port}`;
+  const where = cfg.options?.instanceName ? `${cfg.server}\\${cfg.options.instanceName}` : `${cfg.server}:${cfg.port}`;
+  return `${cfg.user}@${where}`;
 }

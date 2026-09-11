@@ -76,3 +76,15 @@ describe('mssql-introspect: buildCatalog', () => {
     expect(cat.aliasTypes).toEqual({ tnazwa: 'varchar(50)' });
   });
 });
+
+describe('configFromEnv — instancja nazwana', () => {
+  it('adres\\instancja → options.instanceName bez portu; opis bez hasła', () => {
+    const cfg = configFromEnv({ MSSQL_HOST: '192.168.1.20\\INSERTGT', MSSQL_USER: 'u', MSSQL_PASSWORD: 'p', MSSQL_DATABASE: 'Magnum_Profi' }, 't');
+    expect(cfg.server).toBe('192.168.1.20');
+    expect(cfg.options.instanceName).toBe('INSERTGT');
+    expect(cfg.port).toBeUndefined();
+    expect(cfg.database).toBe('Magnum_Profi');
+    expect(describeTarget(cfg)).toBe('u@192.168.1.20\\INSERTGT');
+    expect(JSON.stringify(describeTarget(cfg))).not.toContain('p"');
+  });
+});
