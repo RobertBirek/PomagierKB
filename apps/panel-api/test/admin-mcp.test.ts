@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, vi, afterEach } from 'vitest';
 import { verifyKey } from '@pomagierkb/shared/db';
 import { makeTestApp, as, insertUser, type TestCtx } from './admin-helpers.js';
+import { MAX_ACTIVE_KEYS_PER_USER } from '../src/services/mcp-admin.js';
 
 /**
  * Administracja MCP: profile (CRUD, walidacja repo), klucze (raw JEDEN raz,
@@ -256,9 +257,9 @@ describe('mcp-admin', () => {
     expect(verifyKey(ctx.db, raw)).toBeNull();
   });
 
-  it('limit 5 aktywnych kluczy na użytkownika → 409', async () => {
+  it('limit MAX_ACTIVE_KEYS_PER_USER aktywnych kluczy na użytkownika → 409', async () => {
     insertUser(ctx.db, 'u-limit', 'operator');
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < MAX_ACTIVE_KEYS_PER_USER; i++) {
       const res = await ctx.app.inject({
         method: 'POST',
         url: '/api/v1/mcp/keys',
@@ -267,13 +268,14 @@ describe('mcp-admin', () => {
       });
       expect(res.statusCode).toBe(201);
     }
-    const sixth = await ctx.app.inject({
+    const overflow = await ctx.app.inject({
       method: 'POST',
       url: '/api/v1/mcp/keys',
       headers: as('operator', 'u-limit'),
-      payload: { label: 'k5', profileId: 'default', ttlDays: 10 },
+      payload: { label: 'k-overflow', profileId: 'default', ttlDays: 10 },
     });
-    expect(sixth.statusCode).toBe(409);
+    expect(overflow.statusCode).toBe(409);
+    expect(overflow.json().error.message).toContain(String(MAX_ACTIVE_KEYS_PER_USER));
   });
 
   // ── Snippety i health ─────────────────────────────────────────────────────

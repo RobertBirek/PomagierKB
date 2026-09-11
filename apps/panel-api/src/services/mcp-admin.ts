@@ -23,7 +23,13 @@ import type { AppUser } from '../types.js';
  * Profile MCP obsługuje bezpośrednio repo shared (walidacja tools/namespaces tam).
  */
 
-const MAX_ACTIVE_KEYS_PER_USER = 5;
+// Limit aktywnych kluczy MCP na użytkownika (guardrail z audytu). Konfigurowalny przez env,
+// bo operatorzy trzymają wiele kluczy maszynowych/agentowych pod jednym kontem (VPS pim,
+// VPS pomagier, Claude Desktop, integracje); domyślnie 10. Nadal twardy limit — nie „bez limitu".
+export const MAX_ACTIVE_KEYS_PER_USER = ((): number => {
+  const raw = Number(process.env.MCP_MAX_ACTIVE_KEYS_PER_USER);
+  return Number.isInteger(raw) && raw > 0 && raw <= 100 ? raw : 10;
+})();
 
 /** Kształt profilu dla API: tools/namespaces jako tablice zamiast surowych *_json. */
 export interface McpProfileView {
