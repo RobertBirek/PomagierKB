@@ -474,11 +474,12 @@ export async function runQualityGate(deps: QualityGateDeps): Promise<QualityGate
       // 2026-09-06 pokazała, że builder OpenSPG kończy job sukcesem, a węzła NIE nadpisuje —
       // stary chunk zachował pełną treść i semanticType. Check pytający wyłącznie rejestr
       // dawał wtedy fałszywą zieleń. Pytamy więc GRAF o próbkę wycofanych id.
-      // Liczba w rejestrze to SKALA zaległości do purge_graph_nodes.sh — próba 20 mówi tylko,
-      // czy ostatnie nagrobki nadal mają treść (2026-09-10: 11 734 stare węzły ukryte za „20").
+      // Liczba w rejestrze to GÓRNA granica zaległości do purge_graph_nodes.sh (rejestr trzyma
+      // nagrobki także po fizycznym usunięciu z grafu) — próba 20 mówi tylko, czy ostatnie
+      // nagrobki nadal mają treść (2026-09-10: 11 734 stare węzły ukryte za „20").
       const withdrawn = confirmedTombstones(db, namespace, 20);
       const total = countConfirmedTombstones(db, namespace);
-      const scale = `wycofanych id w rejestrze: ${total}`;
+      const scale = `nagrobków w rejestrze: ${total}, w tym już usunięte z grafu — patrz audyt graph.purge_nodes`;
       if (withdrawn.length === 0) {
         add('graph_stale_nodes', 'warn', true, `brak wycofanych id — nie ma czego sprawdzać w grafie (${scale})`);
       } else if (deps.client === undefined || deps.client === null) {
