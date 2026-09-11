@@ -1,0 +1,15 @@
+{
+  "namespace": "AnalizyERP",
+  "name": "Analizy ERP — KPI, raporty, dashboardy",
+  "description": "Generyczna wiedza analityczna dla danych ERP (niezależna od producenta systemu): katalog wskaźników KPI z formułami, wymaganymi danymi i pułapkami interpretacji, katalog raportów i wizualizacji, propozycje dashboardów, minimalny model danych BI (star schema), checklista jakości danych i alerty. Źródło: raporty analityczne (deep research) z folderu Google Drive właściciela. Warstwa „co i jak mierzyć”; mapowanie na konkretne tabele Subiekta GT jest w bazie IloveKB, a schemat w SubiektKB.",
+  "documentTypes": [
+    { "name": "katalog KPI", "description": "Definicje wskaźników: pytanie biznesowe, formuła, dane ERP, typ wykresu, częstotliwość, interpretacja, ryzyko błędnej interpretacji, źródła." },
+    { "name": "katalog raportów", "description": "Raporty operacyjne i zarządcze do przygotowania z danych ERP: cel, zakres, dane, odbiorca." },
+    { "name": "dashboard", "description": "Propozycje dashboardów (sprzedaż, magazyn, finanse, zakupy, zarządczy): układ, wskaźniki, filtry, priorytety wdrożenia." },
+    { "name": "model danych", "description": "Model danych pod BI: tabele faktów i wymiarów (star schema), granularność, potrzebne dane z ERP." },
+    { "name": "jakość danych i alerty", "description": "Checklista jakości danych ERP (kompletność, duplikaty, spójność) oraz alerty i monitoring statusowy." },
+    { "name": "przewodnik", "description": "Mapa obszarów analitycznych, cel raportu, priorytety wdrożenia, pytania kontrolne przed analizą, typy wykresów i kiedy ich używać." }
+  ],
+  "routingKeywords": ["kpi", "wskaźnik", "wskaźniki", "dashboard", "raport zarządczy", "marża", "rotacja zapasu", "dso", "dpo", "star schema", "bi", "power bi", "analiza sprzedaży", "analityka", "jakość danych", "alert", "trend", "yoy", "mom", "benchmark"],
+  "piiPolicy": "flag"
+}

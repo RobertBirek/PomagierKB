@@ -1,0 +1,14 @@
+{
+  "namespace": "IloveKB",
+  "name": "Magnum_Profi — semantyka instancji Subiekt GT ilovelighting",
+  "description": "Jedyne miejsce faktów o produkcyjnej instancji Subiekta GT firmy ilovelighting (baza Magnum_Profi): słowniki z listy dozwolonych (marki, cechy, grupy, rabaty, magazyny, płatności, VAT), konwencje i semantyka pól własnych/poziomów cen/typów dokumentów w użyciu, agregaty odświeżane cyklicznie (z progiem k=10 dla liczności osób), lista marek i domyślnych dostawców będących osobami prawnymi oraz przetestowane szablony SQL dla KPI. Bez danych wierszowych klientów i bez danych osobowych; fakty na żywo (kto, ile, kiedy) daje wyłącznie zapytanie SQL, nie ta baza.",
+  "documentTypes": [
+    { "name": "konwencje instancji", "description": "Jak firma używa Subiekta GT: role kontrahentów po dokumentach, definicja klienta hurtowego, pola własne, poziomy cen, typy dokumentów i magazyny w użyciu, moduły nieużywane; reguły wywnioskowane oznaczone DO POTWIERDZENIA." },
+    { "name": "słownik instancji", "description": "Wartości słowników tej instancji z listy dozwolonych: marki (grupy towarów), cechy, grupy kontrahentów, rabaty, magazyny, formy płatności, stawki VAT, kraje, waluty, jednostki." },
+    { "name": "agregaty instancji", "description": "Liczby o instancji generowane narzędziem z bazy: kontrahenci wg flag, towary wg rodzaju i marek, dokumenty wg typu i miesiąca, koncentracja dostawców; komórki poniżej k=10 osób tłumione." },
+    { "name": "marki i dostawcy", "description": "Marki (sl_GrupaTw) i ich domyślni dostawcy będący osobami prawnymi (nazwy spółek, bez osób fizycznych), z liczbą towarów; lista zatwierdzona w recenzji." },
+    { "name": "mapowanie KPI → SQL", "description": "Wskaźniki z bazy AnalizyERP przełożone na tabele i kolumny Subiekta GT: formuła, kody dok_Typ, przetestowany szablon zapytania SELECT, pułapki interpretacji." }
+  ],
+  "routingKeywords": ["magnum_profi", "ilovelighting", "nasza baza", "u nas", "w naszej firmie", "marka", "marki", "grupa towarów", "cecha towaru", "poziom cen", "poziomy cen", "pole własne", "hurtowy", "klient hurtowy", "dostawca domyślny", "domyślny dostawca", "globo", "italux", "nova luce", "nowodvorski", "szablon sql", "zapytanie sql", "ile mamy"],
+  "piiPolicy": "flag"
+}

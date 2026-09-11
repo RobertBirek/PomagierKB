@@ -80,6 +80,33 @@ Retencja: jak dokumentacja produktowa (§2). Nie uruchamia progu DPIA z §5, dop
 metadane i słowniki bez danych osobowych; rozszerzenie o zawartość tabel (nawet słownikowych) wymaga wpisu tutaj i decyzji
 właściciela bazy.
 
+**AnalizyERP (od 2026-09-11):** generyczna wiedza analityczna (katalog KPI z formułami, raporty,
+dashboardy, model danych BI, checklista jakości danych) z raportów „deep research" udostępnionych
+przez właściciela w folderze Google Drive; treść niezależna od producenta ERP, bez danych firmy i bez
+danych osobowych. Konwersja `tools/kb-import/prepare-md.mjs` (tabele → rekordy, sekcja samooceny
+raportu pomijana). Retencja jak dokumentacja produktowa; brak wyzwalacza DPIA.
+
+**IloveKB (od 2026-09-11, decyzja właściciela delegowana operatorowi):** semantyka PRODUKCYJNEJ
+instancji Subiekta GT ilovelighting (baza `Magnum_Profi`) — jedyna baza wiedzy z faktami o tej
+instancji. Zakres i bramki (`tools/mssql-introspect/`, testy w `test/`):
+- *słowniki* wyłącznie z listy dozwolonych (`dump-dictionaries.mjs --only`, marki `sl_GrupaTw`, cechy,
+  grupy kontrahentów, rabaty, magazyny, płatności, VAT, kraje, waluty, jednostki), z blacklistą
+  tabel kadrowo-płacowych i kolumn osobowych; NIE „każda tabela `sl_*`";
+- *agregaty* ze stałych, bezparametrowych zapytań w `src/queries-aggregates.mjs` (tylko
+  COUNT/SUM/AVG/MIN/MAX i GROUP BY po kodach, flagach, id i datach; test odrzuca projekcję nazw,
+  adresów, e-maili, NIP), z progiem k=10: liczności osób poniżej 10 tłumione (`dump-aggregates.mjs`);
+- *marki → domyślni dostawcy*: jedyne miejsce czytające kolumnę nazwy kontrahenta
+  (`dump-suppliers.mjs`), ograniczone do `kh_Osoba = 0` I nazw z formą prawną (sp. z o.o., S.A., GmbH,
+  Ltd …); osoby fizyczne i JDG odrzucane w kodzie; lista przechodzi recenzję człowieka w Inboxie;
+- *konwencje* i *mapowanie KPI → SQL*: dokumenty redakcyjne; szablony SQL testowane przez
+  `run-select.mjs` (ta sama bramka co MCP `mssql`, §1.3 droga 3); reguły wywnioskowane oznaczone
+  „DO POTWIERDZENIA".
+Adres hosta bazy nie trafia do treści (`sourceUrl` = `https://kag.ilovelighting.sanok.pl/src/magnum-profi#…`).
+Żadnych wierszy `kh__Kontrahent`, `dok__Dokument`, `tw__Towar`. Odświeżanie: wyłącznie agregaty
+i słowniki (nie katalog schematu). Retencja jak dokumentacja produktowa. Wyzwalacz DPIA §5
+(„dane klientów") NIE jest uruchomiony, bo baza nie zawiera danych osób; rozszerzenie zakresu
+(nowe tabele/kolumny, wiersze) wymaga wpisu tutaj i decyzji właściciela.
+
 ### 1.3 Przepływ do dostawcy LLM (poza EOG)
 
 Do dostawcy OpenAI-compatible wychodzą: **fragmenty treści dokumentów** (czyszczenie,
