@@ -86,3 +86,14 @@ describe('catalog-md: packSections', () => {
     expect(packed.length).toBe(parts.length);
   });
 });
+
+describe('catalog-md: liczności opcjonalne', () => {
+  it('rows:false pomija linię „Liczba wierszy" (zrzut z bazy demo nie może udawać faktów o firmie)', () => {
+    const cat = emptyCatalog({ database: 'db' });
+    const t = ensureTable(cat, 'dbo', 'tw__Towar');
+    t.rows = 577;
+    t.columns.push({ name: 'tw_Id', type: 'int', nullable: false });
+    expect(renderTable(t)).toContain('Liczba wierszy');
+    expect(renderTable(t, { rows: false })).not.toContain('Liczba wierszy');
+  });
+});

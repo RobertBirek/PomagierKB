@@ -28,6 +28,11 @@ const productLabel = opt('--product', 'InsERT GT');
 // sourceUrl musi być http(s) (walidacja POST /content) — baza = folder Drive z dokumentacją producenta.
 const changesLabel = opt('--changes-label', null); // np. "1.89 → 1.89 HF1" — numery buildów w XML nie mówią użytkownikowi nic
 const sourceBase = opt('--source-base', 'https://drive.google.com/drive/folders/1CRdwPl3SMF-sNS2bt83XvMbyFopeRded');
+// Etykieta źródła zamiast adresu hosta: adres serwera bazy nie ma prawa trafić do treści bazy wiedzy
+// (widoczny dla każdego viewera i dostawcy LLM); liczności wierszy (--no-counts) też nie, gdy zrzut
+// pochodzi z bazy demo — inaczej „fakty" o instancji demo udają fakty o firmie (2026-09-11).
+const sourceLabel = opt('--source-label', 'MSSQL');
+const noCounts = args.includes('--no-counts');
 if (!livePath || !docsPath || !outDir) {
   console.error('użycie: prepare-db.mjs --live catalog.json --docs Dokumentacja_DB.xml [--sql dir] [--changes xml] --out dir');
   process.exit(2);
@@ -51,22 +56,23 @@ if (sqlDir) {
 
 mkdirSync(outDir, { recursive: true });
 const database = catalog.meta?.database ?? '?';
-const host = catalog.meta?.target ?? '?';
+
 // Data ZRZUTU katalogu (nie „dzisiaj"): tekst musi być deterministyczny, inaczej każda regeneracja zmienia sha
 // wszystkich 160 fragmentów i upload wysyła je ponownie (build 11 z 2026-09-10 tak zrobił).
 const date = String(catalog.meta?.generatedAt ?? '').slice(0, 10) || new Date().toISOString().slice(0, 10);
-const sourceName = `żywa baza MSSQL ${database} na ${host} + dokumentacja producenta ${docs.version} + skrypty SQL`;
+const sourceName = `żywa baza MSSQL ${database} (${sourceLabel}) + dokumentacja producenta ${docs.version} + skrypty SQL`;
 const entries = renderCatalogToFiles(catalog, {
   outDir,
   productLabel,
   sourceName,
+  rows: !noCounts,
   sourceUrlBase: `${sourceBase}/baza-danych/${database}`,
   date,
   keywordsBase: [productLabel, 'baza danych', 'SQL Server', 'Subiekt GT', database],
   definitionCaps: DEFINITION_CAPS,
 });
 const fm = ''; // patrz prepare.mjs — proweniencja w tekście, front-matter po wdrożeniu poprawki GAP-03
-const diffBody = renderDiff(diff, { productLabel, database, sourceName: `${host}` });
+const diffBody = renderDiff(diff, { productLabel, database, sourceName: sourceLabel });
 // Raport bywa długi (setki różnic typów) — dzielimy po sekcjach H2 jak inne dokumenty.
 const diffSections = diffBody.split(/\n(?=## )/).map((t, i) => ({ name: i === 0 ? 'wstęp' : t.split('\n')[0].replace(/^## /, ''), text: t + '\n' }));
 const diffTitle = `${productLabel} — różnice: dokumentacja bazy ${diff.docsVersion} a żywa baza ${database}`;

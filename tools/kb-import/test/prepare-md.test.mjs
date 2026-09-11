@@ -96,7 +96,9 @@ describe('prepare-md: splitByHeading / categoryFor / stripNumbering', () => {
     expect(categoryFor(['10. Checklista jakości danych ERP'], 'x')).toBe('jakość danych i alerty');
     expect(categoryFor(['4. Katalog raportów ERP'], 'x')).toBe('katalog raportów');
     expect(categoryFor(['1. Cel raportu'], 'x')).toBe('przewodnik');
-    expect(categoryFor(['5. Typy wykresów i kiedy ich używać'], 'x')).toBe('dashboard');
+    expect(categoryFor(['5. Typy wykresów i kiedy ich używać'], 'x')).toBe('przewodnik');
+    expect(categoryFor(['4. Propozycje dashboardów'], 'x')).toBe('dashboard');
+    expect(categoryFor(['11. Rekomendacja końcowa', '11.8 Propozycja pierwszego MVP dashboardu (2-4 tygodnie)'], 'x')).toBe('dashboard');
     expect(categoryFor(['11. Rekomendacja końcowa', '11.2 Top 10 raportów dla zarządu'], 'x')).toBe('katalog raportów');
     expect(categoryFor(['11. Rekomendacja końcowa', '11.9 Lista pytań do właściciela firmy'], 'x')).toBe('przewodnik');
     expect(categoryFor(['11. Źródła'], 'domyślna')).toBe('domyślna');

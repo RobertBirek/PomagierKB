@@ -17,7 +17,8 @@
 //
 // Kształt aggregates.json (tolerancyjny): { database, generatedAt, k, aggregates: [ { id, title, description?,
 //   query?, dimensions?: [klucz], metrics?: [klucz], labels?: {klucz: etykieta}, unit?, kAnonymity?: bool,
-//   interpretation?, suppressed?: liczba, rows: [ { <wymiar>: kod, <miara>: liczba|null, suppressed?: bool } ] } ] }.
+//   interpretation?, suppressed?: liczba wierszy USUNIĘTYCH w całości ze zrzutu,
+//   rows: [ { <wymiar>: kod, <miara>: liczba|null, suppressed?: bool } ] } ] }.
 // Komórka stłumiona = row.suppressed===true, wartość miary null, tekst zaczynający się od „<", albo
 // (kAnonymity===true i miara licznikowa < k).
 // Kształt suppliers.json: { database, generatedAt, suppliers: [ { name, brands: [nazwa | {name, products?}],
@@ -44,6 +45,18 @@ const COUNT_KEY_RE = /^(count|cnt|n|liczba|ile)(_|$)|_(count|cnt)$/i;
 const METRIC_KEY_RE = /^(count|cnt|n|liczba|ile|sum|suma|avg|srednia|średnia|min|max|total|razem|pct|procent|share|udzial|udział)(_|$)|_(count|cnt|sum|avg|min|max|total|pct)$/i;
 const METRIC_LABELS = { count: 'liczba', cnt: 'liczba', n: 'liczba', sum: 'suma', avg: 'średnia', min: 'minimum', max: 'maksimum', total: 'razem', pct: 'udział %', share: 'udział %' };
 const MAX_QUERY_CHARS = 2000;
+
+/** Polska liczba mnoga: plural(3, 'agregat', 'agregaty', 'agregatów') → „3 agregaty". */
+export function plural(n, one, few, many) {
+  const abs = Math.abs(n);
+  const last = abs % 10;
+  const teen = abs % 100 >= 12 && abs % 100 <= 14;
+  const word = abs === 1 ? one : last >= 2 && last <= 4 && !teen ? few : many;
+  return `${n} ${word}`;
+}
+
+/** Kropka na końcu zdania, chyba że tekst już się nią kończy („S.A.", „Sp. z o.o."). */
+const endSentence = (s) => (s.endsWith('.') ? s : `${s}.`);
 
 /** Rzuca, gdy tekst zawiera ślad hosta — zdanie błędu NIE cytuje dopasowania (nie wolno go nigdzie wypisać). */
 export function assertNoHost(text, where = 'dokument') {
@@ -131,7 +144,8 @@ export function renderAggregate(agg, k) {
   if (keys.dimensions.length) meta.push(`wymiary: ${keys.dimensions.map((d) => labelOf(agg, d)).join(', ')}`);
   if (keys.metrics.length) meta.push(`miary: ${keys.metrics.map((m) => labelOf(agg, m)).join(', ')}`);
   if (agg.unit) meta.push(`jednostka: ${agg.unit}`);
-  L.push(`Agregat „${title}" (instancja produkcyjna ${INSTANCE})${meta.length ? ` — ${meta.join('; ')}` : ''}. Wartości „<${k}" oznaczają komórkę stłumioną (mniej niż ${k} osób).`, '');
+  const anySuppressed = agg.kAnonymity === true || (Number.isInteger(agg.suppressed) && agg.suppressed > 0) || rows.some((r) => keys.metrics.some((m) => isSuppressed(agg, r, m, k)));
+  L.push(`Agregat „${title}" (instancja produkcyjna ${INSTANCE})${meta.length ? ` — ${meta.join('; ')}` : ''}.${anySuppressed ? ` Wartości „<${k}" oznaczają komórkę stłumioną (mniej niż ${k} osób).` : ''}`, '');
   if (rows.length === 0) L.push('Brak wierszy (zapytanie nie zwróciło danych albo wszystkie zostały stłumione w zrzucie).', '');
   else {
     L.push(`Wartości (${rows.length}):`);
@@ -143,7 +157,7 @@ export function renderAggregate(agg, k) {
     const q = String(agg.query).replace(/\r\n?/g, '\n').trim();
     L.push('Zapytanie użyte do wyliczenia:', '', '```sql', q.length > MAX_QUERY_CHARS ? `${q.slice(0, MAX_QUERY_CHARS)}\n-- (zapytanie przycięte do ${MAX_QUERY_CHARS} znaków)` : q, '```', '');
   }
-  return { name: title, text: `${L.join('\n')}\n` };
+  return { name: title, text: L.join('\n') };
 }
 
 function dateOf(dump, fallback) {
@@ -156,7 +170,7 @@ export function renderAggregatesDoc(dump, { k, date = new Date().toISOString().s
   const aggregates = Array.isArray(dump?.aggregates) ? dump.aggregates : [];
   const generated = dateOf(dump, date);
   const sections = aggregates.map((a) => renderAggregate(a, k));
-  const intro = `Liczby opisujące instancję produkcyjną ${INSTANCE} programu Subiekt GT (firma ilovelighting): liczności dokumentów, towarów, kontrahentów i innych obiektów w podziale po kodach, flagach i okresach — ${aggregates.length} agregatów, stan na ${generated}. ${provenanceSentence(k)} Każdy agregat: opis, lista wierszy „wymiar: kod — miara: wartość", krótka interpretacja. To są liczby o TEJ instancji, nie dokumentacja programu.`;
+  const intro = `Liczby opisujące instancję produkcyjną ${INSTANCE} programu Subiekt GT (firma ilovelighting): liczności dokumentów, towarów, kontrahentów i innych obiektów w podziale po kodach, flagach i okresach — ${plural(aggregates.length, 'agregat', 'agregaty', 'agregatów')}, stan na ${generated}. ${provenanceSentence(k)} Każdy agregat: opis, lista wierszy „wymiar: kod — miara: wartość", krótka interpretacja. To są liczby o TEJ instancji, nie dokumentacja programu.`;
   const keywords = [PRODUCT, INSTANCE, 'ilovelighting', 'agregaty instancji', 'statystyki', 'liczby', 'ile', ...aggregates.slice(0, 12).map((a) => String(a.title ?? a.id ?? '')).filter(Boolean)];
   return packSections(sections, { title: `${INSTANCE} — liczby o instancji (agregaty)`, intro, maxChars, keywords });
 }
@@ -192,7 +206,7 @@ export function renderSuppliersDoc(dump, { date = new Date().toISOString().slice
       L.push(`- Dostawca: ${s.name}${s.legalForm ? ` (${s.legalForm})` : ''} — marki: ${brands}; liczba towarów z tym domyślnym dostawcą: ${products}.`);
     }
     L.push('');
-    return { name: `litera ${letter}`, text: `${L.join('\n')}\n` };
+    return { name: `litera ${letter}`, text: L.join('\n') };
   });
   // Indeks odwrotny marka → dostawca (pytania „kto dostarcza markę X").
   const byBrand = new Map();
@@ -202,14 +216,14 @@ export function renderSuppliersDoc(dump, { date = new Date().toISOString().slice
     byBrand.get(key).suppliers.push(s.name);
   }
   if (byBrand.size > 0) {
-    const L = ['## Indeks marek', '', `Marka → domyślny dostawca (${byBrand.size} marek):`];
-    for (const b of [...byBrand.values()].sort((a, c) => a.name.localeCompare(c.name, 'pl'))) L.push(`- Marka ${b.name} — dostawca: ${b.suppliers.join('; ')}.`);
+    const L = ['## Indeks marek', '', `Marka → domyślny dostawca (${plural(byBrand.size, 'marka', 'marki', 'marek')}):`];
+    for (const b of [...byBrand.values()].sort((a, c) => a.name.localeCompare(c.name, 'pl'))) L.push(endSentence(`- Marka ${b.name} — dostawca: ${b.suppliers.join('; ')}`));
     L.push('');
-    sections.push({ name: 'indeks marek', text: `${L.join('\n')}\n` });
+    sections.push({ name: 'indeks marek', text: L.join('\n') });
   }
   const totalProducts = suppliers.reduce((a, s) => a + (s.products ?? 0), 0);
   const exclusions = [Number.isInteger(excluded.soleTraders) ? `jednoosobowe działalności gospodarcze pominięte: ${excluded.soleTraders}` : 'jednoosobowe działalności gospodarcze pominięte', Number.isInteger(excluded.noBrand) ? `dostawcy bez marek pominięci: ${excluded.noBrand}` : null].filter(Boolean).join('; ');
-  const intro = `Lista marek towarów i ich domyślnych dostawców w instancji produkcyjnej ${INSTANCE} programu Subiekt GT (firma ilovelighting): ${suppliers.length} dostawców, ${byBrand.size} marek, ${totalProducts} towarów z przypisanym domyślnym dostawcą, stan na ${generated}. Zakres: WYŁĄCZNIE dostawcy będący osobami prawnymi (spółki, firmy) — ${exclusions}; osoby fizyczne nie występują, bo nazwa jednoosobowej działalności to dane osobowe. Bez adresów, numerów NIP, kontaktów i uwag. Listę recenzuje właściciel w Inboxie przed promocją do bazy wiedzy. Źródło: pole „domyślny dostawca" kartoteki towarów (tw__Towar) i kartoteka kontrahentów (kh__Kontrahent), tylko nazwa i liczności.`;
+  const intro = `Lista marek towarów i ich domyślnych dostawców w instancji produkcyjnej ${INSTANCE} programu Subiekt GT (firma ilovelighting): ${plural(suppliers.length, 'dostawca', 'dostawców', 'dostawców')}, ${plural(byBrand.size, 'marka', 'marki', 'marek')}, ${plural(totalProducts, 'towar', 'towary', 'towarów')} z przypisanym domyślnym dostawcą, stan na ${generated}. Zakres: WYŁĄCZNIE dostawcy będący osobami prawnymi (spółki, firmy) — ${exclusions}; osoby fizyczne nie występują, bo nazwa jednoosobowej działalności to dane osobowe. Bez adresów, numerów NIP, kontaktów i uwag. Listę recenzuje właściciel w Inboxie przed promocją do bazy wiedzy. Źródło: pole „domyślny dostawca" kartoteki towarów (tw__Towar) i kartoteka kontrahentów (kh__Kontrahent), tylko nazwa i liczności.`;
   const keywords = [PRODUCT, INSTANCE, 'ilovelighting', 'marki', 'dostawcy', 'domyślny dostawca', 'producent', 'kto dostarcza', ...[...byBrand.values()].slice(0, 15).map((b) => b.name)];
   return packSections(sections, { title: 'Marki i domyślni dostawcy (osoby prawne)', intro, maxChars, keywords });
 }
@@ -247,25 +261,28 @@ export function resolveK(dump, cliK) {
   return fromDump ?? fromCli ?? DEFAULT_K;
 }
 
-/** Cała generacja bez zapisu na dysk (testowalna): { files:[{file,text}], entries, k }. */
+/**
+ * Cała generacja bez zapisu na dysk (testowalna): { files:[{file,text}], entries, skipped, k }.
+ * Pusty zrzut (0 agregatów / 0 dostawców) NIE daje dokumentu (packSections bez sekcji = brak części) — trafia do `skipped`.
+ */
 export function generate({ aggregates, suppliers, k: cliK = null, sourceBase, product = PRODUCT, aggregatesFile = 'aggregates.json', suppliersFile = 'suppliers.json', date } = {}) {
   if (!sourceBase) throw new Error('brak --source-base');
   const k = resolveK(aggregates, cliK);
   const files = [];
   const entries = [];
-  if (aggregates) {
-    const packed = renderAggregatesDoc(aggregates, { k, date });
-    const r = buildEntries({ slug: SLUG_AGGREGATES, packed, sourceBase, category: CATEGORY_AGGREGATES, product, keywords: [PRODUCT, INSTANCE, 'agregaty instancji'], sourceFile: aggregatesFile });
+  const skipped = [];
+  const add = (sourceFile, slug, packed, category, keywords) => {
+    if (packed.length === 0) {
+      skipped.push({ file: sourceFile, reason: 'pusty zrzut — dokument pominięty' });
+      return;
+    }
+    const r = buildEntries({ slug, packed, sourceBase, category, product, keywords, sourceFile });
     files.push(...r.files);
     entries.push(...r.entries);
-  }
-  if (suppliers) {
-    const packed = renderSuppliersDoc(suppliers, { date });
-    const r = buildEntries({ slug: SLUG_SUPPLIERS, packed, sourceBase, category: CATEGORY_SUPPLIERS, product, keywords: [PRODUCT, INSTANCE, 'marki', 'dostawcy'], sourceFile: suppliersFile });
-    files.push(...r.files);
-    entries.push(...r.entries);
-  }
-  return { files, entries, k };
+  };
+  if (aggregates) add(aggregatesFile, SLUG_AGGREGATES, renderAggregatesDoc(aggregates, { k, date }), CATEGORY_AGGREGATES, [PRODUCT, INSTANCE, 'agregaty instancji']);
+  if (suppliers) add(suppliersFile, SLUG_SUPPLIERS, renderSuppliersDoc(suppliers, { date }), CATEGORY_SUPPLIERS, [PRODUCT, INSTANCE, 'marki', 'dostawcy']);
+  return { files, entries, skipped, k };
 }
 
 function main() {
@@ -293,9 +310,10 @@ function main() {
   }
   mkdirSync(outDir, { recursive: true });
   for (const f of result.files) writeFileSync(join(outDir, f.file), f.text);
-  writeFileSync(join(outDir, 'manifest.json'), JSON.stringify({ source: `instancja ${INSTANCE}`, generatedAt: new Date().toISOString(), k: result.k, entries: result.entries, skipped: [] }, null, 2));
+  writeFileSync(join(outDir, 'manifest.json'), JSON.stringify({ source: `instancja ${INSTANCE}`, generatedAt: new Date().toISOString(), k: result.k, entries: result.entries, skipped: result.skipped }, null, 2));
   const total = result.entries.reduce((a, e) => a + e.chars, 0);
-  console.log(`agregatów: ${aggregates?.aggregates?.length ?? 0}, dostawców: ${suppliers?.suppliers?.length ?? 0}, k=${result.k}, plików: ${result.entries.length}, znaków: ${total}`);
+  console.log(`agregatów: ${aggregates?.aggregates?.length ?? 0}, dostawców: ${suppliers?.suppliers?.length ?? 0}, k=${result.k}, plików: ${result.entries.length}, znaków: ${total}, pominięte: ${result.skipped.length}`);
+  for (const s of result.skipped) console.log(`  - ${s.file}: ${s.reason}`);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();

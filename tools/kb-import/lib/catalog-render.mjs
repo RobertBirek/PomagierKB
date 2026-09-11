@@ -115,7 +115,8 @@ export function renderCatalogToFiles(catalog, opts) {
 
   // Moduły: jeden plik (lub części) per prefiks.
   for (const [prefix, tables] of groups) {
-    const sections = tables.map((t) => ({ name: t.name, text: renderTable(t) }));
+    // rows:false — liczności instancji nie trafiają do treści (fakty o instancji = osobna baza, np. IloveKB)
+    const sections = tables.map((t) => ({ name: t.name, text: renderTable(t, { rows: opts.rows !== false }) }));
     const title = `${productLabel} — baza danych: ${moduleLabel(prefix, labels)}`;
     const intro = `Opis tabel modułu \`${prefix}\` w bazie ${productLabel} (${sourceName}): kolumny z typami SQL Server, klucze główne i obce, indeksy, tabele powiązane. Metadane katalogu, bez danych. ${provenance}`;
     const keywords = [...keywordsBase, `tabele ${prefix}_`, ...tables.slice(0, 12).map((t) => t.name)];

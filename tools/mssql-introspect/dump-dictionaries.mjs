@@ -2,20 +2,41 @@
 // Zrzut WARTOŚCI małych tabel słownikowych `sl_*` (kody, typy, stawki) — jedyne czytanie wierszy w tym
 // narzędziu; bramki w src/queries-data.mjs. Wynik: <out>/dictionaries.json (tabela → kolumny, wiersze)
 // + CHECK constraints z katalogu. Render do Markdown robi tools/kb-import/prepare-dicts.mjs.
-// Użycie: node tools/mssql-introspect/dump-dictionaries.mjs <baza> --out <katalog>
+// Meta pliku NIE zawiera hosta ani użytkownika (tylko nazwa bazy) — zrzut trafia do dokumentów KB.
+// Użycie: node tools/mssql-introspect/dump-dictionaries.mjs <baza> --out <katalog> [--only <regex>]
+//   --only <regex>  allow-lista po nazwie tabeli (case-insensitive); blacklista i limity obowiązują nadal
+//   MSSQL_ENV_FILE  plik poświadczeń (domyślnie /etc/kag/mssql-optima.env)
 
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { openPool, query } from './src/connect.mjs';
 import { dbRowCounts, quoteName } from './src/queries.mjs';
-import { PII_COLUMN_RE, isDictionaryTable, safeColumns, selectDictionary } from './src/queries-data.mjs';
+import { PII_COLUMN_RE, compileOnlyPattern, isDictionaryTable, safeColumns, selectDictionary } from './src/queries-data.mjs';
 
+const USAGE = 'użycie: dump-dictionaries.mjs <baza> --out <katalog> [--only <regex>]';
+const OPTIONS = new Set(['--out', '--only']);
+const opts = {};
+const positional = [];
 const args = process.argv.slice(2);
-const database = args.find((a) => !a.startsWith('--'));
-const outIdx = args.indexOf('--out');
-const outDir = outIdx >= 0 ? args[outIdx + 1] : null;
-if (!database || !outDir) {
-  console.error('użycie: dump-dictionaries.mjs <baza> --out <katalog>');
+for (let i = 0; i < args.length; i += 1) {
+  if (OPTIONS.has(args[i])) {
+    opts[args[i]] = args[i + 1];
+    i += 1;
+  } else {
+    positional.push(args[i]);
+  }
+}
+const [database] = positional;
+const outDir = opts['--out'];
+if (!database || !outDir || positional.length > 1 || ('--only' in opts && !opts['--only'])) {
+  console.error(USAGE);
+  process.exit(2);
+}
+let only;
+try {
+  only = compileOnlyPattern(opts['--only']);
+} catch (err) {
+  console.error(`${err.message}\n${USAGE}`);
   process.exit(2);
 }
 
@@ -23,8 +44,8 @@ const { pool, target } = await openPool();
 try {
   const q = quoteName(database);
   const counts = await query(pool, dbRowCounts(database));
-  const candidates = counts.filter((r) => r.schemaName === 'dbo' && isDictionaryTable(r.tableName, r.rowsCount));
-  console.log(`baza ${database} (${target}): tabel sl_* z wartościami w limicie: ${candidates.length}`);
+  const candidates = counts.filter((r) => r.schemaName === 'dbo' && isDictionaryTable(r.tableName, r.rowsCount, only));
+  console.log(`baza ${database} (${target})${only ? `, allow-lista --only ${only}` : ''}: tabel sl_* z wartościami w limicie: ${candidates.length}`);
   const columnsByTable = new Map();
   for (const c of await query(
     pool,
@@ -50,7 +71,11 @@ try {
     dictionaries.push({ table: t.tableName, rows: Number(t.rowsCount), columns: safe, values: rows.map((r) => Object.fromEntries(safe.map((c) => [c, r[c] instanceof Date ? r[c].toISOString().slice(0, 10) : r[c]]))) });
   }
   mkdirSync(outDir, { recursive: true });
-  writeFileSync(join(outDir, 'dictionaries.json'), JSON.stringify({ database, target: target.replace(/^[^@]+@/, ''), generatedAt: new Date().toISOString(), piiColumnRule: String(PII_COLUMN_RE), dictionaries, checks }, null, 1));
+  // Meta bez hosta/użytkownika: identyfikacja źródła wyłącznie nazwą bazy (plik ląduje w dokumentach KB).
+  writeFileSync(
+    join(outDir, 'dictionaries.json'),
+    JSON.stringify({ database, only: only ? only.source : null, generatedAt: new Date().toISOString(), piiColumnRule: String(PII_COLUMN_RE), dictionaries, checks }, null, 1),
+  );
   console.log(`słowników: ${dictionaries.length}, wierszy: ${dictionaries.reduce((a, d) => a + d.values.length, 0)}, kolumn pominiętych (PII): ${skippedPii}, CHECK constraints: ${checks.length}`);
 } finally {
   await pool.close();
