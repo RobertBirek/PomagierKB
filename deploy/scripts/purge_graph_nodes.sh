@@ -141,12 +141,21 @@ log "po usunięciu: pozostało z listy=${LEFT}, węzłów w bazie=${TOTAL_AFTER}
   || die "liczba węzłów nie zgadza się z oczekiwaną — usunięto coś poza listą! (było ${TOTAL_BEFORE}, jest ${TOTAL_AFTER})"
 
 # --- 5. Wpis audytu (mutacja stanu produkcyjnego musi zostawić ślad) ---
-docker exec -i -w /app -e PURGE_NS="${NAMESPACE}" -e PURGE_JSON="${CANDIDATES_JSON}" "${PANEL_CTR}" \
+# Lista id idzie przez PLIK na wolumenie danych panelu, nie przez -e: JSON 3000 wpisów ma ~160 KB,
+# a limit pojedynczego argumentu/zmiennej to 128 KB — `docker exec -e` padał z "Argument list too
+# long" PO kasowaniu, zostawiając partię bez wpisu (2026-09-11; odtwarzane ręcznie).
+PANEL_DATA_HOST="${PANEL_DATA_HOST:-$(docker inspect "${PANEL_CTR}" --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Source}}{{end}}{{end}}')}"
+[[ -d "${PANEL_DATA_HOST}" ]] || die "nie znajduję katalogu danych panelu (mount /data w ${PANEL_CTR})"
+AUDIT_FILE="purge-audit-$$.json"
+printf '%s' "${CANDIDATES_JSON}" > "${PANEL_DATA_HOST}/${AUDIT_FILE}"
+docker exec -i -w /app -e PURGE_NS="${NAMESPACE}" -e PURGE_FILE="${AUDIT_FILE}" "${PANEL_CTR}" \
   node --input-type=module <<'NODE' >/dev/null
+import { readFileSync } from 'node:fs';
 import { openDb } from '@pomagierkb/shared/db';
 import { appendAudit } from '@pomagierkb/shared/audit';
-const db = openDb(process.env.DATA_DIR ? `${process.env.DATA_DIR}/db/kag.db` : '/data/db/kag.db');
-const rows = JSON.parse(process.env.PURGE_JSON);
+const dataDir = process.env.DATA_DIR ?? '/data';
+const db = openDb(`${dataDir}/db/kag.db`);
+const rows = JSON.parse(readFileSync(`${dataDir}/${process.env.PURGE_FILE}`, 'utf8'));
 appendAudit(db, {
   actor: 'purge_graph_nodes.sh',
   actorType: 'system',
@@ -157,5 +166,6 @@ appendAudit(db, {
   metadata: { count: rows.length, ids: rows.map((r) => r.id) },
 });
 NODE
+rm -f "${PANEL_DATA_HOST}/${AUDIT_FILE}"
 log "wpis audytu graph.purge_nodes dodany"
 log "GOTOWE — uruchom bramkę jakości; check graph_stale_nodes powinien przejść na OK"
