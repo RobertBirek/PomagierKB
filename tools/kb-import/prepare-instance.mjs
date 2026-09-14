@@ -84,7 +84,7 @@ export function aggregateKeys(agg) {
   let dimensions = Array.isArray(agg.dimensions) ? agg.dimensions : all.filter((k) => !metrics.includes(k));
   if (metrics.length === 0 && !Array.isArray(agg.metrics)) {
     // brak nazw miar → miary to kolumny, w których występują liczby (poza wymiarami jawnymi)
-    metrics = all.filter((k) => !dimensions.includes(k) && rows.some((r) => typeof r[k] === 'number' || r[k] === null));
+    metrics = all.filter((k) => !dimensions.includes(k) && rows.some((r) => typeof r[k] === 'number' || r[k] === null || (typeof r[k] === 'string' && r[k].startsWith('<'))));
     dimensions = dimensions.filter((k) => !metrics.includes(k));
   }
   return { dimensions, metrics };
@@ -167,7 +167,8 @@ function dateOf(dump, fallback) {
 
 /** Dokument 1: agregaty instancji → części z packSections. */
 export function renderAggregatesDoc(dump, { k, date = new Date().toISOString().slice(0, 10), maxChars = MAX_CHARS } = {}) {
-  const aggregates = Array.isArray(dump?.aggregates) ? dump.aggregates : [];
+  const list = dump?.aggregates ?? dump?.results; // dump-aggregates.mjs zapisuje `results`
+  const aggregates = Array.isArray(list) ? list : [];
   const generated = dateOf(dump, date);
   const sections = aggregates.map((a) => renderAggregate(a, k));
   const intro = `Liczby opisujące instancję produkcyjną ${INSTANCE} programu Subiekt GT (firma ilovelighting): liczności dokumentów, towarów, kontrahentów i innych obiektów w podziale po kodach, flagach i okresach — ${plural(aggregates.length, 'agregat', 'agregaty', 'agregatów')}, stan na ${generated}. ${provenanceSentence(k)} Każdy agregat: opis, lista wierszy „wymiar: kod — miara: wartość", krótka interpretacja. To są liczby o TEJ instancji, nie dokumentacja programu.`;
@@ -312,7 +313,7 @@ function main() {
   for (const f of result.files) writeFileSync(join(outDir, f.file), f.text);
   writeFileSync(join(outDir, 'manifest.json'), JSON.stringify({ source: `instancja ${INSTANCE}`, generatedAt: new Date().toISOString(), k: result.k, entries: result.entries, skipped: result.skipped }, null, 2));
   const total = result.entries.reduce((a, e) => a + e.chars, 0);
-  console.log(`agregatów: ${aggregates?.aggregates?.length ?? 0}, dostawców: ${suppliers?.suppliers?.length ?? 0}, k=${result.k}, plików: ${result.entries.length}, znaków: ${total}, pominięte: ${result.skipped.length}`);
+  console.log(`agregatów: ${(aggregates?.aggregates ?? aggregates?.results)?.length ?? 0}, dostawców: ${suppliers?.suppliers?.length ?? 0}, k=${result.k}, plików: ${result.entries.length}, znaków: ${total}, pominięte: ${result.skipped.length}`);
   for (const s of result.skipped) console.log(`  - ${s.file}: ${s.reason}`);
 }
 
