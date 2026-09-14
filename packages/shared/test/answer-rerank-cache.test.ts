@@ -59,6 +59,28 @@ describe('cosine + rerank embed', () => {
     expect(out.strategy).toBe('embed');
   });
 
+  it("kandydat z kompletem dokładnych tokenów ('exact_match') zostaje przed resztą mimo niższego cosinusa; topCosine = najlepszy w ogóle", async () => {
+    const db = testDb();
+    createKb(db, { namespace: 'KbX', name: 'X' });
+    replaceForDocument(db, 'KbX', 'DOC_x', [
+      { id: 'CHUNK_x_001', content: 'nagłówek: słowa kluczowe DSO, KPI, szablony SQL (treść bliska pytaniu)' },
+      { id: 'CHUNK_x_002', content: 'KPI 6 — DSO: WITH ar AS (SELECT ...) -- sekcja daleka semantycznie' },
+      { id: 'CHUNK_x_003', content: 'inny nagłówek, też bliska' },
+    ]);
+    const hits: RetrievalHit[] = [
+      { id: 'CHUNK_x_002', namespace: 'KbX', snippet: 'sekcja', score: 0.05, source: 'exact_match' },
+      { id: 'CHUNK_x_001', namespace: 'KbX', snippet: 'nagłówek', score: 0.04, source: 'openspg_vector' },
+      { id: 'CHUNK_x_003', namespace: 'KbX', snippet: 'inny', score: 0.03, source: 'fallback_fts' },
+    ];
+    const llm = {
+      chat: async () => ({ text: '' }),
+      embed: async (texts: string[]) => texts.map((t) => (t.includes('bliska') ? [0.9, 0.1] : t.includes('daleka') ? [0, 1] : [1, 0])),
+    };
+    const out = await rerankHits(db, llm, 'embed', 'zapytanie', hits);
+    expect(out.hits.map((h) => h.id)).toEqual(['CHUNK_x_002', 'CHUNK_x_001', 'CHUNK_x_003']);
+    expect(out.topCosine).toBeGreaterThan(0.9); // bramka odmowy patrzy na najlepszy cosinus, nie na pierwszy element
+  });
+
   it('błąd embed → oryginalna kolejność (rerank nigdy nie wywraca)', async () => {
     const db = testDb();
     const hits: RetrievalHit[] = [

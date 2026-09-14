@@ -227,7 +227,10 @@ function buildContext(
  * nie da się porównać dwóch wariantów na tym samym zbiorze goldenów ani odpowiedzieć
  * na pytanie „czy jakość spadła przez prompt, czy przez korpus".
  */
-export const ANSWER_PROMPT_VERSION = 'answer-v3';
+// answer-v4 (2026-09-14): treść promptu = v3; zmiana polityki w kodzie — odpowiedź zaczynająca się
+// formułą niewiedzy („Nie wiem…") jest odmową (noAnswer) także bez znacznika SCOPE, patrz
+// isRefusalText(). Wersja podbita, żeby cache nie oddawał takich „odpowiedzi" z pewnością ~0.8.
+export const ANSWER_PROMPT_VERSION = 'answer-v4';
 
 /** Mnożnik kary pewności przy 100 % akapitów bez cytowania (share=1 → ×0.6). */
 export const UNCITED_PENALTY = 0.4;
@@ -285,6 +288,32 @@ export function parseScopeLine(text: string): { text: string; outOfScope: boolea
   const outOfScope = lines.some(isMarker);
   if (!outOfScope) return { text, outOfScope: false };
   return { text: lines.filter((l) => !isMarker(l)).join('\n').trim(), outOfScope: true };
+}
+
+/**
+ * Pełna odmowa bez znacznika SCOPE (answer-v4). Model zaczyna taką odpowiedź od formuły niewiedzy
+ * (reguła promptu „powiedz wprost, że nie wiesz"), ale SCOPE dodaje tylko przy innym produkcie
+ * lub temacie spoza źródeł — 3/4 sond near-miss (2026-09-14, profil trzech baz) szło jako
+ * odpowiedź z pewnością ~0.8: poza statystyką odmów i lukami, do cache. Rozszerzenie reguły
+ * w prompcie dało 22/40 fałszywych odmów na sondach SubiektKB, więc decyzja zapada tu: liczą się
+ * wyłącznie PIERWSZE słowa treści (po pominięciu składni markdown), nie zwroty w środku odpowiedzi.
+ */
+// `\b` w JS nie zna polskich liter („zawierają." → brak granicy słowa), stąd (?![\p{L}\p{N}]) z flagą u.
+const REFUSAL_PREFIX_RE =
+  /^(nie wiem|nie mam (w (dostarczonych |podanych )?źródłach|informacji|danych)|w (dostarczonych |podanych )?źródłach nie ma|(dostarczone |podane )?źródła nie (zawierają|obejmują|podają|opisują)|i (don'?t|do not) know|the (provided )?sources do not (contain|cover|include|mention))(?![\p{L}\p{N}])/u;
+
+/**
+ * Górny limit długości treści dla heurystyki: pełne odmowy z sond mają 170-340 znaków, a odpowiedź
+ * częściowa zaczynająca się od „Źródła nie zawierają prostego opisu…" i przechodząca do porównania
+ * miała 907 — taka MA zostać odpowiedzią (reguła promptu: choćby część odpowiedzi = nie odmowa).
+ */
+export const REFUSAL_MAX_CHARS = 500;
+
+export function isRefusalText(text: string): boolean {
+  const body = text.replace(/^\s*CONFIDENCE:.*$/gim, '').trim();
+  if (body.length > REFUSAL_MAX_CHARS) return false;
+  const head = body.replace(/^[\s#*_>`-]+/, '').slice(0, 120).toLowerCase();
+  return REFUSAL_PREFIX_RE.test(head);
 }
 
 /** Ostatnia linia CONFIDENCE: <0..1> — parsowanie defensywne (przecinek dziesiętny też). */
@@ -562,7 +591,9 @@ export async function answerQuestion(ctx: AnswerCtx, params: AnswerParams): Prom
   const model = chatResult.model !== undefined && chatResult.model !== '' ? chatResult.model : model0;
 
   // ── Parsowanie CONFIDENCE + walidacja cytowań post-hoc ──
-  const { text: withoutScope, outOfScope } = parseScopeLine(chatResult.text);
+  const { text: withoutScope, outOfScope: scopeMarked } = parseScopeLine(chatResult.text);
+  // answer-v4: „Nie wiem…" na początku treści = pełna odmowa, nawet gdy model pominął znacznik.
+  const outOfScope = scopeMarked || isRefusalText(withoutScope);
   const { answer: withoutConfidence, llmSelf } = parseConfidenceLine(withoutScope);
   const { answer, cited, removed } = validateCitations(withoutConfidence, sources.length);
   if (removed.length > 0) {

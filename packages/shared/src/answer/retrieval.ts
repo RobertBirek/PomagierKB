@@ -352,6 +352,10 @@ function withdrawnIds(db: Db, ids: string[]): Set<string> {
 
 const VERSION_TOKEN_RE = /\b\d+\.\d+(?:\s*(?:SP|HF)\s*\d+)*\b/gi;
 const IDENT_TOKEN_RE = /\b[A-Za-z][A-Za-z0-9]*_+[A-Za-z0-9_]*[A-Za-z0-9]\b/g;
+// Akronimy (DSO, DIO, KSeF, JPK, EDI): 3-8 liter, co najmniej dwie wielkie, bez cyfr i podkreśleń
+// (te łapią wzorce wyżej). 2026-09-14: „szablon SQL na DSO" trafiał w nagłówki wszystkich dokumentów
+// KPI (każdy zawiera „szablon SQL"), a sekcja DSO lądowała na 6. miejscu — poza oknem odpowiedzi.
+const ACRONYM_TOKEN_RE = /\b(?=[A-Za-z]{3,8}\b)[A-Za-z]*[A-Z][A-Za-z]*[A-Z][A-Za-z]*\b/g;
 /** Pula FTS przy dokładnych tokenach — krotność limitu. */
 export const EXACT_TOKEN_FTS_POOL = 3;
 /** Bonus RRF za komplet tokenów w tytule+treści (k=60 jak w `rrfFuse`): 2 × 1/(k+1). */
@@ -371,6 +375,7 @@ export function extractExactTokens(query: string): string[] {
   // faktycznie zawiera token, więc fałszywy token nie zmienia rankingu.
   for (const m of query.matchAll(VERSION_TOKEN_RE)) add(m[0]);
   for (const m of query.matchAll(IDENT_TOKEN_RE)) add(m[0]);
+  for (const m of query.matchAll(ACRONYM_TOKEN_RE)) add(m[0]);
   return out;
 }
 

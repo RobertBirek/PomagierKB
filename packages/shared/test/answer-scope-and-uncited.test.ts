@@ -4,6 +4,7 @@ import {
   answerQuestion,
   answerSystemPrompt,
   clearAnswerCache,
+  isRefusalText,
   parseScopeLine,
   uncitedShare,
 } from '../src/answer/index.js';
@@ -67,7 +68,7 @@ describe('parseScopeLine (czysta logika)', () => {
 
 describe('answerSystemPrompt (answer-v3)', () => {
   it('wersja promptu podbita, reguła zakresu, zakaz wiedzy spoza źródeł i znacznik SCOPE w obu językach', () => {
-    expect(ANSWER_PROMPT_VERSION).toBe('answer-v3');
+    expect(ANSWER_PROMPT_VERSION).toBe('answer-v4');
     expect(answerSystemPrompt('pl')).toContain('SCOPE: poza_zrodlami');
     expect(answerSystemPrompt('en')).toContain('SCOPE: out_of_sources');
     const pl = answerSystemPrompt('pl');
@@ -166,5 +167,39 @@ describe('answerQuestion — odmowa zakresu ze znacznikiem SCOPE', () => {
       source: 'mcp',
     });
     expect(again.noAnswer).toBe(true);
+  });
+});
+
+describe('isRefusalText — pełna odmowa bez znacznika SCOPE (answer-v4)', () => {
+  it('formuła niewiedzy na POCZĄTKU treści to odmowa, w obu językach, także po składni markdown', () => {
+    for (const t of [
+      'Nie wiem — dostarczone źródła nie zawierają informacji o liczbie zamówień klienta o NIP `5252248481` [1][2].\nCONFIDENCE: 0.79',
+      'Nie wiem. Dostarczone źródła pokazują, że kartoteka pracownika może zawierać PESEL [1].',
+      '**Nie wiem**, ile faktur wystawiono w sierpniu 2026.',
+      'Nie mam w źródłach gotowego szablonu SQL na DSO.',
+      'W dostarczonych źródłach nie ma informacji o tej osobie.',
+      'Źródła nie zawierają takiej listy.',
+      "I don't know — the provided sources do not contain that value.",
+      'The sources do not cover Comarch ERP XL.',
+    ]) {
+      expect(isRefusalText(t), t).toBe(true);
+    }
+  });
+  it('odpowiedź merytoryczna, także z „nie wiem" w środku albo zaczynająca się przeczeniem o czym innym, to NIE odmowa', () => {
+    for (const t of [
+      '`dok_Typ` dla faktury marża FM to **62** [1].',
+      'Nie da się tego odróżnić po `kh_Rodzaj`, bo pole nie jest pielęgnowane [1]; użyj `kh_OdbDet` [2].',
+      'Mamy 7 883 towarów zablokowanych [1]. Nie wiem natomiast, ile z nich jest w e-sklepie.',
+      'Nie mogę wypisać nazw, ale ranking liczy się z `dok_WartNetto` [3].',
+      'Niewiele o tym w źródłach, ale DSO = AR / sprzedaż × 365 [1].',
+      '',
+      // formuła niewiedzy na starcie, ale dalej długie porównanie (sonda 2026-09-14, 907 znaków) = odpowiedź częściowa
+      `Źródła nie zawierają prostego opisu „dla kogo jest" Rewizor a Rachmistrz. ${'Rewizor GT prowadzi pełną księgowość (księgi handlowe) [1], Rachmistrz GT — księgę przychodów i rozchodów oraz ryczałt [2]. '.repeat(6)}`,
+    ]) {
+      expect(isRefusalText(t), t).toBe(false);
+    }
+  });
+  it('linia CONFIDENCE nie liczy się do długości, a krótka odmowa z cytowaniami nadal jest odmową', () => {
+    expect(isRefusalText(`Nie wiem — źródła nie zawierają tej listy [1][2][3].\n${' '.repeat(600)}\nCONFIDENCE: 0.8`)).toBe(true);
   });
 });

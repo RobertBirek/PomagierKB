@@ -1102,14 +1102,18 @@ const CONTRACT_CASES: Record<string, ContractCase> = {
         expect(mock.calls.chat).toBe(0);
       }
 
-      // D: cytowanie bez title/sourceRef → klucze POMINIĘTE, nie null
+      // D: cytowanie bez title/sourceRef → klucze POMINIĘTE, nie null. Puste evidenceNs = fallback
+      // top-3, więc chunk bez tytułu (doc2) jest wśród cytowań niezależnie od kolejności rankingu
+      // („DALI" to akronim = dokładny token, który od 2026-09-14 podbija też chunk z tytułem).
       {
         const { result } = verify(
-          '{"status":"supported","explanation":"DALI steruje grupowo.","evidenceNs":[1]}',
+          '{"status":"supported","explanation":"DALI steruje grupowo.","evidenceNs":[]}',
           'Magistrala DALI pozwala sterować oprawami grupowo',
         );
         const out = pass<VerifyOut>(kbClaimVerifyTool, cov, await result);
-        expect(Object.keys(out.citations[0] ?? {}).sort()).toEqual(['id', 'n', 'namespace', 'snippet']);
+        const untitled = out.citations.find((c) => c['id'] === 'CHUNK_ld000002_001');
+        expect(untitled, JSON.stringify(out.citations)).toBeDefined();
+        expect(Object.keys(untitled ?? {}).sort()).toEqual(['id', 'n', 'namespace', 'snippet']);
       }
     },
   },

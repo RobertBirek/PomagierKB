@@ -63,10 +63,16 @@ async function rerankEmbed(
   const qv = vectors[0];
   if (qv === undefined || qv.length === 0) return { hits, topCosine: null, strategy: 'embed' };
   const scored = hits.map((h, i) => ({ hit: h, cos: cosine(qv, vectors[i + 1] ?? []) }));
-  scored.sort((a, b) => b.cos - a.cos || a.hit.id.localeCompare(b.hit.id));
+  // Kandydaci z KOMPLETEM dokładnych tokenów pytania (retrieval: 'exact_match') zostają przed
+  // resztą także po reranku — inaczej cosinus wynosił nagłówki dokumentów (słowa kluczowe +
+  // ogólny opis) ponad sekcję z właściwym identyfikatorem („szablon SQL na DSO": sekcja DSO była
+  // #1 z retrievalu i wypadała poza okno 6 źródeł po reranku, 2026-09-14). Cosinus porządkuje
+  // wewnątrz obu grup; bramka odmowy dostaje najlepszy cosinus niezależnie od grupy.
+  const exact = (h: RetrievalHit): number => (h.source === 'exact_match' ? 1 : 0);
+  scored.sort((a, b) => exact(b.hit) - exact(a.hit) || b.cos - a.cos || a.hit.id.localeCompare(b.hit.id));
   return {
     hits: scored.map((s) => s.hit),
-    topCosine: scored[0]?.cos ?? null,
+    topCosine: scored.length > 0 ? Math.max(...scored.map((s) => s.cos)) : null,
     strategy: 'embed',
   };
 }

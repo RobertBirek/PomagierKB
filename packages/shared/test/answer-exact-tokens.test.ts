@@ -26,6 +26,12 @@ describe('extractExactTokens', () => {
     expect(extractExactTokens('jak wystawić fakturę zaliczkową')).toEqual([]);
     expect(extractExactTokens('_ i __ i a_')).toEqual([]);
   });
+  it('akronimy 3-8 liter z co najmniej dwiema wielkimi są dokładnymi tokenami; GT, zwykłe słowa i nazwy własne nie', () => {
+    expect(extractExactTokens('Podaj gotowy szablon SQL na DSO dla naszej bazy Magnum_Profi w Subiekcie GT')).toEqual(['Magnum_Profi', 'SQL', 'DSO']);
+    expect(extractExactTokens('jak wysłać faktury do KSeF i wygenerować JPK_V7M')).toEqual(['JPK_V7M', 'KSeF']);
+    expect(extractExactTokens('Subiekt GT i PomagierKB w Sanoku')).toEqual([]); // GT za krótkie, PomagierKB za długie, Sanoku jedna wielka
+    expect(extractExactTokens('rotacja zapasu DIO i DPO, DSO')).toEqual(['DIO', 'DPO', 'DSO']);
+  });
 });
 
 describe('applyExactTokenBoost', () => {

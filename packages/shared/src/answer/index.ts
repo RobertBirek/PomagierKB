@@ -38,6 +38,7 @@ export {
   toStoredCitations,
   answerSystemPrompt,
   parseScopeLine,
+  isRefusalText,
   NO_ANSWER_TEXT,
   ANSWER_PROMPT_VERSION,
   UNCITED_PENALTY,
