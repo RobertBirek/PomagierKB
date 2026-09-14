@@ -1,8 +1,8 @@
-{"question":"jakie kolumny ma tabela tw__Towar","expectedIds":["DOC_82160572D187A096"],"mustContain":["tw__Towar"],"namespaces":["SubiektKB"],"expectedNamespace":"SubiektKB","kind":"keyword"}
-{"question":"gdzie w bazie Subiekta GT trzymane są dokumenty handlowe i magazynowe","expectedIds":["DOC_101B83E3BCCC7D55"],"mustContain":["dok__Dokument"],"namespaces":["SubiektKB"],"expectedNamespace":"SubiektKB","kind":"paraphrase","requires":"full"}
-{"question":"tabela kh__Kontrahent kolumny i klucze","expectedIds":["DOC_B0C0B4E0824C4A87"],"mustContain":["kh_"],"namespaces":["SubiektKB"],"expectedNamespace":"SubiektKB","kind":"keyword"}
-{"question":"przegląd modułów bazy danych InsERT GT — lista tabel i typów aliasowych","expectedIds":["DOC_7D428073FAA8DD7A"],"mustContain":["TNazwa"],"namespaces":["SubiektKB"],"expectedNamespace":"SubiektKB","kind":"keyword"}
-{"question":"które tabele są w żywej bazie pomagier, a nie ma ich w dokumentacji InsERT","expectedIds":["DOC_E0CD38BD85ACAC2B"],"mustContain":["żywej bazie"],"namespaces":["SubiektKB"],"expectedNamespace":"SubiektKB","kind":"paraphrase"}
+{"question":"jakie kolumny ma tabela tw__Towar","expectedIds":["DOC_52C3F0F541900C6D"],"mustContain":["tw__Towar"],"namespaces":["SubiektKB"],"expectedNamespace":"SubiektKB","kind":"keyword"}
+{"question":"gdzie w bazie Subiekta GT trzymane są dokumenty handlowe i magazynowe","expectedIds":["DOC_D55F221645005448"],"mustContain":["dok__Dokument"],"namespaces":["SubiektKB"],"expectedNamespace":"SubiektKB","kind":"paraphrase","requires":"full"}
+{"question":"tabela kh__Kontrahent kolumny i klucze","expectedIds":["DOC_0AEAA628D2B62109"],"mustContain":["kh_"],"namespaces":["SubiektKB"],"expectedNamespace":"SubiektKB","kind":"keyword"}
+{"question":"przegląd modułów bazy danych InsERT GT — lista tabel i typów aliasowych","expectedIds":["DOC_436B9EC707941397"],"mustContain":["TNazwa"],"namespaces":["SubiektKB"],"expectedNamespace":"SubiektKB","kind":"keyword"}
+{"question":"które tabele są w żywej bazie pomagier, a nie ma ich w dokumentacji InsERT","expectedIds":["DOC_215A3058820CBDB2"],"mustContain":["żywej bazie"],"namespaces":["SubiektKB"],"expectedNamespace":"SubiektKB","kind":"paraphrase"}
 {"question":"co zmieniło się w strukturze bazy danych w wersji 1.89 HF1","expectedIds":["DOC_68AC365F35FD0DAD"],"namespaces":["SubiektKB"],"expectedNamespace":"SubiektKB","kind":"paraphrase","requires":"full"}
 {"question":"zmiany w bazie danych 1.8900.0.7104 → 1.8901.1.7130 vat__EwidVAT","expectedIds":["DOC_68AC365F35FD0DAD"],"mustContain":["ev_MiesiacGodzinaOdliczVAT"],"namespaces":["SubiektKB"],"expectedNamespace":"SubiektKB","kind":"keyword"}
 {"question":"co to jest Sfera dla InsERT GT i jak ją zarejestrować","expectedIds":["DOC_9D1FCAD536D4B634"],"mustContain":["Sfer"],"namespaces":["SubiektKB"],"expectedNamespace":"SubiektKB","kind":"paraphrase","requires":"full"}
@@ -18,9 +18,9 @@
 {"question":"Biuro GT — praca biura rachunkowego z wieloma podmiotami","expectedIds":["DOC_9F41B9EBF15CDF80"],"mustContain":["Biuro GT"],"namespaces":["SubiektKB"],"expectedNamespace":"SubiektKB","kind":"keyword"}
 {"question":"jak zacząć definiowanie własnych składników płacowych w Gratyfikancie GT","expectedIds":["DOC_964D5698412B9343"],"namespaces":["SubiektKB"],"expectedNamespace":"SubiektKB","kind":"paraphrase"}
 {"question":"terminy i pojęcia używane w pomocy InsERT GT","expectedIds":["DOC_F9B7EB66D11099B4"],"namespaces":["SubiektKB"],"expectedNamespace":"SubiektKB","kind":"keyword"}
-{"question":"tabela tw_towar kolumny sybmol nazwa","expectedIds":["DOC_82160572D187A096"],"namespaces":["SubiektKB"],"expectedNamespace":"SubiektKB","kind":"typo","requires":"full"}
-{"question":"which columns does the products table tw__Towar have in the InsERT GT database","expectedIds":["DOC_82160572D187A096"],"namespaces":["SubiektKB"],"expectedNamespace":"SubiektKB","kind":"english","requires":"full"}
-{"question":"identyfikatory i klucze główne tabel tw__Towar oraz kh__Kontrahent","expectedIds":["DOC_82160572D187A096","DOC_B0C0B4E0824C4A87"],"requireAllDocs":true,"namespaces":["SubiektKB"],"expectedNamespace":"SubiektKB","kind":"multihop","requires":"full"}
+{"question":"tabela tw_towar kolumny sybmol nazwa","expectedIds":["DOC_52C3F0F541900C6D"],"namespaces":["SubiektKB"],"expectedNamespace":"SubiektKB","kind":"typo","requires":"full"}
+{"question":"which columns does the products table tw__Towar have in the InsERT GT database","expectedIds":["DOC_52C3F0F541900C6D"],"namespaces":["SubiektKB"],"expectedNamespace":"SubiektKB","kind":"english","requires":"full"}
+{"question":"identyfikatory i klucze główne tabel tw__Towar oraz kh__Kontrahent","expectedIds":["DOC_52C3F0F541900C6D","DOC_0AEAA628D2B62109"],"requireAllDocs":true,"namespaces":["SubiektKB"],"expectedNamespace":"SubiektKB","kind":"multihop","requires":"full"}
 {"question":"przepis na sernik wiedeński","negative":true,"namespaces":["SubiektKB"],"kind":"negative"}
 {"question":"jaka jest pogoda jutro w Sanoku","negative":true,"namespaces":["SubiektKB"],"kind":"negative"}
 {"question":"jak wymienić olej w Fiacie Punto","negative":true,"namespaces":["SubiektKB"],"kind":"negative"}

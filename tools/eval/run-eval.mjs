@@ -217,7 +217,9 @@ for (const g of goldens) {
 }
 
 const evaluated = goldens.length - skipped.length;
-const positives = evaluated - negTotal;
+// Pytania near-miss też są negatywami (mierzone osobno jako nearMissAccuracy) — bez ich odjęcia
+// hit@k/MRR były zaniżane w każdym pliku, który je zawiera (IloveKB: 12 pozytywów liczone jako 15).
+const positives = evaluated - negTotal - nmTotal;
 const report = {
   channels, // 'fts' = jakość FALLBACKU lokalnego; 'full' = produkcyjny hybrid
   files,
