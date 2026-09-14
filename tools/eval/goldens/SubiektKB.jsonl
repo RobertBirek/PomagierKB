@@ -42,3 +42,6 @@
 {"question":"Jak skonfigurować replikację bazy PostgreSQL dla InsERT GT?","negative":true,"namespaces":["SubiektKB"],"kind":"near-miss"}
 {"question":"Jak w Subiekcie nexo wystawić fakturę zaliczkową?","negative":true,"namespaces":["SubiektKB"],"kind":"near-miss"}
 {"question":"Zmiany w InsERT GT w wersji 1.84 SP1 — co dodano w Subiekcie","expectedIds":["DOC_36ECF52346DF238B","DOC_435785C6983721D2"],"namespaces":["SubiektKB"],"expectedNamespace":"SubiektKB","kind":"keyword"}
+{"question":"jaką wartość dok_Typ ma faktura marża FM w Subiekcie GT","expectedIds":["DOC_97ADF6C7C91941A9"],"mustContain":["62"],"namespaces":["SubiektKB"],"expectedNamespace":"SubiektKB","kind":"keyword"}
+{"question":"PZ przyjęcie zewnętrzne: jaki dok_Typ i podtypy PZa PZv w Subiekcie GT","expectedIds":["DOC_97ADF6C7C91941A9"],"mustContain":["PZa"],"namespaces":["SubiektKB"],"expectedNamespace":"SubiektKB","kind":"keyword"}
+{"question":"słownik pojęć InsERT GT: kontrahent jednorazowy, cechy, pola własne — gdzie w bazie","expectedIds":["DOC_97ADF6C7C91941A9"],"namespaces":["SubiektKB"],"expectedNamespace":"SubiektKB","kind":"paraphrase"}
