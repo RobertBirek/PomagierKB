@@ -16,7 +16,10 @@ const args = process.argv.slice(2);
 const opt = (n, d) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : d; };
 const envFile = opt('--env', '/etc/kag/mssql-ilovelighting.env');
 const maxRows = Number(opt('--max-rows', '200'));
-const positional = args.filter((a, i) => !a.startsWith('--') && !['--env', '--max-rows'].includes(args[i - 1]));
+// Tylko ZNANE opcje są opcjami; wszystko inne (także zapytanie zaczynające się od komentarza `--`)
+// to treść zapytania (2026-09-14: szablony KPI zaczynają się od „-- zakres: …").
+const KNOWN = new Set(['--env', '--max-rows']);
+const positional = args.filter((a, i) => !KNOWN.has(a) && !KNOWN.has(args[i - 1] ?? ''));
 const query = (positional.join(' ') || readFileSync(0, 'utf8')).trim();
 const QUERY_LOG = process.env.MSSQL_MCP_QUERY_LOG ?? '/srv/kag-data/kag/mcp-mssql/queries.jsonl';
 const audit = (entry) => {

@@ -88,3 +88,13 @@ describe('checkReadOnly — deny-lista danych osobowych (decyzja 2026-09-11)', (
     }
   });
 });
+
+describe('checkReadOnly — gwiazdka tylko w liście SELECT (mnożenie to nie projekcja)', () => {
+  it('mnożenie ` * ` w agregacie na kh__Kontrahent przechodzi; alias.* i * w liście SELECT nadal odrzucane', () => {
+    expect(checkReadOnly('SELECT COUNT(*) * 1.0 / NULLIF((SELECT COUNT(*) FROM kh__Kontrahent), 0) AS udzial FROM kh__Kontrahent WHERE kh_OdbDet = 0')).toEqual({ ok: true });
+    expect(checkReadOnly('SELECT SUM(d.dok_WartNetto * 2) AS x FROM dok__Dokument d JOIN kh__Kontrahent k ON k.kh_Id = d.dok_PlatnikId')).toEqual({ ok: true });
+    expect(checkReadOnly('SELECT k.* FROM kh__Kontrahent k').ok).toBe(false);
+    expect(checkReadOnly('SELECT kh_Id, * FROM kh__Kontrahent').ok).toBe(false);
+    expect(checkReadOnly('WITH c AS (SELECT * FROM kh__Kontrahent) SELECT COUNT(1) FROM c').ok).toBe(false);
+  });
+});

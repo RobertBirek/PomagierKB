@@ -69,8 +69,13 @@ export function checkReadOnly(sql) {
   // `*` na tabeli z danymi osobowymi (COUNT(*) nie jest projekcją)
   const tables = idents.filter((id) => PII_TABLE_RE.test(id.toLowerCase()));
   if (tables.length > 0) {
+    // Gwiazdka liczy się tylko w LIŚCIE SELECT (między SELECT a FROM), nie w wyrażeniach
+    // arytmetycznych (`COUNT(*) * 1.0`, `SUM(x * 2)`) — fałszywy alarm z 2026-09-14.
     const withoutCount = cleaned.replace(/count\s*\(\s*\*\s*\)/gi, 'COUNT(1)');
-    if (/(^|[\s,(])\*|\.\*/.test(withoutCount)) {
+    const selectLists = [...withoutCount.matchAll(/\bselect\b([\s\S]*?)\bfrom\b/gi)].map((m) => m[1]);
+    // Projekcja: `*` jako OSOBNY element listy (na początku, po przecinku lub po nawiasie
+    // otwierającym podzapytanie) albo `alias.*`. `COUNT(1) * 1.0` ma przed gwiazdką operand.
+    if (selectLists.some((list) => /(^|,|\()\s*\*\s*(,|$)/.test(list.trim()) || /\.\*/.test(list))) {
       return { ok: false, reason: `SELECT * na tabeli z danymi osobowymi (${tables[0]}) — wskaż kolumny bez danych osobowych` };
     }
   }
