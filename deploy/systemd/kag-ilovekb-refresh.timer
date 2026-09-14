@@ -1,0 +1,13 @@
+# kag-ilovekb-refresh.timer — 5. dzień miesiąca, 02:30 (po backupie i po odświeżeniu SubiektKB z 3. dnia;
+# zrzuty z bazy produkcyjnej trwają minuty, build kilkanaście).
+[Unit]
+Description=PomagierKB — timer odswiezenia IloveKB (5. dzien, 02:30)
+
+[Timer]
+OnCalendar=*-*-05 02:30:00
+RandomizedDelaySec=20m
+Persistent=true
+Unit=kag-ilovekb-refresh.service
+
+[Install]
+WantedBy=timers.target

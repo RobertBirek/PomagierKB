@@ -1,0 +1,20 @@
+# kag-ilovekb-refresh.service — miesięczne odświeżenie źródeł WWW bazy IloveKB
+# (e-Pomoc techniczna InsERT + forum.insert.com.pl; crawlery wznawialne, build tylko gdy są zmiany).
+# Instalacja: cp deploy/systemd/kag-ilovekb-refresh.{service,timer} /etc/systemd/system/
+#             systemctl daemon-reload && systemctl enable --now kag-ilovekb-refresh.timer
+# Wymaga: konto E2E w /etc/kag/e2e.env (upload przez API panelu), Playwright + chromium na hoście.
+[Unit]
+Description=PomagierKB — odswiezenie instancji Magnum_Profi dla bazy IloveKB
+Documentation=file:/kag/docs/runbooks/new-kb-bulk-import.md
+After=network-online.target docker.service
+Wants=network-online.target
+OnFailure=kag-alert@%n.service
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/kag
+EnvironmentFile=-/etc/kag/alerts.env
+ExecStart=/kag/deploy/scripts/refresh_ilovekb.sh
+TimeoutStartSec=8h
+Nice=10

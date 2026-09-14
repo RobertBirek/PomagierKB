@@ -311,7 +311,19 @@ function main() {
   }
   mkdirSync(outDir, { recursive: true });
   for (const f of result.files) writeFileSync(join(outDir, f.file), f.text);
-  writeFileSync(join(outDir, 'manifest.json'), JSON.stringify({ source: `instancja ${INSTANCE}`, generatedAt: new Date().toISOString(), k: result.k, entries: result.entries, skipped: result.skipped }, null, 2));
+  // Manifest SCALANY: wpisy innych narzędzi w tym katalogu (konwencje, kpi-*.md dopisywane ręcznie
+  // lub przez agentów) zostają; nadpisywane są tylko pliki generowane tutaj. Inaczej miesięczne
+  // odświeżanie agregatów kasowałoby wpisy dokumentów redakcyjnych (2026-09-14).
+  const manifestPath = join(outDir, 'manifest.json');
+  let previous = [];
+  try {
+    previous = JSON.parse(readFileSync(manifestPath, 'utf8')).entries ?? [];
+  } catch {
+    previous = [];
+  }
+  const mine = new Set(result.entries.map((e) => e.file));
+  const kept = previous.filter((e) => !mine.has(e.file));
+  writeFileSync(manifestPath, JSON.stringify({ source: `instancja ${INSTANCE}`, generatedAt: new Date().toISOString(), k: result.k, entries: [...result.entries, ...kept], skipped: result.skipped }, null, 2));
   const total = result.entries.reduce((a, e) => a + e.chars, 0);
   console.log(`agregatów: ${(aggregates?.aggregates ?? aggregates?.results)?.length ?? 0}, dostawców: ${suppliers?.suppliers?.length ?? 0}, k=${result.k}, plików: ${result.entries.length}, znaków: ${total}, pominięte: ${result.skipped.length}`);
   for (const s of result.skipped) console.log(`  - ${s.file}: ${s.reason}`);

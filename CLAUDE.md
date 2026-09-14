@@ -42,6 +42,10 @@ node tools/ux-audit/e2e.mjs         # E2E klikalne na produkcji (10 checków, lo
 node tools/ux-audit/screenshot.mjs  # zrzuty produkcji (--pages /kb,... --out katalog)
 node tools/kb-import/{fetch-drive,prepare,prepare-db,create-kb,upload,promote,build}.mjs   # import masowy KB z hosta (runbook docs/runbooks/new-kb-bulk-import.md)
 node tools/mssql-introspect/{list-dbs,dump-schema}.mjs   # katalog żywej bazy MSSQL z hosta (tylko sys.*; /etc/kag/mssql-optima.env)
+node tools/mssql-introspect/run-select.mjs "SELECT …"        # JEDNO zapytanie do produkcyjnej bazy Subiekta GT przez bramkę tylko-odczyt + deny-listę PII + log (to samo co MCP mssql)
+node tools/mssql-introspect/{dump-dictionaries,dump-aggregates,dump-suppliers}.mjs   # IloveKB: słowniki z allow-listy (--only), agregaty z progiem k, dostawcy-osoby prawne
+node tools/kb-import/{prepare-md,prepare-instance}.mjs   # Markdown→fragmenty KB (tabele→rekordy; AnalizyERP) / dokumenty instancji z agregatów i dostawców (IloveKB)
+deploy/scripts/refresh_ilovekb.sh   # miesięczne odświeżenie IloveKB (timer kag-ilovekb-refresh, 5. dzień 02:30): tylko agregaty+słowniki+dostawcy
 ```
 
 **UWAGA:** workspace'y (`apps/*`, `packages/shared`) mają wyłącznie skrypty
