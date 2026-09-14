@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { CATEGORY_AGGREGATES, CATEGORY_SUPPLIERS, PRODUCT, aggregateKeys, assertNoHost, generate, interpretation, isSuppressed, plural, renderAggregate, renderSuppliersDoc, resolveK } from '../prepare-instance.mjs';
+import { CATEGORY_AGGREGATES, CATEGORY_SUPPLIERS, PRODUCT, aggregateKeys, assertNoHost, generate, interpretation, isSuppressed, labelOf, plural, renderAggregate, renderRow, renderSuppliersDoc, resolveK } from '../prepare-instance.mjs';
 
 const SOURCE_BASE = 'https://drive.google.com/drive/folders/FOLDER/baza-danych/Magnum_Profi';
 
@@ -208,5 +208,23 @@ describe('prepare-instance: manifest i ochrona hosta', () => {
     expect(manifest.entries.map((e) => e.file)).toEqual(['agregaty-instancji.md', 'marki-dostawcy.md']);
     expect(readFileSync(join(dir, 'out', 'agregaty-instancji.md'), 'utf8')).toContain('liczba: <10');
     expect(() => execFileSync(process.execPath, [script, '--aggregates', join(dir, 'aggregates.json'), '--out', join(dir, 'out2'), '--source-base', SOURCE_BASE, '--k', '3'], { encoding: 'utf8', stdio: 'pipe' })).toThrow();
+  });
+});
+
+describe('renderRow — etykiety PL i okres rok+miesiąc (sonda live-fact 2026-09-14)', () => {
+  const agg = { id: 'documents_by_month', title: 'Dokumenty wg miesiąca', kAnonymity: false, rows: [] };
+  const keys = { dimensions: ['doc_year', 'doc_month'], metrics: ['doc_count', 'sales_count', 'purchase_count'] };
+  it('numer miesiąca dostaje polską nazwę, a para rok+miesiąc dodatkowo okres ISO', () => {
+    const line = renderRow(agg, { doc_year: 2026, doc_month: 8, doc_count: 14769, sales_count: 4019, purchase_count: 1665 }, keys, 10);
+    expect(line).toBe('- okres: 2026-08, rok: 2026, miesiąc: 8 (sierpień) — liczba dokumentów: 14769; dokumenty sprzedaży (FS, PA): 4019; dokumenty zakupu (FZ, PZ): 1665');
+  });
+  it('bez roku albo z miesiącem spoza 1..12 nie ma okresu ani nazwy', () => {
+    expect(renderRow(agg, { doc_month: 13, doc_count: 1 }, { dimensions: ['doc_month'], metrics: ['doc_count'] }, 10)).toBe('- miesiąc: 13 — liczba dokumentów: 1');
+    expect(renderRow(agg, { doc_month: 2, doc_count: 1 }, { dimensions: ['doc_month'], metrics: ['doc_count'] }, 10)).toBe('- miesiąc: 2 (luty) — liczba dokumentów: 1');
+  });
+  it('etykiety: znany klucz → polska nazwa, jawna etykieta agregatu ma pierwszeństwo, nieznany → podkreślenia na spacje', () => {
+    expect(labelOf(agg, 'contractor_count')).toBe('liczba kontrahentów');
+    expect(labelOf({ ...agg, labels: { contractor_count: 'kontrahenci' } }, 'contractor_count')).toBe('kontrahenci');
+    expect(labelOf(agg, 'some_new_key')).toBe('some new key');
   });
 });

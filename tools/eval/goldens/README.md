@@ -12,6 +12,7 @@ promocji szkiców dodaje 2-3 pytania (w tym NEGATYWNE spoza bazy) — patrz
 | --- | --- |
 | `question` | pytanie tak, jak zadałby je agent/człowiek |
 | `expectedIds` | id chunka lub dokumentu (`DOC_`/`CHUNK_`, dopasowanie prefiksem) |
+| `expectedSourceRefs` | podciągi `source_ref` (sourceUrl) trafionego chunka — dla dokumentów regenerowanych cyklicznie (IloveKB: agregaty, marki), które przy każdym odświeżeniu dostają nowy `DOC_` |
 | `namespaces` | bazy przeszukiwane dla tego pytania (brak = wszystkie aktywne) |
 | `expectedNamespace` | z której bazy MA pochodzić wynik #1 (routing cross-KB) |
 | `mustContain` | fragmenty, które muszą wystąpić w treści któregoś z 5 najlepszych chunków — kotwica „retrieval realnie wydobył fakt", nie tylko trafił id |

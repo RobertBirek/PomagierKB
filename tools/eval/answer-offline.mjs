@@ -62,7 +62,16 @@ if (!chatCfg || !embedCfg || !base) {
 }
 const chat = createLlmClient(chatCfg);
 const embed = createLlmClient(embedCfg);
-const llm = { chat: (r) => chat.chat(r), embed: (t) => embed.embed(t) };
+// Surowa odpowiedź modelu (ostatnia) — do diagnozy znacznika SCOPE/CONFIDENCE, których answerQuestion nie zwraca.
+let lastRaw = '';
+const llm = {
+  chat: async (r) => {
+    const res = await chat.chat(r);
+    lastRaw = typeof res?.text === 'string' ? res.text : '';
+    return res;
+  },
+  embed: (t) => embed.embed(t),
+};
 const openspg = new OpenSpgClient({
   baseUrl: base,
   account: process.env.OPENSPG_ACCOUNT ?? 'openspg',
@@ -70,18 +79,24 @@ const openspg = new OpenSpgClient({
 });
 const ctx = { db, llm, openspg, log: { warn: () => undefined } };
 
+// --ns przyjmuje listę po przecinku (profil MCP widzący kilka baz naraz — routing między nimi
+// jest wtedy częścią odpowiedzi). Sonda może nieść oczekiwania: `expectNs` (string lub lista —
+// baza pierwszego cytowania) i `expectRefusal` (true = pytanie near-miss/spoza źródeł MUSI dać odmowę).
+const namespaces = ns.split(',').map((s) => s.trim()).filter(Boolean);
 const probes = readFileSync(file, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)).slice(0, limit);
-console.log(`prompt ${ANSWER_PROMPT_VERSION}, ns ${ns}, pytań ${probes.length}, kopia bazy ${copyPath}`);
+console.log(`prompt ${ANSWER_PROMPT_VERSION}, ns ${namespaces.join(',')}, pytań ${probes.length}, kopia bazy ${copyPath}`);
 const results = [];
 for (const p of probes) {
   const t0 = Date.now();
   let r;
   try {
-    r = await answerQuestion(ctx, { question: p.q, allowedNamespaces: [ns], namespaces: [ns], source: 'mcp' });
+    r = await answerQuestion(ctx, { question: p.q, allowedNamespaces: namespaces, namespaces, source: 'mcp' });
   } catch (err) {
     console.log(`ERR | ${p.q.slice(0, 70)} | ${err instanceof Error ? err.message : String(err)}`);
     continue;
   }
+  const nsCited = [...new Set(r.citations.map((c) => c.namespace))];
+  const expectNs = p.expectNs === undefined ? null : Array.isArray(p.expectNs) ? p.expectNs : [p.expectNs];
   const row = {
     q: p.q,
     kind: p.kind ?? null,
@@ -89,14 +104,27 @@ for (const p of probes) {
     noAnswer: r.noAnswer,
     confidence: r.confidence,
     citations: r.citations.length,
+    nsCited,
+    scopeLine: /^\s*SCOPE:/im.test(lastRaw), // model sam oznaczył odmowę (vs heurystyka „Nie wiem" w kodzie)
+    answerChars: r.answer.length,
+    routingOk: expectNs === null ? null : !r.noAnswer && nsCited.length > 0 && expectNs.includes(nsCited[0]),
+    refusalOk: p.expectRefusal === undefined ? null : r.noAnswer === (p.expectRefusal === true),
     warnings: r.warnings,
     answer: r.answer.slice(0, 600),
   };
   results.push(row);
+  const verdict = row.refusalOk === false ? 'ZLE-ODMOWA' : row.routingOk === false ? 'ZLE-ROUTING' : row.refusalOk === true || row.routingOk === true ? 'ok' : '  ';
   console.log(
-    `${String(row.ms).padStart(6)} ms | ${row.noAnswer ? 'ODMOWA' : 'odp.  '} | conf ${row.confidence.toFixed(2)} | cyt ${row.citations} | ${String(row.kind).padEnd(9)} | ${p.q.slice(0, 64)} → ${row.answer.slice(0, 70).replace(/\n/g, ' ')}`,
+    `${String(row.ms).padStart(6)} ms | ${row.noAnswer ? 'ODMOWA' : 'odp.  '}${row.scopeLine ? '*' : ' '} | conf ${row.confidence.toFixed(2)} | cyt ${row.citations} ${nsCited.join('+').padEnd(20)} | ${String(row.answerChars).padStart(4)} zn | ${verdict.padEnd(11)} | ${String(row.kind).padEnd(9)} | ${p.q.slice(0, 56)} → ${row.answer.slice(0, 60).replace(/\n/g, ' ')}`,
   );
 }
-if (outPath) writeFileSync(outPath, JSON.stringify({ promptVersion: ANSWER_PROMPT_VERSION, results }, null, 2));
+if (outPath) writeFileSync(outPath, JSON.stringify({ promptVersion: ANSWER_PROMPT_VERSION, namespaces, results }, null, 2));
 const refused = results.filter((r) => r.noAnswer);
+const routed = results.filter((r) => r.routingOk !== null);
+const refusalChecked = results.filter((r) => r.refusalOk !== null);
 console.log(`\npytania: ${results.length}, odmowy: ${refused.length} (${refused.map((r) => r.kind).join(', ')})`);
+if (routed.length > 0) console.log(`routing: ${routed.filter((r) => r.routingOk).length}/${routed.length} pierwszych cytowań z oczekiwanej bazy`);
+if (refusalChecked.length > 0) {
+  console.log(`odmowy wg oczekiwań: ${refusalChecked.filter((r) => r.refusalOk).length}/${refusalChecked.length}`);
+  for (const r of refusalChecked.filter((x) => !x.refusalOk)) console.log(`  ZLE: ${r.noAnswer ? 'fałszywa odmowa' : 'BRAK ODMOWY'} | ${r.q.slice(0, 80)}`);
+}

@@ -1,16 +1,16 @@
-{"question":"jak w naszej bazie odróżnić klienta od dostawcy skoro kh_Rodzaj jest niepielęgnowany","expectedIds":["DOC_8FAB92C2E48F1A8C"],"mustContain":["kh_Rodzaj"],"namespaces":["IloveKB"],"expectedNamespace":"IloveKB","kind":"keyword"}
-{"question":"kto jest domyślnym dostawcą marki Rabalux","expectedIds":["DOC_3DA217D9FCDA55AC"],"mustContain":["Rabalux"],"namespaces":["IloveKB"],"expectedNamespace":"IloveKB","kind":"keyword"}
-{"question":"ile mamy towarów zablokowanych i ile w e-sklepie","expectedIds":["DOC_9F8AA1D876555B78"],"namespaces":["IloveKB"],"expectedNamespace":"IloveKB","kind":"keyword"}
-{"question":"jakie marki mamy w asortymencie i ile towarów ma każda","expectedIds":["DOC_9F8AA1D876555B78","DOC_7AAF5E4B52D4234F","DOC_3DA217D9FCDA55AC"],"namespaces":["IloveKB"],"expectedNamespace":"IloveKB","kind":"paraphrase"}
-{"question":"szablon SQL na przychód netto miesięcznie w Magnum_Profi","expectedIds":["DOC_583F24D4B2CDCE85"],"mustContain":["dok_WartNetto"],"namespaces":["IloveKB"],"expectedNamespace":"IloveKB","kind":"keyword"}
-{"question":"jak policzyć marżę brutto z pozycji dokumentu w Subiekcie GT u nas","expectedIds":["DOC_583F24D4B2CDCE85"],"mustContain":["ob_WartMag"],"namespaces":["IloveKB"],"expectedNamespace":"IloveKB","kind":"keyword"}
-{"question":"rotacja zapasu i DIO zapytanie SQL","expectedIds":["DOC_E6C491DC3BF1D5CD"],"mustContain":["DIO"],"namespaces":["IloveKB"],"expectedNamespace":"IloveKB","kind":"keyword"}
-{"question":"towary bez ruchu dead stock szablon","expectedIds":["DOC_E6C491DC3BF1D5CD"],"namespaces":["IloveKB"],"expectedNamespace":"IloveKB","kind":"keyword"}
-{"question":"DSO należności przeterminowane aging w naszej bazie","expectedIds":["DOC_9F8ED7D1F81A826F"],"mustContain":["nz__Finanse"],"namespaces":["IloveKB"],"expectedNamespace":"IloveKB","kind":"keyword"}
-{"question":"ile mamy klientów hurtowych i jak ich rozpoznać","expectedIds":["DOC_9F8ED7D1F81A826F","DOC_8FAB92C2E48F1A8C"],"mustContain":["kh_OdbDet"],"namespaces":["IloveKB"],"expectedNamespace":"IloveKB","kind":"keyword"}
-{"question":"jakie poziomy cen i pola własne towaru są używane u nas","expectedIds":["DOC_8FAB92C2E48F1A8C","DOC_9F8AA1D876555B78"],"namespaces":["IloveKB"],"expectedNamespace":"IloveKB","kind":"paraphrase"}
-{"question":"jakie stawki VAT i formy płatności są zdefiniowane w naszej instancji","expectedIds":["DOC_7AAF5E4B52D4234F"],"mustContain":["sl_StawkaVAT"],"namespaces":["IloveKB"],"expectedNamespace":"IloveKB","kind":"keyword"}
-{"question":"podaj adres i telefon klienta Jana Kowalskiego z naszej bazy","negative":true,"namespaces":["IloveKB"],"kind":"negative-near-miss"}
-{"question":"ile zamówień złożył klient o numerze NIP 5252248481","negative":true,"namespaces":["IloveKB"],"kind":"negative-near-miss"}
-{"question":"jak wystawić fakturę zaliczkową w Subiekcie nexo","negative":true,"namespaces":["IloveKB"],"kind":"negative-near-miss"}
-{"question":"przepis na sernik wiedeński","negative":true,"namespaces":["IloveKB"],"kind":"negative"}
+{"question": "jak w naszej bazie odróżnić klienta od dostawcy skoro kh_Rodzaj jest niepielęgnowany", "expectedIds": ["DOC_8FAB92C2E48F1A8C"], "mustContain": ["kh_Rodzaj"], "namespaces": ["IloveKB"], "expectedNamespace": "IloveKB", "kind": "keyword"}
+{"question": "kto jest domyślnym dostawcą marki Rabalux", "mustContain": ["Rabalux"], "namespaces": ["IloveKB"], "expectedNamespace": "IloveKB", "kind": "keyword", "expectedSourceRefs": ["#dokumentacja/instancja/marki-dostawcy"]}
+{"question": "ile mamy towarów zablokowanych i ile w e-sklepie", "namespaces": ["IloveKB"], "expectedNamespace": "IloveKB", "kind": "keyword", "expectedSourceRefs": ["#dokumentacja/instancja/agregaty-instancji"]}
+{"question": "jakie marki mamy w asortymencie i ile towarów ma każda", "expectedIds": ["DOC_7AAF5E4B52D4234F"], "namespaces": ["IloveKB"], "expectedNamespace": "IloveKB", "kind": "paraphrase", "expectedSourceRefs": ["#dokumentacja/instancja/agregaty-instancji", "#dokumentacja/instancja/marki-dostawcy"]}
+{"question": "szablon SQL na przychód netto miesięcznie w Magnum_Profi", "expectedIds": ["DOC_583F24D4B2CDCE85"], "mustContain": ["dok_WartNetto"], "namespaces": ["IloveKB"], "expectedNamespace": "IloveKB", "kind": "keyword"}
+{"question": "jak policzyć marżę brutto z pozycji dokumentu w Subiekcie GT u nas", "expectedIds": ["DOC_583F24D4B2CDCE85"], "mustContain": ["ob_WartMag"], "namespaces": ["IloveKB"], "expectedNamespace": "IloveKB", "kind": "keyword"}
+{"question": "rotacja zapasu i DIO zapytanie SQL", "expectedIds": ["DOC_E6C491DC3BF1D5CD"], "mustContain": ["DIO"], "namespaces": ["IloveKB"], "expectedNamespace": "IloveKB", "kind": "keyword"}
+{"question": "towary bez ruchu dead stock szablon", "expectedIds": ["DOC_E6C491DC3BF1D5CD"], "namespaces": ["IloveKB"], "expectedNamespace": "IloveKB", "kind": "keyword"}
+{"question": "DSO należności przeterminowane aging w naszej bazie", "expectedIds": ["DOC_9F8ED7D1F81A826F"], "mustContain": ["nz__Finanse"], "namespaces": ["IloveKB"], "expectedNamespace": "IloveKB", "kind": "keyword"}
+{"question": "ile mamy klientów hurtowych i jak ich rozpoznać", "expectedIds": ["DOC_9F8ED7D1F81A826F", "DOC_8FAB92C2E48F1A8C"], "mustContain": ["kh_OdbDet"], "namespaces": ["IloveKB"], "expectedNamespace": "IloveKB", "kind": "keyword"}
+{"question": "jakie poziomy cen i pola własne towaru są używane u nas", "expectedIds": ["DOC_8FAB92C2E48F1A8C"], "namespaces": ["IloveKB"], "expectedNamespace": "IloveKB", "kind": "paraphrase", "expectedSourceRefs": ["#dokumentacja/instancja/agregaty-instancji"]}
+{"question": "jakie stawki VAT i formy płatności są zdefiniowane w naszej instancji", "expectedIds": ["DOC_7AAF5E4B52D4234F"], "mustContain": ["sl_StawkaVAT"], "namespaces": ["IloveKB"], "expectedNamespace": "IloveKB", "kind": "keyword"}
+{"question": "podaj adres i telefon klienta Jana Kowalskiego z naszej bazy", "negative": true, "namespaces": ["IloveKB"], "kind": "negative-near-miss"}
+{"question": "ile zamówień złożył klient o numerze NIP 5252248481", "negative": true, "namespaces": ["IloveKB"], "kind": "negative-near-miss"}
+{"question": "jak wystawić fakturę zaliczkową w Subiekcie nexo", "negative": true, "namespaces": ["IloveKB"], "kind": "negative-near-miss"}
+{"question": "przepis na sernik wiedeński", "negative": true, "namespaces": ["IloveKB"], "kind": "negative"}

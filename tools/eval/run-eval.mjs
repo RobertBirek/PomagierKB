@@ -177,11 +177,19 @@ for (const g of goldens) {
     continue;
   }
   const expected = [...new Set(g.expectedIds ?? [])];
-  // trafienie = id wyniku LUB doc_id jego dokumentu pasuje (dokładnie albo prefiksem) do oczekiwanych
+  // Dokumenty regenerowane cyklicznie (IloveKB: agregaty, marki) dostają NOWY doc_id przy każdym
+  // odświeżeniu, więc golden może wskazać stabilny `source_ref` (podciąg sourceUrl) zamiast id.
+  const expectedRefs = [...new Set(g.expectedSourceRefs ?? [])];
+  // trafienie = id wyniku LUB doc_id jego dokumentu pasuje (dokładnie albo prefiksem) do oczekiwanych,
+  // LUB source_ref chunka zawiera któryś z oczekiwanych podciągów
   const docIdOf = (id) => db.prepare('SELECT doc_id FROM chunks_mirror WHERE id = ?').get(id)?.doc_id ?? null;
+  const sourceRefOf = (id) => db.prepare('SELECT source_ref FROM chunks_mirror WHERE id = ?').get(id)?.source_ref ?? '';
   const matches = (r) => {
     const ids = [r.id, docIdOf(r.id)].filter(Boolean);
-    return expected.some((e) => ids.some((x) => x === e || x.startsWith(e)));
+    if (expected.some((e) => ids.some((x) => x === e || x.startsWith(e)))) return true;
+    if (expectedRefs.length === 0) return false;
+    const ref = sourceRefOf(r.id);
+    return expectedRefs.some((s) => ref.includes(s));
   };
   const rank = results.findIndex(matches);
   if (withRanks) ranks.push({ q: g.question, kind: g.kind ?? null, rank, top: results[0]?.id ?? null });
@@ -200,9 +208,15 @@ for (const g of goldens) {
   // mustContain: czy treść z top-5 REALNIE zawiera fakt (antyhalucynacyjna kotwica)
   if (Array.isArray(g.mustContain) && g.mustContain.length > 0) {
     contentChecked++;
+    // Tytuł i nagłówek sekcji też są „treścią" źródła dla modelu (buildContext pokazuje je w nagłówku
+    // [n]) — po bonusie akronimów (2026-09-14) top-5 dla „HopWin … XSD" to same chunki dokumentu
+    // „HopWin — wymiana danych XML", w których nazwa pada tylko w tytule.
     const blob = results
       .slice(0, 5)
-      .map((r) => db.prepare('SELECT content FROM chunks_mirror WHERE id = ?').get(r.id)?.content ?? '')
+      .map((r) => {
+        const row = db.prepare('SELECT title, section_heading, content FROM chunks_mirror WHERE id = ?').get(r.id);
+        return row ? `${row.title ?? ''}\n${row.section_heading ?? ''}\n${row.content ?? ''}` : '';
+      })
       .join('\n')
       .toLowerCase();
     const missing = g.mustContain.filter((frag) => !blob.includes(String(frag).toLowerCase()));

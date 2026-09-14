@@ -43,7 +43,27 @@ export const HOST_RE = /\b(?:\d{1,3}\.){3}\d{1,3}\b|\bINSERTGT\b|\bDESKTOP-[A-Z0
 /** Miary licznikowe (podlegają progowi k, gdy agregat liczy osoby). */
 const COUNT_KEY_RE = /^(count|cnt|n|liczba|ile)(_|$)|_(count|cnt)$/i;
 const METRIC_KEY_RE = /^(count|cnt|n|liczba|ile|sum|suma|avg|srednia|średnia|min|max|total|razem|pct|procent|share|udzial|udział)(_|$)|_(count|cnt|sum|avg|min|max|total|pct)$/i;
-const METRIC_LABELS = { count: 'liczba', cnt: 'liczba', n: 'liczba', sum: 'suma', avg: 'średnia', min: 'minimum', max: 'maksimum', total: 'razem', pct: 'udział %', share: 'udział %' };
+// Etykiety PL dla kluczy z queries-aggregates.mjs (angielskie aliasy SQL). Bez nich pytanie „ile faktur
+// sprzedaży w sierpniu" nie trafiało w wiersz „doc year: 2026, doc month: 8 — sales count: 4019"
+// (2026-09-14, sonda live-fact). Klucz spoza mapy → podkreślenia na spacje.
+const METRIC_LABELS = {
+  count: 'liczba', cnt: 'liczba', n: 'liczba', sum: 'suma', avg: 'średnia', min: 'minimum', max: 'maksimum', total: 'razem', pct: 'udział %', share: 'udział %',
+  doc_year: 'rok', doc_month: 'miesiąc', doc_count: 'liczba dokumentów', sales_count: 'dokumenty sprzedaży (FS, PA)', purchase_count: 'dokumenty zakupu (FZ, PZ)',
+  doc_type: 'typ dokumentu (dok_Typ)', doc_types_used: 'używane typy dokumentów', first_date: 'pierwsza data', last_date: 'ostatnia data',
+  contractor_count: 'liczba kontrahentów', blocked_count: 'zablokowani', one_off_count: 'jednorazowi', potential_count: 'potencjalni', active_count: 'aktywni', deleted_count: 'usunięci',
+  is_person: 'osoba fizyczna (kh_Osoba)', is_retail: 'detaliczny (kh_OdbDet)', is_blocked: 'zablokowany', declared_kind: 'rodzaj deklarowany (kh_Rodzaj)',
+  customer_only: 'tylko klienci', supplier_only: 'tylko dostawcy', both_roles: 'klienci i zarazem dostawcy', any_role: 'z jakąkolwiek rolą',
+  product_count: 'liczba towarów', product_kind: 'rodzaj towaru (tw_Rodzaj)', live_count: 'aktywne', eshop_count: 'w e-sklepie', eshop_active_count: 'w e-sklepie i aktywne', auction_count: 'na aukcjach', mobile_count: 'w aplikacji mobilnej',
+  // „miejsce", nie „pozycja": 40 wierszy z „pozycja dostawcy" wypychało w FTS chunk o marży z POZYCJI dokumentu.
+  supplier_count: 'liczba dostawców', supplier_rank: 'miejsce w rankingu dostawców', with_default_supplier: 'z domyślnym dostawcą', without_default_supplier: 'bez domyślnego dostawcy', with_producer: 'z producentem', products_with_supplier: 'towary z dostawcą',
+  cumulative_products: 'towary narastająco', cumulative_share: 'udział narastająco %',
+  group_id: 'id grupy', group_name: 'grupa towarowa', groups_defined: 'grup zdefiniowanych', groups_used: 'grup używanych', contractors_in_group: 'kontrahentów w grupie',
+  features_defined: 'cech zdefiniowanych', features_used: 'cech używanych', feature_assignments: 'przypisań cech', contractors_with_feature: 'kontrahentów z cechą',
+  warehouse_id: 'id magazynu', warehouse_symbol: 'symbol magazynu', warehouse_name: 'magazyn', warehouse_status: 'status magazynu', is_main: 'główny', parameter_rows: 'wierszy parametrów',
+};
+const MONTHS_PL = ['styczeń', 'luty', 'marzec', 'kwiecień', 'maj', 'czerwiec', 'lipiec', 'sierpień', 'wrzesień', 'październik', 'listopad', 'grudzień'];
+const MONTH_KEY_RE = /(^|_)(month|miesiac)$/i;
+const YEAR_KEY_RE = /(^|_)(year|rok)$/i;
 const MAX_QUERY_CHARS = 2000;
 
 /** Polska liczba mnoga: plural(3, 'agregat', 'agregaty', 'agregatów') → „3 agregaty". */
@@ -109,10 +129,25 @@ function cell(agg, row, key, k) {
 
 /** Jedna pozycja listy: `wymiar: kod, wymiar: kod — miara: wartość; miara: wartość`. */
 export function renderRow(agg, row, { dimensions, metrics }, k) {
-  const dims = dimensions.filter((d) => row[d] !== undefined && row[d] !== null && row[d] !== '').map((d) => `${labelOf(agg, d)}: ${formatNumber(row[d])}`);
+  const present = dimensions.filter((d) => row[d] !== undefined && row[d] !== null && row[d] !== '');
+  const dims = present.map((d) => `${labelOf(agg, d)}: ${formatDimension(d, row[d])}`);
+  // Wymiar rok+miesiąc → dodatkowo okres ISO („2026-08"), żeby pytanie o „sierpień 2026" trafiało leksykalnie.
+  const yearKey = present.find((d) => YEAR_KEY_RE.test(d));
+  const monthKey = present.find((d) => MONTH_KEY_RE.test(d));
+  if (yearKey !== undefined && monthKey !== undefined && isMonthNumber(row[monthKey]) && Number.isInteger(row[yearKey])) {
+    dims.unshift(`okres: ${row[yearKey]}-${String(row[monthKey]).padStart(2, '0')}`);
+  }
   const vals = metrics.map((m) => `${labelOf(agg, m)}: ${cell(agg, row, m, k)}`);
   if (dims.length === 0) return `- ${vals.join('; ')}`;
   return `- ${dims.join(', ')}${vals.length ? ` — ${vals.join('; ')}` : ''}`;
+}
+
+const isMonthNumber = (v) => Number.isInteger(v) && v >= 1 && v <= 12;
+
+/** Wartość wymiaru: numer miesiąca dostaje polską nazwę („8 (sierpień)"), reszta jak liczba/tekst. */
+function formatDimension(key, value) {
+  if (MONTH_KEY_RE.test(key) && isMonthNumber(value)) return `${value} (${MONTHS_PL[value - 1]})`;
+  return formatNumber(value);
 }
 
 /** Krótka interpretacja: najwyższa wartość pierwszej miary + liczność wierszy i stłumień. */
