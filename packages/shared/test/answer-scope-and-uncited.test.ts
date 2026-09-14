@@ -139,6 +139,26 @@ describe('answerQuestion — kara za akapity bez cytowania', () => {
 describe('answerQuestion — odmowa zakresu ze znacznikiem SCOPE', () => {
   beforeEach(() => clearAnswerCache());
 
+  it('SCOPE przy DŁUGIEJ, merytorycznej odpowiedzi jest ignorowany z ostrzeżeniem (answer-v4); „Nie wiem" bez SCOPE = odmowa', async () => {
+    const long =
+      'Limit rozmiaru bazy w SQL Server Express wynosi 10 GB [1]. ' +
+      'Po przekroczeniu limitu należy przenieść bazę na wyższą edycję serwera [1]. '.repeat(8) +
+      '\nSCOPE: poza_zrodlami\nCONFIDENCE: 0.8';
+    const db = testDb();
+    seed(db);
+    const res = await answerQuestion(ctxOf(db, llmReturning(long)), { question: QUESTION, allowedNamespaces: [NS], source: 'mcp' });
+    expect(res.noAnswer).toBe(false);
+    expect(res.answer).not.toContain('SCOPE:');
+    expect(res.warnings.some((w) => /SCOPE.*zignorowany/.test(w))).toBe(true);
+
+    const short = 'Nie wiem — źródła nie podają limitu dla tej edycji [1].\nCONFIDENCE: 0.8';
+    const db2 = testDb();
+    seed(db2);
+    const res2 = await answerQuestion(ctxOf(db2, llmReturning(short)), { question: QUESTION, allowedNamespaces: [NS], source: 'mcp' });
+    expect(res2.noAnswer).toBe(true);
+    expect(res2.gapRecorded).toBe(true);
+  });
+
   it('SCOPE: poza_zrodlami → noAnswer=true, treść wyjaśnienia zachowana, luka „out_of_scope", wiersz answers no_answer=1', async () => {
     const text =
       'Źródła nie opisują replikacji PostgreSQL — dotyczą wyłącznie Microsoft SQL Server [1].\n' +

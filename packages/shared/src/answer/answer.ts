@@ -303,9 +303,11 @@ const REFUSAL_PREFIX_RE =
   /^(nie wiem|nie mam (w (dostarczonych |podanych )?źródłach|informacji|danych)|w (dostarczonych |podanych )?źródłach nie ma|(dostarczone |podane )?źródła nie (zawierają|obejmują|podają|opisują)|i (don'?t|do not) know|the (provided )?sources do not (contain|cover|include|mention))(?![\p{L}\p{N}])/u;
 
 /**
- * Górny limit długości treści dla heurystyki: pełne odmowy z sond mają 170-340 znaków, a odpowiedź
- * częściowa zaczynająca się od „Źródła nie zawierają prostego opisu…" i przechodząca do porównania
- * miała 907 — taka MA zostać odpowiedzią (reguła promptu: choćby część odpowiedzi = nie odmowa).
+ * Górna długość treści PEŁNEJ odmowy (w obie strony: heurystyka „Nie wiem…" i honorowanie znacznika
+ * SCOPE). Pełne odmowy z sond mają 170-400 znaków; odpowiedź częściowa zaczynająca się od „Źródła
+ * nie zawierają prostego opisu…" i przechodząca do porównania miała 907, a realne odpowiedzi
+ * błędnie oznaczone SCOPE przez model 485-803 — te MAJĄ zostać odpowiedziami (reguła promptu:
+ * choćby część odpowiedzi = nie odmowa).
  */
 export const REFUSAL_MAX_CHARS = 500;
 
@@ -592,9 +594,16 @@ export async function answerQuestion(ctx: AnswerCtx, params: AnswerParams): Prom
 
   // ── Parsowanie CONFIDENCE + walidacja cytowań post-hoc ──
   const { text: withoutScope, outOfScope: scopeMarked } = parseScopeLine(chatResult.text);
-  // answer-v4: „Nie wiem…" na początku treści = pełna odmowa, nawet gdy model pominął znacznik.
-  const outOfScope = scopeMarked || isRefusalText(withoutScope);
   const { answer: withoutConfidence, llmSelf } = parseConfidenceLine(withoutScope);
+  // answer-v4: pełna odmowa jest KRÓTKA (reguła promptu: zero informacji merytorycznej). Znacznik
+  // SCOPE przy długiej odpowiedzi — model stawiał go na 5 z 56 realnych odpowiedzi w sondach
+  // 2026-09-14 (procedura KSeF, kolumny nz__Finanse, czerwony PLUS…) — jest ignorowany
+  // z ostrzeżeniem; z kolei „Nie wiem…" na początku krótkiej treści to odmowa nawet bez znacznika.
+  const scopeHonoured = scopeMarked && withoutConfidence.trim().length <= REFUSAL_MAX_CHARS;
+  if (scopeMarked && !scopeHonoured) {
+    warnings.push('Model oznaczył odmowę zakresu (SCOPE) przy długiej odpowiedzi — znacznik zignorowany, odpowiedź potraktowana jako merytoryczna.');
+  }
+  const outOfScope = scopeHonoured || isRefusalText(withoutConfidence);
   const { answer, cited, removed } = validateCitations(withoutConfidence, sources.length);
   if (removed.length > 0) {
     warnings.push(
