@@ -61,6 +61,10 @@ token_from() {  # $1 = nazwa zmiennej
   # shellcheck source=/dev/null  # plik operatora, poza repo
   (. "${ALERTS_ENV}"; printf '%s' "${!1:-}") | sed -E 's#.*/##'
 }
+SUBIEKTAPI_HOST="${SUBIEKTAPI_HOST:-subiektapi.pomagier.ilovelighting.sanok.pl}"
+# Token subiektAPI (host pomagier) — monitor /health/db musi go nieść w nagłówku; bez tokenu monitor pomijamy.
+# shellcheck source=/dev/null  # plik operatora, poza repo
+SUBIEKTAPI_TOKEN="$(. "${ALERTS_ENV}"; printf '%s' "${SUBIEKTAPI_TOKEN:-}")"
 PUSH_BASE="https://${STATUS_HOST}/api/push"
 BACKUP_TOKEN="$(token_from BACKUP_PING_URL)"
 VERIFY_TOKEN="$(token_from VERIFY_PING_URL)"
@@ -82,9 +86,9 @@ fi
 # --- budowa SQL ------------------------------------------------------------------------
 WORK="$(mktemp -d)"; trap 'rm -rf "${WORK}"' EXIT
 count="$(python3 - "${WORK}/seed.sql" "${NTFY_SERVER}" "${NTFY_TOPIC}" "${BACKUP_TOKEN}" "${VERIFY_TOKEN}" \
-         "${PANEL_HOST}" "${AUTH_HOST}" "${STATUS_HOST}" <<'PY'
+         "${PANEL_HOST}" "${AUTH_HOST}" "${STATUS_HOST}" "${SUBIEKTAPI_HOST}" "${SUBIEKTAPI_TOKEN}" <<'PY'
 import json, sys
-out, server, topic, btok, vtok, panel, auth, status = sys.argv[1:9]
+out, server, topic, btok, vtok, panel, auth, status, sapi_host, sapi_token = sys.argv[1:11]
 
 NOTIF_NAME = "ntfy — alerty PomagierKB"
 notif = {
@@ -97,7 +101,7 @@ def q(v):
     return "NULL" if v is None else "'" + str(v).replace("'", "''") + "'"
 
 # name, type, url, keyword, interval, retry_interval, maxretries, timeout,
-# accepted, maxredirects, push_token, description
+# accepted, maxredirects, push_token, description, headers (JSON albo None)
 MON = [
  ("Panel — przez ingress", "keyword", f"https://{panel}/healthz", '"ok":true',
   60, 60, 2, 48, '["200-299"]', 10, None,
@@ -124,6 +128,14 @@ MON = [
   691200, 3600, 0, 0, '["200-299"]', 10, vtok,
   "verify_backup.sh (realne odtworzenie MySQL/Neo4j/MinIO/SQLite) pinguje tylko przy ok:true. Cisza ponad 8 dni = weryfikacja nie biegła albo nie przeszła. Timer: niedziela 04:30 +10 min losowo."),
 ]
+MON = [m + (None,) for m in MON]
+if sapi_token:
+    MON.append(
+     ("subiektAPI — baza Subiekta (host pomagier, przez ingress)", "keyword", f"https://{sapi_host}/health/db", '"ok":true',
+      60, 60, 2, 48, '["200-299"]', 10, None,
+      "Pełna ścieżka: DNS -> Caddy na pomagierze (token Bearer) -> subiektapi.service -> WireGuard -> SQL Server Subiekta (192.168.1.20). "
+      "DOWN = padła usługa, tunel do biura albo SQL Server; 401 = zrotowano token bez aktualizacji SUBIEKTAPI_TOKEN w alerts.env.",
+      json.dumps({"Authorization": f"Bearer {sapi_token}"})))
 
 L = ["PRAGMA foreign_keys=ON;", "BEGIN;"]
 
@@ -133,23 +145,23 @@ L.append("INSERT INTO notification (name, active, user_id, is_default, config) "
          f"SELECT {q(NOTIF_NAME)}, 1, (SELECT MIN(id) FROM user), 1, {cfg} "
          f"WHERE NOT EXISTS (SELECT 1 FROM notification WHERE name={q(NOTIF_NAME)});")
 
-for (name, typ, url, kw, iv, ri, mr, to, acc, mrd, tok, desc) in MON:
+for (name, typ, url, kw, iv, ri, mr, to, acc, mrd, tok, desc, hdr) in MON:
     n = q(name)
     # istniejący monitor: aktualizuj wszystko poza push_token (żeby nie zerwać działającego pingu)
     L.append(
         f"UPDATE monitor SET type={q(typ)}, url={q(url)}, keyword={q(kw)}, `interval`={iv}, "
         f"retry_interval={ri}, maxretries={mr}, timeout={to}, accepted_statuscodes_json={q(acc)}, "
-        f"maxredirects={mrd}, description={q(desc)}, active=1, upside_down=0, invert_keyword=0, "
+        f"maxredirects={mrd}, description={q(desc)}, headers={q(hdr)}, active=1, upside_down=0, invert_keyword=0, "
         f"method='GET', expiry_notification={1 if typ != 'push' else 0} WHERE name={n};")
     if tok:
         L.append(f"UPDATE monitor SET push_token={q(tok)} WHERE name={n} "
                  f"AND (push_token IS NULL OR push_token='');")
     L.append(
         "INSERT INTO monitor (name, type, url, keyword, `interval`, retry_interval, maxretries, "
-        "timeout, accepted_statuscodes_json, maxredirects, push_token, description, active, user_id, "
+        "timeout, accepted_statuscodes_json, maxredirects, push_token, description, headers, active, user_id, "
         "method, weight, expiry_notification, upside_down, invert_keyword, resend_interval, conditions) "
         f"SELECT {n}, {q(typ)}, {q(url)}, {q(kw)}, {iv}, {ri}, {mr}, {to}, {q(acc)}, {mrd}, {q(tok)}, "
-        f"{q(desc)}, 1, (SELECT MIN(id) FROM user), 'GET', 2000, {1 if typ != 'push' else 0}, 0, 0, 0, '[]' "
+        f"{q(desc)}, {q(hdr)}, 1, (SELECT MIN(id) FROM user), 'GET', 2000, {1 if typ != 'push' else 0}, 0, 0, 0, '[]' "
         f"WHERE NOT EXISTS (SELECT 1 FROM monitor WHERE name={n});")
 
 # każdy monitor podpięty do kanału ntfy (bez duplikatów)
