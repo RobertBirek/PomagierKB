@@ -9,8 +9,9 @@ import {
 } from '../src/queries-suppliers.mjs';
 
 const AGG_FN = /\b(COUNT|SUM|AVG|MIN|MAX)\s*\(/i;
-/** Kolumny-etykiety dopuszczone mimo słowa „nazwa" (to nie są dane osób). */
-const ALLOWED_LABELS = /\b(twp_Nazwa(Ceny)?\d+|khp_Nazwa\d+|grt_Nazwa|mag_Nazwa)\b/g;
+/** Kolumny-etykiety dopuszczone mimo słowa „nazwa" (to nie są dane osób). tw_Nazwa = nazwa TOWARU —
+ *  spójnie z deny-listą bramki MCP (src/mcp-readonly.mjs), która ją dopuszcza; kontrahentów tu nie ma. */
+const ALLOWED_LABELS = /\b(twp_Nazwa(Ceny)?\d+|khp_Nazwa\d+|grt_Nazwa|mag_Nazwa|tw_Nazwa)\b/g;
 const PII_WORDS = /nazwa|adres|nip|pesel|mail|telefon/i;
 const HOST_WORDS = /192\.168|INSERTGT|DESKTOP-|\\\\/i;
 

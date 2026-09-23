@@ -140,6 +140,50 @@ SELECT (SELECT COUNT(*) FROM sl_GrupaKh) AS groups_defined,
   },
 
   // ── b) towary ───────────────────────────────────────────────────────────────────────────
+  // Top towarów: nazwy i symbole towarów NIE są danymi osobowymi; wartości = agregaty po pozycjach
+  // sprzedaży (FS, PA, KFS, ZW) z ostatnich 12 miesięcy. Odpowiada na pytanie „jakie top 10 produktów
+  // w sprzedaży" bez sięgania do bazy na żywo (2026-09-23, pytanie z panelu bez odpowiedzi).
+  {
+    id: 'top_products_by_net_sales_12m',
+    title: 'Top 20 towarów wg wartości sprzedaży netto — ostatnie 12 miesięcy (FS, PA, po korektach KFS i zwrotach ZW)',
+    kind: 'products',
+    shape: 'grouped',
+    dimensions: ['rank', 'product_symbol', 'product_name'],
+    metrics: ['net_sales', 'quantity', 'documents'],
+    labels: { rank: 'miejsce', product_symbol: 'symbol towaru (tw_Symbol)', product_name: 'nazwa towaru', net_sales: 'sprzedaż netto PLN (12 mies.)', quantity: 'ilość sprzedana (j. podst.)', documents: 'dokumentów sprzedaży' },
+    sql: `
+SELECT TOP (20)
+       ROW_NUMBER() OVER (ORDER BY SUM(CASE WHEN d.dok_Typ = 14 THEN -1 ELSE 1 END * p.ob_Znak * p.ob_WartNetto) DESC) AS rank,
+       t.tw_Symbol AS product_symbol,
+       LEFT(t.tw_Nazwa, 80) AS product_name,
+       ROUND(SUM(CASE WHEN d.dok_Typ = 14 THEN -1 ELSE 1 END * p.ob_Znak * p.ob_WartNetto), 2) AS net_sales,
+       ROUND(SUM(CASE WHEN d.dok_Typ = 14 THEN -1 ELSE 1 END * p.ob_Znak * p.ob_IloscMag), 0) AS quantity,
+       COUNT(DISTINCT d.dok_Id) AS documents
+FROM dok_Pozycja p
+JOIN dok__Dokument d ON d.dok_Id = p.ob_DokHanId
+JOIN tw__Towar t ON t.tw_Id = p.ob_TowId
+WHERE d.dok_Typ IN (${SALES}, 6, 14) AND d.dok_Status = 1
+  AND d.dok_DataWyst >= DATEADD(month, -12, CAST(GETDATE() AS date))
+  AND p.ob_TowRodzaj IN (1, 8)
+GROUP BY t.tw_Id, t.tw_Symbol, LEFT(t.tw_Nazwa, 80)
+ORDER BY net_sales DESC`,
+  },
+  {
+    id: 'daily_sales_last_14d',
+    title: 'Sprzedaż netto dziennie — ostatnie 14 dni (FS + PA, dokumenty wykonane)',
+    kind: 'documents',
+    shape: 'grouped',
+    dimensions: ['sale_date'],
+    metrics: ['documents', 'net_sales'],
+    labels: { sale_date: 'dzień (dok_DataWyst)', documents: 'dokumentów sprzedaży', net_sales: 'sprzedaż netto PLN' },
+    sql: `
+SELECT CONVERT(varchar(10), dok_DataWyst, 23) AS sale_date, COUNT(*) AS documents, ROUND(SUM(dok_WartNetto), 2) AS net_sales
+FROM dok__Dokument
+WHERE dok_Typ IN (${SALES}) AND dok_Status = 1
+  AND dok_DataWyst >= DATEADD(day, -14, CAST(GETDATE() AS date))
+GROUP BY CONVERT(varchar(10), dok_DataWyst, 23)
+ORDER BY sale_date`,
+  },
   {
     id: 'products_total',
     title: 'Kartoteka towarów — łącznie, w tym oznaczone jako usunięte (tw_Usuniety)',
