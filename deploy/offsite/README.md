@@ -43,3 +43,16 @@ $SSH kagbackup@10.90.0.3 ls /                                                # "
 
 Odtwarzanie z tej kopii: `docs/runbooks/disaster-recovery.md`, krok 0b (kopiować jako `robert`,
 nie `kagbackup`).
+
+## Sonda zewnętrzna (`kag-external-probe.sh`, timer co 5 min)
+
+Odwrotny kierunek: pomagier sprawdza z internetu, czy pim żyje (`kag.…/healthz` 200,
+`auth.…/-/health/live/` 200, `status.…/` 302). Po 2 porażkach z rzędu alert na ntfy prosto
+z pomagiera (Kuma na pimie może wtedy nie żyć), po powrocie jedno „OK"; przy sukcesie ping
+push-monitora Kumy „Sonda zewnętrzna (pomagier)". Instalacja jak wyżej (`install` skryptu i unitów,
+`systemctl enable --now kag-external-probe.timer`), sekrety w `/etc/kag/probe.env` (0600):
+`ALERT_WEBHOOK_URL` (jak w `alerts.env` na pim) i `PROBE_PING_URL` (z `alerts.env`, generuje
+`kuma_seed_monitors.sh`). Po zasianiu nowego push-monitora sprawdź pierwszy beat — Kuma bywa
+wymaga restartu, zanim przyjmie token (`docker restart edge-uptime-kuma`). Log: `/var/log/kag-probe.log`,
+stan: `/var/lib/kag-probe/`.
+

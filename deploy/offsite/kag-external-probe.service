@@ -1,0 +1,6 @@
+# Host pomagier — sonda spoza pima (deploy/offsite/README.md).
+[Unit]
+Description=PomagierKB — sonda zewnętrzna pima (panel, Authentik, status SSO)
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/kag-external-probe.sh

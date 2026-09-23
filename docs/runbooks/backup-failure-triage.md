@@ -10,6 +10,7 @@ było — Kuma miała 0 monitorów). Są dwa, oba w Uptime Kumie:
 |---|---|---|---|
 | `Backup nocny — dead-man's switch` | `backup.sh` przy `ok:true` | 26 h | backup nie wystartował, zawisł, albo padł przed zapisem statusu |
 | `Weryfikacja odtwarzania — dead-man's switch` | `verify_backup.sh` przy `ok:true` | 8 dni | tygodniowa weryfikacja nie biegła albo nie przeszła |
+| `Sonda zewnętrzna (pomagier) — dead-man's switch` | `kag-external-probe.sh` na **pomagierze** co 5 min, gdy panel/Authentik/status odpowiadają z internetu | 15 min | pomagier lub jego timer padł — ALBO pim nie odpowiada z zewnątrz (wtedy równolegle przychodzi alert ntfy wprost z pomagiera, niezależny od Kumy); log `/var/log/kag-probe.log` na pomagierze |
 | `Kopia off-site (pomagier) — dead-man's switch` | `kag-offsite-prune.sh` na **pomagierze** co godzinę, gdy najnowszy komplet ma <26 h, ≥1 GB i sha zgodną z sidecarem | 26 h | kopia nie dotarła (rsync, WireGuard `10.90.0.3`, klucz `/etc/kag/ssh/id_offsite`, cel `BACKUP_OFFSITE_TARGET` w `alerts.env`), pomagier nie żyje albo jego timer stoi; szczegóły w `/var/log/kag-offsite.log` NA POMAGIERZE, po stronie pim `_manifest.json → offsite.status` |
 
 To sygnał **komplementarny** do `OnFailure`: alert systemd łapie „unit wystartował i padł",

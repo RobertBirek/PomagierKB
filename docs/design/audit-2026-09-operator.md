@@ -167,10 +167,13 @@ Konfiguracja Kumy żyje w jej SQLite, którego **nie ma w nocnym snapshocie**. O
 idempotentnie `deploy/scripts/kuma_seed_monitors.sh` (dopasowanie po nazwie, zachowuje id,
 tokeny i historię). Po każdej zmianie monitorów w UI — odzwierciedl ją w tym skrypcie.
 
-**Zostaje p. 4 — sonda spoza hosta.** Monitoring działający na monitorowanym hoście nie wykryje
-jego awarii: gdy padnie host, padnie i Kuma, i nikt się o tym nie dowie. Załóż bezpłatne konto
-(UptimeRobot / Healthchecks.io / betterstack) i skieruj je na `https://kag.ilovelighting.sanok.pl/healthz`.
-To jedyny brakujący element D10-01.
+**P. 4 — sonda spoza hosta: ZAMKNIĘTE 2026-09-23** (bez zewnętrznego SaaS). Na hoście pomagier
+(biuro) działa `deploy/offsite/kag-external-probe.sh` z timera co 5 min: z internetu sprawdza
+`kag.…/healthz` (200), `auth.…/-/health/live/` (200) i `status.…/` (302 = forward-auth stoi);
+po 2 porażkach z rzędu wysyła alert prosto na ntfy (ten sam kanał co `alerts.env`, bez udziału
+Kumy), po powrocie jedno „OK"; gdy wszystko działa, pinguje push-monitor Kumy „Sonda zewnętrzna
+(pomagier)" (cisza 15 min = pomagier/timer padł). Symetrycznie pim pilnuje pomagiera (monitor
+subiektAPI). Sekrety w `/etc/kag/probe.env` na pomagierze (0600). D10-01 domknięte.
 
 ### A5. Renovate i wywiad o zależnościach (D11-02, D1-05, D1-03, P1)
 `renovate.json` jest poprawny (naprawiony w tym audycie), ale **aplikacja nie jest zainstalowana** —

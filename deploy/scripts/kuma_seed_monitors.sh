@@ -70,19 +70,23 @@ PUSH_BASE="https://${STATUS_HOST}/api/push"
 BACKUP_TOKEN="$(token_from BACKUP_PING_URL)"
 VERIFY_TOKEN="$(token_from VERIFY_PING_URL)"
 OFFSITE_TOKEN="$(token_from OFFSITE_PING_URL)"
+PROBE_TOKEN="$(token_from PROBE_PING_URL)"
 appended=0
 if [[ -z "${BACKUP_TOKEN}" ]]; then BACKUP_TOKEN="$(gen_token)"; appended=1; fi
 if [[ -z "${VERIFY_TOKEN}" ]]; then VERIFY_TOKEN="$(gen_token)"; appended=1; fi
 if [[ -z "${OFFSITE_TOKEN}" ]]; then OFFSITE_TOKEN="$(gen_token)"; appended=1; fi
+if [[ -z "${PROBE_TOKEN}" ]]; then PROBE_TOKEN="$(gen_token)"; appended=1; fi
 if [[ ${appended} -eq 1 ]]; then
   cp -a "${ALERTS_ENV}" "${ALERTS_ENV}.bak-$(date -u +%Y%m%dT%H%M%SZ)"
-  sed -i -E '/^(BACKUP_PING_URL|VERIFY_PING_URL|OFFSITE_PING_URL)=/d' "${ALERTS_ENV}"
+  sed -i -E '/^(BACKUP_PING_URL|VERIFY_PING_URL|OFFSITE_PING_URL|PROBE_PING_URL)=/d' "${ALERTS_ENV}"
   {
     echo "# Push-monitory Uptime Kumy (dead-man's switch) — wołane TYLKO przy sukcesie."
     echo "BACKUP_PING_URL=${PUSH_BASE}/${BACKUP_TOKEN}"
     echo "VERIFY_PING_URL=${PUSH_BASE}/${VERIFY_TOKEN}"
     echo "# OFFSITE_PING_URL woła host pomagier (kag-offsite-prune.sh) — skopiuj do /etc/kag/offsite.env na pomagierze."
     echo "OFFSITE_PING_URL=${PUSH_BASE}/${OFFSITE_TOKEN}"
+    echo "# PROBE_PING_URL woła sonda zewnętrzna na pomagierze (kag-external-probe.sh) — skopiuj do /etc/kag/probe.env tam."
+    echo "PROBE_PING_URL=${PUSH_BASE}/${PROBE_TOKEN}"
   } >> "${ALERTS_ENV}"
   chmod 600 "${ALERTS_ENV}"
   log "dopisano brakujące *_PING_URL do ${ALERTS_ENV}"
@@ -91,9 +95,9 @@ fi
 # --- budowa SQL ------------------------------------------------------------------------
 WORK="$(mktemp -d)"; trap 'rm -rf "${WORK}"' EXIT
 count="$(python3 - "${WORK}/seed.sql" "${NTFY_SERVER}" "${NTFY_TOPIC}" "${BACKUP_TOKEN}" "${VERIFY_TOKEN}" \
-         "${PANEL_HOST}" "${AUTH_HOST}" "${STATUS_HOST}" "${SUBIEKTAPI_HOST}" "${SUBIEKTAPI_TOKEN}" "${OFFSITE_TOKEN}" <<'PY'
+         "${PANEL_HOST}" "${AUTH_HOST}" "${STATUS_HOST}" "${SUBIEKTAPI_HOST}" "${SUBIEKTAPI_TOKEN}" "${OFFSITE_TOKEN}" "${PROBE_TOKEN}" <<'PY'
 import json, sys
-out, server, topic, btok, vtok, panel, auth, status, sapi_host, sapi_token, otok = sys.argv[1:12]
+out, server, topic, btok, vtok, panel, auth, status, sapi_host, sapi_token, otok, ptok = sys.argv[1:13]
 
 NOTIF_NAME = "ntfy — alerty PomagierKB"
 notif = {
@@ -135,6 +139,9 @@ MON = [
  ("Kopia off-site (pomagier) — dead-man's switch", "push", None, None,
   93600, 600, 0, 0, '["200-299"]', 10, otok,
   "kag-offsite-prune.sh NA POMAGIERZE pinguje co godzinę, gdy najnowsza kopia <STAMP>.tar.age w /backups/pim/nightly ma mniej niż 26 h, ma sidecar manifestu i >= 1 GB. Cisza ponad 26 h = backup nie dotarł (rsync/WireGuard/klucz) albo pomagier nie żyje. Kopię widać tylko z pomagiera — pim ma klucz write-only."),
+ ("Sonda zewnętrzna (pomagier) — dead-man's switch", "push", None, None,
+  900, 300, 0, 0, '["200-299"]', 10, ptok,
+  "kag-external-probe.sh NA POMAGIERZE co 5 min sprawdza z internetu panel /healthz, Authentik /-/health/live/ i 302 na status.*; pinguje tu tylko gdy wszystko OK. Cisza 15 min = pomagier/timer padł ALBO pim nie odpowiada z zewnątrz (wtedy przyjdzie też alert ntfy prosto z pomagiera — bez udziału Kumy)."),
 ]
 MON = [m + (None,) for m in MON]
 if sapi_token:
