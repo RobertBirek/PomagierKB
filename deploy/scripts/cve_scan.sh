@@ -53,6 +53,9 @@ done
 
 log() { [[ ${QUIET} -eq 1 ]] || echo "[cve] $*"; }
 die() { echo "[cve][BŁĄD] $*" >&2; exit 1; }
+# --update-baseline zapisuje CAŁY raport jako baseline — z --image byłby to plik z jednym obrazem
+# i następny pełny skan zgłosiłby wszystkie pozostałe obrazy jako „nowe" (wpadka 2026-09-23).
+[[ ${UPDATE_BASELINE} -eq 1 && -n "${ONLY_IMAGE}" ]] && die "--update-baseline nie łączy się z --image (baseline musi obejmować wszystkie obrazy)"
 
 [[ ${EUID} -eq 0 ]] || die "uruchom jako root (docker save wymaga dostępu do demona)"
 command -v docker >/dev/null || die "brak dockera"
