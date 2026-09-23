@@ -10,7 +10,22 @@ Kolejność w sekcjach = kolejność wykonania.
 
 ## A. Wymaga decyzji i pieniędzy (P0/P1)
 
-### A1. Kopia off-site (D5-02, P0) — maszyneria GOTOWA 2026-09-07, zostają dwa ruchy operatora
+### A1. Kopia off-site (D5-02, P0) — ZAMKNIĘTE 2026-09-23 (cel: host pomagier), został jeden ruch operatora
+
+**Stan 2026-09-23:** zamiast Contabo Object Storage (rclone nigdy nie skonfigurowany) kopia idzie
+przez WireGuard na drugi fizyczny host — **pomagier** (biuro), `BACKUP_OFFSITE_TARGET=kagbackup@10.90.0.3:/`
+w `/etc/kag/alerts.env`. Pim ma klucz `/etc/kag/ssh/id_offsite` (poza `/root`, bo unit ma
+`ProtectHome=true`) ograniczony po stronie odbiorcy do `rrsync -wo -no-del -no-overwrite
+/backups/pim/nightly` — może tylko dopisać nowe pliki (test: odczyt, shell i `--delete` odrzucone).
+Retencję (7 nocy + 2 miesięczne), zamrażanie `chattr +i` i kontrolę sha vs sidecar robi root
+pomagiera (`deploy/offsite/kag-offsite-prune.sh`, timer co godzinę), który pinguje trzeci
+push-monitor Kumy „Kopia off-site (pomagier)". Ograniczenie: oba hosty łączy ten sam operator
+i ten sam tunel — kopia chroni przed utratą VPS/dysku/ransomware na pim, nie przed utratą dostępu
+operatora. S3 zostaje opcją dodatkową tym samym mechanizmem (`rclone://`).
+**Zostaje operatorowi:** klucz prywatny `age` nadal leży w `/root/kag-backup-age.key` na pim —
+przenieść do menedżera haseł i `shred -u`; bez tego kopia jest zaszyfrowana, ale klucz leży obok oryginału.
+
+Historia (2026-09-07):
 Wszystkie snapshoty i archiwum obrazów leżą **na tym samym dysku co dane produkcyjne**. Awaria
 dysku, pomyłkowe `rm -rf` albo ransomware kasują jednocześnie system i wszystkie kopie. Backup
 jest sprawdzony (pełny drill DR przeszedł), ale nie przetrwa utraty hosta.

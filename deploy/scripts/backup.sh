@@ -425,6 +425,7 @@ OFFSITE_TARGET="${BACKUP_OFFSITE_TARGET:-}"
 OFFSITE_STATUS="not_configured"
 OFFSITE_ENC="none"
 OFFSITE_ARTIFACT=""
+OFFSITE_SHA256=""; OFFSITE_BYTES=""; OFFSITE_SECONDS=""
 
 encrypt_snapshot() { # encrypt_snapshot <plik-wyjściowy> ; szyfruje CAŁY katalog snapshotu
   local out=$1 r
@@ -446,11 +447,27 @@ encrypt_snapshot() { # encrypt_snapshot <plik-wyjściowy> ; szyfruje CAŁY katal
   return 1
 }
 
+# Cel rsync = drugi host po SSH (2026-09-23: pomagier, użytkownik kagbackup z kluczem ograniczonym do
+# `rrsync -wo -no-del -no-overwrite` — pim może TYLKO dopisywać nowe pliki; retencję i zamrażanie
+# chattr +i robi root tamtego hosta). Unit ma ProtectHome=true, więc klucz i known_hosts leżą
+# w /etc/kag/ssh, nie w /root/.ssh; StrictHostKeyChecking=yes = przypięty odcisk hosta, BatchMode
+# = żadnych pytań w nocy. Bez --perms/--owner: cel i tak nadaje własność kagbackup.
+OFFSITE_SSH_KEY="${BACKUP_SSH_KEY:-/etc/kag/ssh/id_offsite}"
+OFFSITE_SSH_KNOWN_HOSTS="${BACKUP_SSH_KNOWN_HOSTS:-/etc/kag/ssh/known_hosts}"
+offsite_rsync() {
+  local rsh="ssh -i ${OFFSITE_SSH_KEY} -o UserKnownHostsFile=${OFFSITE_SSH_KNOWN_HOSTS} -o StrictHostKeyChecking=yes -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=30"
+  if [[ -r "${OFFSITE_SSH_KEY}" ]]; then
+    rsync -rt --partial --timeout=600 -e "${rsh}" "$@"
+  else
+    rsync -rt --partial --timeout=600 "$@"
+  fi
+}
+
 offsite_put_file() { # offsite_put_file <plik-lokalny> <nazwa-w-celu>
   if [[ "${OFFSITE_TARGET}" == rclone://* ]]; then
     rclone copyto "$1" "${OFFSITE_TARGET#rclone://}/$2"
   else
-    rsync -a "$1" "${OFFSITE_TARGET}/$2"
+    offsite_rsync "$1" "${OFFSITE_TARGET}/$2"
   fi
 }
 
@@ -458,7 +475,7 @@ offsite_put_dir() { # offsite_put_dir <katalog-snapshotu> — tylko tryb plainte
   if [[ "${OFFSITE_TARGET}" == rclone://* ]]; then
     rclone copy "$1" "${OFFSITE_TARGET#rclone://}/${STAMP}"
   else
-    rsync -a "$1" "${OFFSITE_TARGET}/"
+    offsite_rsync "$1" "${OFFSITE_TARGET}/"
   fi
 }
 
@@ -485,9 +502,14 @@ else
   if encrypt_snapshot "${ENC_FILE}" && [[ -s "${ENC_FILE}" ]]; then
     chmod 600 "${ENC_FILE}"
     log "wysyłam snapshot off-site: ${OFFSITE_TARGET}"
+    OFFSITE_SHA256="$(sha256sum "${ENC_FILE}" | cut -d' ' -f1)"
+    OFFSITE_BYTES="$(stat -c %s "${ENC_FILE}")"
+    OFFSITE_T0="$(date +%s)"
     if offsite_put_file "${ENC_FILE}" "${ENC_NAME}"; then
       OFFSITE_STATUS="ok"
       OFFSITE_ARTIFACT="${ENC_NAME}"
+      OFFSITE_SECONDS="$(( $(date +%s) - OFFSITE_T0 ))"
+      log "off-site wysłany: ${OFFSITE_BYTES} B w ${OFFSITE_SECONDS} s, sha256 ${OFFSITE_SHA256:0:16}…"
     else
       OFFSITE_STATUS="failed"; warn "wysyłka off-site nie powiodła się"
     fi
@@ -528,8 +550,10 @@ OK=false
     printf '"%s"' "$(json_escape "${m}")"
   done
   printf '],\n'
-  printf '  "offsite": { "target": "%s", "status": "%s", "encryption": "%s", "artifact": "%s" },\n' \
-    "$(json_escape "${OFFSITE_TARGET}")" "${OFFSITE_STATUS}" "${OFFSITE_ENC}" "$(json_escape "${OFFSITE_ARTIFACT}")"
+  # archiveSha256/archiveBytes: host docelowy (write-only dla pim) porównuje z tym sidecar vs blob.
+  printf '  "offsite": { "target": "%s", "status": "%s", "encryption": "%s", "artifact": "%s", "archiveSha256": "%s", "archiveBytes": %s, "transferSeconds": %s },\n' \
+    "$(json_escape "${OFFSITE_TARGET}")" "${OFFSITE_STATUS}" "${OFFSITE_ENC}" "$(json_escape "${OFFSITE_ARTIFACT}")" \
+    "${OFFSITE_SHA256}" "${OFFSITE_BYTES:-null}" "${OFFSITE_SECONDS:-null}"
   printf '  "files": [\n'
   first=1
   while read -r sum name; do

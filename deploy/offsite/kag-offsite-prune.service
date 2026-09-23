@@ -1,0 +1,8 @@
+# Host pomagier (odbiorca kopii off-site PomagierKB). Instalacja — patrz deploy/offsite/README.md.
+[Unit]
+Description=PomagierKB off-site — zamrożenie, retencja i ping kopii z pim
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/kag-offsite-prune.sh
+Nice=10
+IOSchedulingClass=idle

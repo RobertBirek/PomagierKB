@@ -191,6 +191,9 @@ if last_snapshot is not None or status:
             "status": offsite.get("status") or None,
             "encryption": offsite.get("encryption") or None,
             "artifact": offsite.get("artifact") or None,
+            "archiveSha256": offsite.get("archiveSha256") or None,
+            "archiveBytes": offsite.get("archiveBytes") if isinstance(offsite.get("archiveBytes"), int) else None,
+            "transferSeconds": offsite.get("transferSeconds") if isinstance(offsite.get("transferSeconds"), int) else None,
         },
     }
 

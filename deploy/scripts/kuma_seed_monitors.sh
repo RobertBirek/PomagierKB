@@ -54,7 +54,8 @@ if [[ -n "${webhook}" ]]; then
 fi
 [[ -n "${NTFY_TOPIC}" ]] || die "ALERT_WEBHOOK_URL w ${ALERTS_ENV} nie wygląda jak URL ntfy — bez kanału alertów monitoring nic nie daje"
 
-gen_token() { LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 32; }
+# Bez `tr </dev/urandom | head`: pod pipefail head zamyka potok, tr dostaje SIGPIPE i skrypt kończy się 141.
+gen_token() { head -c 96 /dev/urandom | base64 -w0 | tr -dc 'A-Za-z0-9' | cut -c1-32; }
 
 # Token bierzemy z istniejącego *_PING_URL, żeby nie unieważnić działającego pingu.
 token_from() {  # $1 = nazwa zmiennej
@@ -68,16 +69,20 @@ SUBIEKTAPI_TOKEN="$(. "${ALERTS_ENV}"; printf '%s' "${SUBIEKTAPI_TOKEN:-}")"
 PUSH_BASE="https://${STATUS_HOST}/api/push"
 BACKUP_TOKEN="$(token_from BACKUP_PING_URL)"
 VERIFY_TOKEN="$(token_from VERIFY_PING_URL)"
+OFFSITE_TOKEN="$(token_from OFFSITE_PING_URL)"
 appended=0
 if [[ -z "${BACKUP_TOKEN}" ]]; then BACKUP_TOKEN="$(gen_token)"; appended=1; fi
 if [[ -z "${VERIFY_TOKEN}" ]]; then VERIFY_TOKEN="$(gen_token)"; appended=1; fi
+if [[ -z "${OFFSITE_TOKEN}" ]]; then OFFSITE_TOKEN="$(gen_token)"; appended=1; fi
 if [[ ${appended} -eq 1 ]]; then
   cp -a "${ALERTS_ENV}" "${ALERTS_ENV}.bak-$(date -u +%Y%m%dT%H%M%SZ)"
-  sed -i -E '/^(BACKUP_PING_URL|VERIFY_PING_URL)=/d' "${ALERTS_ENV}"
+  sed -i -E '/^(BACKUP_PING_URL|VERIFY_PING_URL|OFFSITE_PING_URL)=/d' "${ALERTS_ENV}"
   {
     echo "# Push-monitory Uptime Kumy (dead-man's switch) — wołane TYLKO przy sukcesie."
     echo "BACKUP_PING_URL=${PUSH_BASE}/${BACKUP_TOKEN}"
     echo "VERIFY_PING_URL=${PUSH_BASE}/${VERIFY_TOKEN}"
+    echo "# OFFSITE_PING_URL woła host pomagier (kag-offsite-prune.sh) — skopiuj do /etc/kag/offsite.env na pomagierze."
+    echo "OFFSITE_PING_URL=${PUSH_BASE}/${OFFSITE_TOKEN}"
   } >> "${ALERTS_ENV}"
   chmod 600 "${ALERTS_ENV}"
   log "dopisano brakujące *_PING_URL do ${ALERTS_ENV}"
@@ -86,9 +91,9 @@ fi
 # --- budowa SQL ------------------------------------------------------------------------
 WORK="$(mktemp -d)"; trap 'rm -rf "${WORK}"' EXIT
 count="$(python3 - "${WORK}/seed.sql" "${NTFY_SERVER}" "${NTFY_TOPIC}" "${BACKUP_TOKEN}" "${VERIFY_TOKEN}" \
-         "${PANEL_HOST}" "${AUTH_HOST}" "${STATUS_HOST}" "${SUBIEKTAPI_HOST}" "${SUBIEKTAPI_TOKEN}" <<'PY'
+         "${PANEL_HOST}" "${AUTH_HOST}" "${STATUS_HOST}" "${SUBIEKTAPI_HOST}" "${SUBIEKTAPI_TOKEN}" "${OFFSITE_TOKEN}" <<'PY'
 import json, sys
-out, server, topic, btok, vtok, panel, auth, status, sapi_host, sapi_token = sys.argv[1:11]
+out, server, topic, btok, vtok, panel, auth, status, sapi_host, sapi_token, otok = sys.argv[1:12]
 
 NOTIF_NAME = "ntfy — alerty PomagierKB"
 notif = {
@@ -127,6 +132,9 @@ MON = [
  ("Weryfikacja odtwarzania — dead-man's switch", "push", None, None,
   691200, 3600, 0, 0, '["200-299"]', 10, vtok,
   "verify_backup.sh (realne odtworzenie MySQL/Neo4j/MinIO/SQLite) pinguje tylko przy ok:true. Cisza ponad 8 dni = weryfikacja nie biegła albo nie przeszła. Timer: niedziela 04:30 +10 min losowo."),
+ ("Kopia off-site (pomagier) — dead-man's switch", "push", None, None,
+  93600, 600, 0, 0, '["200-299"]', 10, otok,
+  "kag-offsite-prune.sh NA POMAGIERZE pinguje co godzinę, gdy najnowsza kopia <STAMP>.tar.age w /backups/pim/nightly ma mniej niż 26 h, ma sidecar manifestu i >= 1 GB. Cisza ponad 26 h = backup nie dotarł (rsync/WireGuard/klucz) albo pomagier nie żyje. Kopię widać tylko z pomagiera — pim ma klucz write-only."),
 ]
 MON = [m + (None,) for m in MON]
 if sapi_token:

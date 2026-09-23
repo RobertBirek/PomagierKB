@@ -1,0 +1,9 @@
+[Unit]
+Description=PomagierKB off-site — co godzinę
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=1h
+RandomizedDelaySec=5min
+Persistent=true
+[Install]
+WantedBy=timers.target

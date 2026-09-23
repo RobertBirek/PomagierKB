@@ -63,6 +63,15 @@ użyj miesięcznego snapshotu `cold` i przebuduj nowsze dokumenty (sekcja 4, pun
 obok leży jawny `<STAMP>._manifest.json` do kontroli kompletności). Odszyfruj kluczem
 PRYWATNYM operatora (nigdy nie trzymanym na tym hoście — menedżer haseł):
 
+Skąd wziąć kopię (od 2026-09-23): host **pomagier** (biuro, WireGuard `10.90.0.3`), katalog
+`/backups/pim/nightly/` — 7 ostatnich nocy + pierwszy komplet z dwóch ostatnich miesięcy, pliki
+zamrożone `chattr +i` (przed kopiowaniem nie trzeba nic odmrażać; `sudo` na pomagierze, konto
+`robert`). Użytkownik `kagbackup` służy WYŁĄCZNIE do zapisu z pim (`rrsync -wo -no-del
+-no-overwrite`) — nie da się nim niczego pobrać; kopiuj jako `robert`:
+`rsync -a --info=progress2 pomagier:/backups/pim/nightly/<STAMP>.* /srv/kag-data/backups/nightly/`.
+Sidecar zawiera `offsite.archiveSha256` — sprawdź `sha256sum <STAMP>.tar.age` PRZED odszyfrowaniem.
+Klucz prywatny age ma operator (nie ma go ani na pim, ani na pomagierze).
+
 ```bash
 mkdir -p /srv/kag-data/backups/nightly && cd /srv/kag-data/backups/nightly
 age -d -i /media/klucz/age-backup.key <STAMP>.tar.age | tar -x     # wariant age
@@ -214,7 +223,10 @@ sudo systemctl start kag-backup-verify.service
 - Sprawdź manifest pierwszego backupu (`ok:true`) i raport verify (`ok:true`).
 - Przywróć wysyłkę offsite: `BACKUP_OFFSITE_TARGET` **oraz** `BACKUP_AGE_RECIPIENT`
   (albo `BACKUP_GPG_RECIPIENT`) — bez odbiorcy szyfrowania backup **nie wyśle nic**
-  (status `blocked_no_encryption`). Klucz prywatny zostaje poza hostem.
+  (status `blocked_no_encryption`). Klucz prywatny zostaje poza hostem. Dla celu rsync
+  (pomagier) odtwórz też `/etc/kag/ssh/{id_offsite,known_hosts}` (klucz NIE jest w snapshocie —
+  wygeneruj nowy i wpisz jego część publiczną do `authorized_keys` użytkownika `kagbackup` na
+  pomagierze; instrukcja: `deploy/offsite/README.md`).
 - Usuń katalogi `*.pre-restore-<stamp>` dopiero po potwierdzeniu, że system działa.
 - Po incydencie z możliwą kompromitacją (a odtworzenie z backupu zawsze nim jest, jeśli
   snapshot mógł wyciec): zrotuj klucze LLM (Ustawienia), klucze MCP (rotate w panelu),
