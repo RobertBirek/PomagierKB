@@ -64,7 +64,7 @@ obok leży jawny `<STAMP>._manifest.json` do kontroli kompletności). Odszyfruj 
 PRYWATNYM operatora (nigdy nie trzymanym na tym hoście — menedżer haseł):
 
 Skąd wziąć kopię (od 2026-09-23): host **pomagier** (biuro, WireGuard `10.90.0.3`), katalog
-`/backups/pim/nightly/` — 7 ostatnich nocy + pierwszy komplet z dwóch ostatnich miesięcy, pliki
+`/backups/pim/nightly/` — 5 ostatnich nocy + pierwszy komplet z dwóch ostatnich miesięcy (przy wolnym < 12 GB najstarsze lecą do 2 kompletów), pliki
 zamrożone `chattr +i` (przed kopiowaniem nie trzeba nic odmrażać; `sudo` na pomagierze, konto
 `robert`). Użytkownik `kagbackup` służy WYŁĄCZNIE do zapisu z pim (`rrsync -wo -no-del
 -no-overwrite`) — nie da się nim niczego pobrać; kopiuj jako `robert`:

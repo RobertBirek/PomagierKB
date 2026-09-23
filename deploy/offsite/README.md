@@ -35,7 +35,7 @@ $SSH kagbackup@10.90.0.3 ls /                                                # "
 
 1. zamraża (`chattr +i`) komplety starsze niż 15 min — od tej chwili ani kagbackup, ani pomyłka
    po stronie pim niczego nie zmieni;
-2. retencja: 7 ostatnich kompletów + najstarszy komplet z każdego z 2 ostatnich miesięcy, nigdy
+2. retencja: 5 ostatnich kompletów + najstarszy komplet z każdego z 2 ostatnich miesięcy (bezpiecznik: wolne < 12 GB → najstarsze do 2 kompletów), nigdy
    mniej niż 2; sieroty (blob bez sidecara > 12 h) usuwane;
 3. dead-man's switch: gdy najnowszy komplet ma < 26 h, ≥ 1 GB i `sha256sum` zgadza się
    z `offsite.archiveSha256` z sidecara → ping push-monitora Kumy „Kopia off-site (pomagier)".

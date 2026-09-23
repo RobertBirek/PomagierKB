@@ -1,0 +1,4 @@
+{"skill_name":"kag-daily-ops","evals":[
+ {"id":1,"prompt":"sprawdź backup i powiedz czy wszystko gra, wróciłem po 3 dniach","expected_output":"Raport: stan off-site z dzisiejszym artefaktem i sha, beaty push-monitorów, failed unity, KB z nagrobkami (i purge zrobiony), otwarte luki; lista komend dla właściciela z oczekiwanym wynikiem","files":[]},
+ {"id":2,"prompt":"przyszedł alert z ntfy że kag-cve-scan padł, co robić?","expected_output":"Rozkład nowych CVE per obraz z summary.json, własne obrazy 0, decyzja/rekomendacja, wpis do docs/ops/cve-baseline-log.md, poprawny re-baseline bez --image, reset-failed","files":[]}
+]}

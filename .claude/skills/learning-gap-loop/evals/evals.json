@@ -1,0 +1,3 @@
+{"skill_name":"learning-gap-loop","evals":[
+ {"id":1,"prompt":"jest jedna otwarta luka wiedzy o składniku płacowym w Gratyfikancie — ogarnij ją","expected_output":"Lista luk, sonda offline, klasyfikacja (treść jest w e-Pomoc, model odmawia), próba poprawy przez treść/golden, uczciwy werdykt czy zamykać, raport w tabeli","files":[]}
+]}

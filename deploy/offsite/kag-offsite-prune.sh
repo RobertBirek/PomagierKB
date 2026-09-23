@@ -5,7 +5,8 @@
 #      FREEZE_AFTER_MIN dostaje chattr +i — od tej chwili nawet użytkownik kagbackup (klucz pim,
 #      rrsync -wo -no-del -no-overwrite) ani błąd po stronie pim nie zmieni kopii.
 #   2. RETENCJA: zostaje KEEP_DAILY najnowszych kompletów + najstarszy komplet każdego z ostatnich
-#      KEEP_MONTHS miesięcy kalendarzowych; nigdy mniej niż MIN_KEEP kompletów, niezależnie od miejsca.
+#      KEEP_MONTHS miesięcy kalendarzowych; nigdy mniej niż MIN_KEEP kompletów. Gdy wolne < LOW_FREE_GB,
+#      najstarsze komplety lecą aż do MIN_KEEP (dysk pomagiera dzielą inne usługi).
 #      Kasowanie = najpierw chattr -i, potem rm; bloby bez sidecara starsze niż ORPHAN_HOURS też lecą
 #      (przerwana wysyłka). Wynik w logu.
 #   3. DEAD-MAN'S SWITCH: gdy najnowszy komplet ma < MAX_AGE_HOURS, blob >= MIN_BYTES i sha256 zgadza się
@@ -15,7 +16,9 @@ set -euo pipefail
 DIR="${OFFSITE_DIR:-/backups/pim/nightly}"
 ENV_FILE="${OFFSITE_ENV:-/etc/kag/offsite.env}"
 LOG="${OFFSITE_LOG:-/var/log/kag-offsite.log}"
-KEEP_DAILY="${KEEP_DAILY:-7}"; KEEP_MONTHS="${KEEP_MONTHS:-2}"; MIN_KEEP="${MIN_KEEP:-2}"
+KEEP_DAILY="${KEEP_DAILY:-5}"; KEEP_MONTHS="${KEEP_MONTHS:-2}"; MIN_KEEP="${MIN_KEEP:-2}"
+# Bezpiecznik miejsca: gdy wolne < LOW_FREE_GB, kasuj najstarsze komplety (nawet „do zachowania") aż do MIN_KEEP.
+LOW_FREE_GB="${LOW_FREE_GB:-12}"
 FREEZE_AFTER_MIN="${FREEZE_AFTER_MIN:-15}"; ORPHAN_HOURS="${ORPHAN_HOURS:-12}"
 MAX_AGE_HOURS="${MAX_AGE_HOURS:-26}"; MIN_BYTES="${MIN_BYTES:-1000000000}"
 DRY="${DRY_RUN:-0}"
@@ -71,6 +74,15 @@ for st in "${all[@]}"; do
       [[ "${DRY}" == 1 ]] || { chattr -i "${st}".* 2>/dev/null || true; rm -f "${st}".*; }
     fi
   fi
+done
+
+# --- 2b. bezpiecznik miejsca (komplet ~5,4 GB; 5+2 kompletów ≈ 38 GB; dysk pomagiera dzieli inne usługi) ---
+free_gb=$(df --output=avail -BG . | tail -1 | tr -dc '0-9')
+mapfile -t left < <(ls -1 *.tar.age 2>/dev/null | sed 's/\.tar\.age$//' | sort)
+while (( free_gb < LOW_FREE_GB && ${#left[@]} > MIN_KEEP )); do
+  st="${left[0]}"; log "MAŁO MIEJSCA (${free_gb} GB < ${LOW_FREE_GB} GB): usuwam najstarszy komplet ${st}"
+  [[ "${DRY}" == 1 ]] || { chattr -i "${st}".* 2>/dev/null || true; rm -f "${st}".* ".sha-${st}"; }
+  left=("${left[@]:1}"); removed=$((removed+1)); free_gb=$(df --output=avail -BG . | tail -1 | tr -dc '0-9')
 done
 
 # --- 3. dead-man's switch ---

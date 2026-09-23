@@ -17,7 +17,7 @@ przez WireGuard na drugi fizyczny host — **pomagier** (biuro), `BACKUP_OFFSITE
 w `/etc/kag/alerts.env`. Pim ma klucz `/etc/kag/ssh/id_offsite` (poza `/root`, bo unit ma
 `ProtectHome=true`) ograniczony po stronie odbiorcy do `rrsync -wo -no-del -no-overwrite
 /backups/pim/nightly` — może tylko dopisać nowe pliki (test: odczyt, shell i `--delete` odrzucone).
-Retencję (7 nocy + 2 miesięczne), zamrażanie `chattr +i` i kontrolę sha vs sidecar robi root
+Retencję (5 nocy + 2 miesięczne, bezpiecznik miejsca), zamrażanie `chattr +i` i kontrolę sha vs sidecar robi root
 pomagiera (`deploy/offsite/kag-offsite-prune.sh`, timer co godzinę), który pinguje trzeci
 push-monitor Kumy „Kopia off-site (pomagier)". Ograniczenie: oba hosty łączy ten sam operator
 i ten sam tunel — kopia chroni przed utratą VPS/dysku/ransomware na pim, nie przed utratą dostępu

@@ -47,6 +47,10 @@ node tools/mssql-introspect/run-select.mjs "SELECT …"        # JEDNO zapytanie
 node tools/mssql-introspect/{dump-dictionaries,dump-aggregates,dump-suppliers}.mjs   # IloveKB: słowniki z allow-listy (--only), agregaty z progiem k, dostawcy-osoby prawne
 node tools/kb-import/{prepare-md,prepare-instance}.mjs   # Markdown→fragmenty KB (tabele→rekordy; AnalizyERP) / dokumenty instancji z agregatów i dostawców (IloveKB)
 deploy/scripts/refresh_ilovekb.sh   # miesięczne odświeżenie IloveKB (timer kag-ilovekb-refresh, 5. dzień 02:30): tylko agregaty+słowniki+dostawcy
+node tools/kb-import/set-limits.mjs 1500 1500   # limity szkiców na czas importu (PRZYWRÓĆ: 100 25)
+node tools/kb-import/quality-gate.mjs <NS>        # sama bramka jakości bez builda (po purge nagrobków)
+node tools/eval/gaps.mjs list|probes <plik>|resolve <id>|ignore <id>   # luki wiedzy z CLI (pętla uczenia)
+bash .claude/skills/kag-daily-ops/scripts/status.sh   # stan produkcji jednym poleceniem (tylko odczyt)
 ```
 
 **UWAGA:** workspace'y (`apps/*`, `packages/shared`) mają wyłącznie skrypty
