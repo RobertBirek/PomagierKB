@@ -14,7 +14,7 @@
 # AKTUALIZACJA: podnieś digest w OBU plikach services/*/Dockerfile jednocześnie,
 # przebuduj obrazy i uruchom deploy/scripts/smoke.sh. Renovate podnosi to automatycznie
 # (customManager "docker: obraz bazowy Node w services/*/Dockerfile" w renovate.json).
-ARG NODE_IMAGE=node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32
+ARG NODE_IMAGE=node:22-alpine@sha256:b6f26b36c8ff49624cfdac716b8ea1138d606df02586a77d364bb5536a634f85
 # ^ node 22.23.2 / Alpine 3.24.1, pin 2026-09-06
 
 # --- manifests: same manifesty workspace'ów (maksymalne cache'owanie npm ci) ---
