@@ -22,8 +22,13 @@ pomagiera (`deploy/offsite/kag-offsite-prune.sh`, timer co godzinę), który pin
 push-monitor Kumy „Kopia off-site (pomagier)". Ograniczenie: oba hosty łączy ten sam operator
 i ten sam tunel — kopia chroni przed utratą VPS/dysku/ransomware na pim, nie przed utratą dostępu
 operatora. S3 zostaje opcją dodatkową tym samym mechanizmem (`rclone://`).
-**Zostaje operatorowi:** klucz prywatny `age` nadal leży w `/root/kag-backup-age.key` na pim —
-przenieść do menedżera haseł i `shred -u`; bez tego kopia jest zaszyfrowana, ale klucz leży obok oryginału.
+**Klucz prywatny `age` — zrotowany i usunięty z hosta 2026-09-23** (nowy odbiorca `age1pv6asq…`, klucz
+prywatny u operatora w menedżerze haseł; poprzedni klucz i zaszyfrowany nim blob skasowane). Znane ryzyko
+szczątkowe, zaakceptowane przez operatora: oba klucze zostały wyświetlone w sesji Claude Code, więc są
+w transkrypcie sesji (lokalnie `~/.claude/projects/` na pim i u dostawcy) — kto ma transkrypt i kopię
+z pomagiera, odszyfruje ją. Pełne domknięcie: nowy klucz wygenerowany w osobnej sesji SSH poza Claude
+(`age-keygen`, `BACKUP_AGE_RECIPIENT` w `alerts.env`, `shred`), potem ponowny backup i skasowanie
+starych blobów na pomagierze.
 
 Historia (2026-09-07):
 Wszystkie snapshoty i archiwum obrazów leżą **na tym samym dysku co dane produkcyjne**. Awaria
