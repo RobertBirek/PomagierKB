@@ -80,6 +80,15 @@ do tego momentu można przenieść `backups/` na inny wolumen.
 
 Objawy: build w panelu „kręci się" dziesiątki minut, kolejny build zablokowany.
 
+**Wariant „burza GC Neo4j" (2026-09-23, pełna przebudowa SubiektKB przy trzech bazach w grafie):**
+faza `topic.csv` trwa >30 min zamiast ~2, `docker stats` pokazuje Neo4j na ~400 % CPU przy
+pamięci pod limitem kontenera, a `docker exec release-openspg-neo4j tail -n 200 /logs/debug.log
+| grep stop-the-world` sypie pauzami 1–2 s co kilka sekund; `cypher-shell` nie odpowiada.
+Job buildera NIE jest zawieszony — pisze węzły po ~200 ms zamiast ~2 ms. Naprawa: podnieść heap
+(`NEO4J_HEAP=3G`, `NEO4J_MEM_LIMIT=5g` w `deploy/kag/.env`) i `docker compose -f deploy/kag/compose.yaml
+up -d neo4j` — job buildera przeżywa restart grafu (OpenSPG ponawia zapisy), akcja panelu poluje
+dalej; po restarcie 0 pauz, ~1 100 węzłów/2 min. Nie zabijaj akcji ani nie kasuj joba.
+
 Diagnoza — najpierw panel (Bazy wiedzy → drawer historii buildów), potem bezpośrednio
 API buildera. **`start` MUSI być 1** (start=0 to bug SQL w OpenSPG):
 
