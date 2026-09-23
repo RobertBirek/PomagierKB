@@ -65,7 +65,7 @@ const MONTHS_PL = ['styczeń', 'luty', 'marzec', 'kwiecień', 'maj', 'czerwiec',
 const MONTH_KEY_RE = /(^|_)(month|miesiac)$/i;
 const YEAR_KEY_RE = /(^|_)(year|rok)$/i;
 const MAX_QUERY_CHARS = 2000;
-const ROWS_PER_BLOCK = 8; // paczka wierszy z powtórzonym tytułem (patrz renderAggregate)
+const ROWS_PER_BLOCK = 10; // paczka wierszy z powtórzonym tytułem (patrz renderAggregate); 10 = typowe „top 10" w jednym chunku
 
 /** Polska liczba mnoga: plural(3, 'agregat', 'agregaty', 'agregatów') → „3 agregaty". */
 export function plural(n, one, few, many) {

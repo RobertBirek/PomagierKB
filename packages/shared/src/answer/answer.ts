@@ -201,6 +201,26 @@ function chunkContent(db: Db, id: string, fallback: string): string {
 }
 
 /** Budżet ~6000 tokenów, per chunk ≤1200 tokenów, numeracja [1..n] stabilna. */
+/** Następny chunk dokumentu (id `…_NNN` → `…_NNN+1`), jeśli należy do tej samej sekcji. */
+function continuationChunk(db: Db, id: string): { id: string; content: string } | null {
+  const m = /^(.*_)(\d{3,})$/.exec(id);
+  const prefix = m?.[1];
+  const num = m?.[2];
+  if (prefix === undefined || num === undefined) return null;
+  const nextId = `${prefix}${String(Number(num) + 1).padStart(num.length, '0')}`;
+  try {
+    const cur = db.prepare('SELECT section_heading FROM chunks_mirror WHERE id = ?').get(id) as { section_heading: string | null } | undefined;
+    const nxt = db.prepare('SELECT section_heading, content FROM chunks_mirror WHERE id = ?').get(nextId) as
+      | { section_heading: string | null; content: string }
+      | undefined;
+    if (cur === undefined || nxt === undefined || nxt.content.trim() === '') return null;
+    if ((cur.section_heading ?? '') !== (nxt.section_heading ?? '')) return null;
+    return { id: nextId, content: nxt.content };
+  } catch {
+    return null;
+  }
+}
+
 function buildContext(
   db: Db,
   hits: RetrievalHit[],
@@ -209,10 +229,24 @@ function buildContext(
   const sources: ContextSource[] = [];
   let used = 0;
   let snippetFallbacks = 0;
+  const selected = new Set(hits.slice(0, maxSources).map((h) => h.id));
   for (const hit of hits.slice(0, maxSources)) {
     const full = chunkContent(db, hit.id, hit.snippet);
     if (full === stripHighlights(hit.snippet) && hit.snippet.endsWith('…')) snippetFallbacks++;
     let content = full;
+    // Kontynuacja sekcji: nagłówek sekcji (opis, definicja) embeduje się blisko pytania, a chunk
+    // z samymi wierszami listy/tabeli — nie (2026-09-23: „top 10 produktów" trafiało w nagłówek
+    // agregatu, a lista 20 towarów leżała w następnym chunku i model mówił „nie mam listy").
+    // Dokładamy NASTĘPNY chunk tego samego dokumentu i tej samej sekcji do tego samego źródła [n].
+    // Do dwóch kolejnych chunków (nagłówek + ~20 wierszy listy mieści się w limicie 4 800 zn.).
+    let cursor = hit.id;
+    for (let step = 0; step < 2; step++) {
+      const next = continuationChunk(db, cursor);
+      if (next === null || selected.has(next.id) || content.length + next.content.length > CHUNK_CHAR_LIMIT) break;
+      content = `${content}\n${next.content}`;
+      selected.add(next.id);
+      cursor = next.id;
+    }
     if (content.length > CHUNK_CHAR_LIMIT) content = `${content.slice(0, CHUNK_CHAR_LIMIT)}…`;
     if (sources.length > 0 && used + content.length > CONTEXT_CHAR_BUDGET) break;
     sources.push({ n: sources.length + 1, hit, content });
