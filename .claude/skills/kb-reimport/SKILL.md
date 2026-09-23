@@ -70,6 +70,10 @@ wchodzą do KPI/konwencji, weryfikuj wyłącznie `node tools/mssql-introspect/ru
 
 ## Czego nie robić
 
+- Nie uruchamiaj łańcucha równolegle z deployem panelu (`docker compose … up -d panel`): każdy krok
+  loguje się do panelu (`PanelClient`), restart kontenera w trakcie = `TimeoutError` w połowie
+  łańcucha, limity zostają na 1500/1500, baza `dirty=1` bez builda (2026-09-23).
+
 - Nie edytuj `chunks_mirror`/rejestru w SQLite ręcznie — build i tak nadpisze, a bramka wykryje.
 - Nie promuj szkiców innych ludzi ani nie omijaj Inboxu dla treści merytorycznych z zewnątrz;
   ścieżka hostowa jest dla dokumentów, które sam wygenerowałeś/poprawiłeś na zlecenie właściciela.
