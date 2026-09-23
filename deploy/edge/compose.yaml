@@ -207,7 +207,7 @@ services:
   # i docs/authentik-setup.md §Kuma); wymaga rekordu DNS A dla status.*
   uptime-kuma:
     <<: [*security_defaults, *logging]
-    image: ${KUMA_IMAGE:-louislam/uptime-kuma@sha256:3e24e96c89efff0e3a4b0698cbdd36c15ad3022371db57166e5588853002ee5c} # 2.5.3, pin 2026-09-07
+    image: ${KUMA_IMAGE:-louislam/uptime-kuma@sha256:9c56a772a7df53f444a404c579e87a27bd0c201375d00d6745a75bf8138f4342} # 2.5.5-slim, pin 2026-09-23 (wariant bez Chromium: -106 CRITICAL; monitory typu „browser" niedostępne — nie używamy)
     container_name: edge-uptime-kuma
     profiles: ["monitoring"]
     # ŻADNYCH cap_add. Kuma 1.x zrzucała uprawnienia przez setpriv i wymagała
