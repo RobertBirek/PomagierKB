@@ -15,3 +15,5 @@
 {"question": "jak wystawić fakturę zaliczkową w Subiekcie nexo", "negative": true, "namespaces": ["IloveKB"], "kind": "negative-near-miss"}
 {"question": "przepis na sernik wiedeński", "negative": true, "namespaces": ["IloveKB"], "kind": "negative"}
 {"question": "realizacja zamówień od klientów ZK w naszej bazie — szablon SQL, czas realizacji, dok_DoDokId", "expectedSourceRefs": ["#dokumentacja/instancja/kpi-sprzedaz"], "mustContain": ["dok_DoDokId"], "namespaces": ["IloveKB"], "expectedNamespace": "IloveKB", "kind": "keyword"}
+{"question": "jakie są top 10 produktów w sprzedaży", "expectedSourceRefs": ["#dokumentacja/instancja/agregaty-instancji", "#dokumentacja/instancja/kpi-sprzedaz"], "mustContain": ["tw_Symbol"], "namespaces": ["IloveKB"], "expectedNamespace": "IloveKB", "kind": "paraphrase"}
+{"question": "ile dzisiaj zarobiliśmy — przychód dzienny sprzedaż netto na dzień", "expectedSourceRefs": ["#dokumentacja/instancja/kpi-sprzedaz", "#dokumentacja/instancja/agregaty-instancji"], "mustContain": ["dok_WartNetto"], "namespaces": ["IloveKB"], "expectedNamespace": "IloveKB", "kind": "paraphrase"}

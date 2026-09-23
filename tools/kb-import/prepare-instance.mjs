@@ -65,6 +65,7 @@ const MONTHS_PL = ['styczeń', 'luty', 'marzec', 'kwiecień', 'maj', 'czerwiec',
 const MONTH_KEY_RE = /(^|_)(month|miesiac)$/i;
 const YEAR_KEY_RE = /(^|_)(year|rok)$/i;
 const MAX_QUERY_CHARS = 2000;
+const ROWS_PER_BLOCK = 8; // paczka wierszy z powtórzonym tytułem (patrz renderAggregate)
 
 /** Polska liczba mnoga: plural(3, 'agregat', 'agregaty', 'agregatów') → „3 agregaty". */
 export function plural(n, one, few, many) {
@@ -183,9 +184,21 @@ export function renderAggregate(agg, k) {
   L.push(`Agregat „${title}" (instancja produkcyjna ${INSTANCE})${meta.length ? ` — ${meta.join('; ')}` : ''}.${anySuppressed ? ` Wartości „<${k}" oznaczają komórkę stłumioną (mniej niż ${k} osób).` : ''}`, '');
   if (rows.length === 0) L.push('Brak wierszy (zapytanie nie zwróciło danych albo wszystkie zostały stłumione w zrzucie).', '');
   else {
-    L.push(`Wartości (${rows.length}):`);
-    for (const r of rows) L.push(renderRow(agg, r, keys, k));
-    L.push('');
+    // Długie listy w paczkach po ROWS_PER_BLOCK z powtórzonym tytułem: chunker (1800 zn.) tnie
+    // duży blok listy osobno od nagłówka, a chunk „- miejsce: 1, …" bez tytułu nie trafia ani
+    // leksykalnie, ani wektorowo w pytanie „jakie top 10 produktów" (2026-09-23).
+    if (rows.length <= ROWS_PER_BLOCK) {
+      L.push(`Wartości (${rows.length}):`);
+      for (const r of rows) L.push(renderRow(agg, r, keys, k));
+      L.push('');
+    } else {
+      for (let i = 0; i < rows.length; i += ROWS_PER_BLOCK) {
+        const part = rows.slice(i, i + ROWS_PER_BLOCK);
+        L.push(`${title} — pozycje ${i + 1}–${i + part.length} z ${rows.length}:`);
+        for (const r of part) L.push(renderRow(agg, r, keys, k));
+        L.push('');
+      }
+    }
   }
   L.push(interpretation(agg, keys, k), '');
   if (agg.query) {

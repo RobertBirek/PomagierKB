@@ -64,7 +64,10 @@ try {
 try {
   for (const a of AGGREGATES) {
     const started = Date.now();
+    // Pola opisowe agregatu (opis z synonimami, jawne wymiary/miary/etykiety, interpretacja) jadą do
+    // prepare-instance — bez nich renderer wypisuje angielskie klucze SQL zamiast polskich etykiet.
     const entry = { id: a.id, title: a.title, kind: a.kind, shape: a.shape, rows: [] };
+    for (const key of ['description', 'dimensions', 'metrics', 'labels', 'kAnonymity', 'interpretation']) if (a[key] !== undefined) entry[key] = a[key];
     try {
       const res = await pool.request().query(a.sql);
       const raw = res.recordset ?? [];

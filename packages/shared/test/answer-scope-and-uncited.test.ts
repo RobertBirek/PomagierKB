@@ -61,6 +61,9 @@ describe('parseScopeLine (czysta logika)', () => {
       text: 'Limit wynosi 10 GB [1].\nCONFIDENCE: 0.9',
       outOfScope: false,
     });
+    // pogrubiony/kursywą znacznik w osobnej linii nadal się liczy (model bywa markdownowy)
+    expect(parseScopeLine('Nie wiem [1].\n**SCOPE: poza_zrodlami**\nCONFIDENCE: 0.7')).toEqual({ text: 'Nie wiem [1].\nCONFIDENCE: 0.7', outOfScope: true });
+    expect(parseScopeLine('Nie wiem [1].\n_scope: out_of_sources_\nCONFIDENCE: 0.7').outOfScope).toBe(true);
     // znacznik w środku zdania (cytat ze źródła) nie liczy się — tylko osobna linia
     expect(parseScopeLine('W dokumentacji jest napis SCOPE: poza_zrodlami w tabeli [1].\nCONFIDENCE: 0.9').outOfScope).toBe(false);
   });

@@ -283,7 +283,9 @@ function systemPrompt(language: 'pl' | 'en'): string {
  * ze źródła) nie liczy się. Linia jest usuwana z treści.
  */
 export function parseScopeLine(text: string): { text: string; outOfScope: boolean } {
-  const isMarker = (line: string): boolean => /^\s*SCOPE:\s*(poza_zrodlami|out_of_sources)\s*$/i.test(line);
+  // Model bywa markdownowy: `**SCOPE: poza_zrodlami**` albo `_SCOPE: ..._` (2026-09-23, panel) — znacznik
+  // z ozdobnikami emfazy wokół całej linii nadal jest znacznikiem; w środku zdania nadal nie.
+  const isMarker = (line: string): boolean => /^\s*[*_`]*\s*SCOPE:\s*(poza_zrodlami|out_of_sources)\s*[*_`]*\s*$/i.test(line);
   const lines = text.split('\n');
   const outOfScope = lines.some(isMarker);
   if (!outOfScope) return { text, outOfScope: false };
