@@ -28,3 +28,6 @@ tools/eval/judge-report-*.json
 .DS_Store
 *.log
 .remember/
+
+# workspace testów skilli (skill-creator): wyjścia agentów, oceny, viewer
+.claude/skills/*-workspace/
