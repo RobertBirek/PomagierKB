@@ -75,7 +75,10 @@ const fm = ''; // patrz prepare.mjs — proweniencja w tekście, front-matter po
 const diffBody = renderDiff(diff, { productLabel, database, sourceName: sourceLabel });
 // Raport bywa długi (setki różnic typów) — dzielimy po sekcjach H2 jak inne dokumenty.
 const diffSections = diffBody.split(/\n(?=## )/).map((t, i) => ({ name: i === 0 ? 'wstęp' : t.split('\n')[0].replace(/^## /, ''), text: t + '\n' }));
-const diffTitle = `${productLabel} — różnice: dokumentacja bazy ${diff.docsVersion} a żywa baza ${database}`;
+// Tytuł z wersją główną i wprost „tabele nieopisane" — pytanie „które tabele w żywej bazie nie są opisane
+// w dokumentacji 1.89" (luka 2026-09) nie trafiało w tytuł z samym pełnym numerem buildu.
+const majorVersion = String(diff.docsVersion).split('.').slice(0, 2).join('.');
+const diffTitle = `${productLabel} ${majorVersion} — różnice między dokumentacją bazy (${diff.docsVersion}) a żywą bazą ${database}: tabele i kolumny nieopisane w dokumentacji albo nieobecne w bazie`;
 for (const p of packSections(diffSections.slice(1), { title: diffTitle, intro: diffSections[0].text.split('\n').slice(2).join('\n').trim(), maxChars: 80_000 })) {
   const file = p.parts > 1 ? `99-roznice-dokumentacja-vs-baza-${p.part}.md` : '99-roznice-dokumentacja-vs-baza.md';
   const text = fm + p.text;
