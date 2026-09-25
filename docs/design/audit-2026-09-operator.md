@@ -30,6 +30,15 @@ z pomagiera, odszyfruje ją. Pełne domknięcie: nowy klucz wygenerowany w osobn
 (`age-keygen`, `BACKUP_AGE_RECIPIENT` w `alerts.env`, `shred`), potem ponowny backup i skasowanie
 starych blobów na pomagierze.
 
+**Drill odtwarzania z off-site — wykonany 2026-09-25** (`deploy/scripts/offsite_restore_drill.sh`,
+komplet `2026-09-25_032203`, 5,85 GB pobrane z pomagiera w 17 min): sha256 zgodna z sidecarem,
+odszyfrowanie kluczem age OK, `SHA256SUMS` OK, odtworzenia w kontenerach efemerycznych OK (MySQL 34
+tabel, SQLite integrity+audit valid, Neo4j 7 baz/37 665 węzłów SubiektKB, MinIO 5026 obiektów,
+Postgres Authentika 4 użytkowników, Kuma 11 monitorów). Jedyny FAIL: `docs_artifacts` — w blobie
+nie ma `_manifest.json` (backup.sh pakuje snapshot przed zapisem manifestu). Poprawione tego samego
+dnia: drill i runbook DR kopiują sidecar do snapshotu; formalny PASS wymaga powtórki drillu
+(klucz age podaje operator, plik jest niszczony po biegu).
+
 Historia (2026-09-07):
 Wszystkie snapshoty i archiwum obrazów leżą **na tym samym dysku co dane produkcyjne**. Awaria
 dysku, pomyłkowe `rm -rf` albo ransomware kasują jednocześnie system i wszystkie kopie. Backup
