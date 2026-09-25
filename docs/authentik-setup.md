@@ -136,8 +136,13 @@ Wymuszenie (rekomendowane):
    **stage bindingu** dodaj Expression Policy (Create & bind), treść:
 
    ```python
-   return ak_is_group_member(request.user, name="kag-admin")
+   # kag-e2e = konto SKRYPTÓW (tools/ux-audit, tools/kb-import, timery odświeżania) — loguje się
+   # hasłem bez interakcji; wymuszone MFA zatrzymałoby nocne odświeżenia i import (2026-09-25)
+   return ak_is_group_member(request.user, name="kag-admin") and request.user.username != "kag-e2e"
    ```
+   Wyjątek dla `kag-e2e` jest świadomy: konto ma tylko hasło (w `/etc/kag/e2e.env`, 0600),
+   nie jest superuserem i nie ma sesji w przeglądarkach ludzi. Po włączeniu wymuszenia sprawdź:
+   `node tools/ux-audit/e2e.mjs` (10/10) i `node tools/kb-import/quality-gate.mjs StagingSmoke`.
 
    i ustaw na bindingu „Evaluate when stage is run" (re-evaluate policies).
 

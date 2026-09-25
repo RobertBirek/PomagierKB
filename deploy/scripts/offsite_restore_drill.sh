@@ -30,18 +30,20 @@ die() { log "FAIL: $*"; exit 1; }
 [[ -r "${KEY}" ]] || die "brak pliku klucza (--key); wklej klucz age do pliku 0600 i podaj ścieżkę"
 grep -q '^AGE-SECRET-KEY-1' "${KEY}" || die "plik klucza nie zawiera linii AGE-SECRET-KEY-1…"
 command -v age >/dev/null || die "brak age"
+WORK=""
+cleanup() {
+  shred -u "${KEY}" 2>/dev/null || true
+  if [[ ${KEEP} -eq 0 && -n "${WORK}" ]]; then rm -rf "${WORK}"; fi
+}
+trap cleanup EXIT   # od tej chwili każde wyjście (także die) niszczy plik klucza
 cd /kag || die "brak /kag"
 if [[ -z "${STAMP}" ]]; then
-  STAMP="$(ssh -o BatchMode=yes "${REMOTE}" "sudo -n ls -1 ${REMOTE_DIR}/*.tar.age 2>/dev/null | sed 's#.*/##; s#\\.tar\\.age##' | sort | tail -1")"
+  # glob musi rozwinąć ROOT (katalog 0700 kagbackup) — stąd sudo sh -c, nie sudo ls
+  STAMP="$(ssh -o BatchMode=yes "${REMOTE}" "sudo -n sh -c 'ls -1 ${REMOTE_DIR}/*.tar.age 2>/dev/null' | sed 's#.*/##; s#\\.tar\\.age##' | sort | tail -1")"
   [[ -n "${STAMP}" ]] || die "na ${REMOTE}:${REMOTE_DIR} nie ma żadnego kompletu"
 fi
 WORK="${DRILL_ROOT}/${STAMP}"
 mkdir -p "${WORK}"; chmod 700 "${DRILL_ROOT}" "${WORK}"
-cleanup() {
-  shred -u "${KEY}" 2>/dev/null || true
-  if [[ ${KEEP} -eq 0 ]]; then rm -rf "${WORK}"; fi
-}
-trap cleanup EXIT
 log "komplet ${STAMP}: pobieram z ${REMOTE} (jako robert, przez sudo cat — kagbackup jest write-only)"
 ssh -o BatchMode=yes "${REMOTE}" "sudo -n cat ${REMOTE_DIR}/${STAMP}._manifest.json" > "${WORK}/${STAMP}._manifest.json"
 ssh -o BatchMode=yes "${REMOTE}" "sudo -n cat ${REMOTE_DIR}/${STAMP}.tar.age" > "${WORK}/${STAMP}.tar.age"
