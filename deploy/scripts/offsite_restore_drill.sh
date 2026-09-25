@@ -2,7 +2,7 @@
 # offsite_restore_drill.sh — PRÓBA ODTWORZENIA z kopii off-site (pomagier), bez dotykania produkcji.
 # Kroki: pobranie kompletu <STAMP>.tar.age + sidecar jako `robert` (klucz write-only pim nie czyta),
 # sha256 vs `offsite.archiveSha256` z sidecara, odszyfrowanie kluczem age Z PLIKU (nigdy z argv),
-# rozpakowanie do katalogu drillu i pełna weryfikacja `verify_backup.sh --snapshot` (realne
+# rozpakowanie do katalogu drillu (+ sidecar jako _manifest.json) i pełna weryfikacja `verify_backup.sh --snapshot` (realne
 # odtworzenia MySQL/Neo4j/MinIO/Postgres/Kumy w efemerycznych kontenerach --network none).
 # Na końcu katalog drillu i plik klucza są niszczone (shred).
 # Użycie (jako root, na pim):
@@ -55,6 +55,9 @@ log "sha256 zgodna ($(stat -c %s "${WORK}/${STAMP}.tar.age") B); odszyfrowuję i
 age -d -i "${KEY}" "${WORK}/${STAMP}.tar.age" | tar -x -C "${WORK}" || die "age/tar nie powiodło się (zły klucz?)"
 SNAP="${WORK}/${STAMP}"
 [[ -f "${SNAP}/SHA256SUMS" ]] || die "po rozpakowaniu brak ${SNAP}/SHA256SUMS"
+# backup.sh pakuje snapshot PRZED zapisem _manifest.json (manifest zawiera sha archiwum), więc w
+# blobie go nie ma — manifest to sidecar; wkładamy go do snapshotu, bo restore.sh/verify go oczekują
+cp "${WORK}/${STAMP}._manifest.json" "${SNAP}/_manifest.json"; chmod 600 "${SNAP}/_manifest.json"
 (cd "${SNAP}" && sha256sum -c --quiet SHA256SUMS) || die "SHA256SUMS w snapshocie nie zgadzają się"
 log "snapshot rozpakowany i spójny — pełna weryfikacja odtwarzania (verify_backup.sh --snapshot)"
 if deploy/scripts/verify_backup.sh --snapshot "${SNAP}"; then

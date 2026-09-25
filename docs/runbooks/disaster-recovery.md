@@ -83,6 +83,9 @@ niszczy klucz i katalog drillu, wynik w `/var/log/kag-offsite-drill.log`.
 mkdir -p /srv/kag-data/backups/nightly && cd /srv/kag-data/backups/nightly
 age -d -i /media/klucz/age-backup.key <STAMP>.tar.age | tar -x     # wariant age
 gpg --decrypt <STAMP>.tar.gpg | tar -x                             # wariant gpg
+# w blobie NIE MA _manifest.json (backup.sh pakuje snapshot przed zapisem manifestu) —
+# bez tego kroku restore.sh odmówi („brak _manifest.json"), a verify zgłosi docs_artifacts FAIL
+cp <STAMP>._manifest.json /srv/kag-data/backups/nightly/<STAMP>/_manifest.json
 chmod -R go-rwx /srv/kag-data/backups/nightly/<STAMP>
 ```
 
