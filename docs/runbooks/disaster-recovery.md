@@ -72,6 +72,13 @@ zamrożone `chattr +i` (przed kopiowaniem nie trzeba nic odmrażać; `sudo` na p
 Sidecar zawiera `offsite.archiveSha256` — sprawdź `sha256sum <STAMP>.tar.age` PRZED odszyfrowaniem.
 Klucz prywatny age ma operator (nie ma go ani na pim, ani na pomagierze).
 
+**Próba odtworzenia z off-site (raz na kwartał albo po zmianie klucza):** na pim, jako root,
+w osobnej sesji SSH: `umask 077; cat > /root/age-drill.key` (wklej 3 linie klucza, Ctrl-D), potem
+`deploy/scripts/offsite_restore_drill.sh --key /root/age-drill.key` — pobiera najnowszy komplet
+z pomagiera, sprawdza sha vs sidecar, odszyfrowuje, rozpakowuje i uruchamia pełny
+`verify_backup.sh --snapshot` (realne odtworzenia w kontenerach `--network none`); na końcu
+niszczy klucz i katalog drillu, wynik w `/var/log/kag-offsite-drill.log`.
+
 ```bash
 mkdir -p /srv/kag-data/backups/nightly && cd /srv/kag-data/backups/nightly
 age -d -i /media/klucz/age-backup.key <STAMP>.tar.age | tar -x     # wariant age

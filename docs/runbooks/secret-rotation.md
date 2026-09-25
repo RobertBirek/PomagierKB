@@ -88,12 +88,11 @@ klucz zostaje żywy w bazie OpenSPG i w każdym backupie.
 Kolejność przy rotacji:
 1. wystaw nowy klucz u dostawcy (stary jeszcze aktywny);
 2. podmień kopię 1 (panel → /settings → Test połączenia);
-3. podmień kopię 2 — rejestracja modelu tym samym `POST /v1/model`, którego używa
-   provisioning (`packages/shared/src/openspg/models.ts`, `ensureEmbeddingModel`;
-   payload i format `modelId` opisane w `.claude/skills/openspg-api/SKILL.md` §Projekty).
-   **Uwaga:** `vector_model_id` bazy jest niezmienialny — nowy wpis modelu musi mieć
-   ten sam `model` (`text-embedding-3-small`) i skutkować tym samym `modelId`
-   (`<instanceId>@<model>`), inaczej preflight zablokuje build;
+3. podmień kopię 2: `sudo deploy/scripts/rotate_openspg_embedding_key.sh` (podgląd — porównuje
+   prefiksy klucza z panelu i z rejestru), potem `--apply` — przepisuje `api_key` w istniejącym
+   wierszu `kg_user_model` (`JSON_SET`, ścieżka `$[0].api_key`), więc `modelId` i `vector_model_id`
+   baz zostają bez zmian (2026-09-25; wcześniejszy pomysł „ponowny POST /v1/model" ryzykował drugi
+   wpis modelu i blokadę preflightu);
 4. uruchom build testowej bazy (`StagingSmoke`) i potwierdź `FINISH` — dopiero wtedy
 5. unieważnij stary klucz u dostawcy;
 6. nowy backup (snapshoty sprzed rotacji nadal zawierają stary klucz — patrz §10).
