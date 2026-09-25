@@ -143,6 +143,23 @@ describe('retention', () => {
     expect(existsSync(blob)).toBe(true);
   });
 
+  it('osierocone build_jobs (INIT/RUNNING > 12 h) dostają TERMINATE; świeże zostają', () => {
+    const old = new Date(Date.now() - 2 * 86_400_000).toISOString().replace('T', ' ').slice(0, 19);
+    const fresh = new Date(Date.now() - 10 * 60_000).toISOString().replace('T', ' ').slice(0, 19);
+    const ins = db.prepare(
+      `INSERT INTO build_jobs (namespace, run_id, file_name, file_sha256, openspg_job_id, job_name, entity_type, status, gmt_create)
+       VALUES ('KbX', 1, 'chunk.csv', ?, ?, 'KbX Chunk', 'Chunk', ?, ?)`,
+    );
+    ins.run('a'.repeat(64), 901, 'INIT', old);
+    ins.run('b'.repeat(64), 902, 'RUNNING', fresh);
+    ins.run('c'.repeat(64), 903, 'FINISH', old);
+    const r = runRetention(db, dataDir);
+    expect(r.buildJobOrphans).toBe(1);
+    const rows = db.prepare('SELECT openspg_job_id AS j, status, finished_at FROM build_jobs WHERE openspg_job_id IN (901,902,903) ORDER BY j').all() as { j: number; status: string; finished_at: string | null }[];
+    expect(rows.map((x) => x.status)).toEqual(['TERMINATE', 'RUNNING', 'FINISH']);
+    expect(rows[0]?.finished_at).not.toBeNull();
+  });
+
   it('manifesty eksportów: kasuje stare, ZOSTAWIA najnowszy bieg bazy', () => {
     db.prepare(
       "INSERT INTO kb_registry (namespace, name, job_prefix, status, created_at, updated_at) VALUES ('RetKb','RetKb','ret','active',?,?)",

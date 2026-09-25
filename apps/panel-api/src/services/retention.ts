@@ -162,6 +162,8 @@ export interface RetentionRunResult {
   exportRunRows: number;
   exportFileRows: number;
   buildJobRows: number;
+  /** Osierocone build_jobs (INIT/WAITING/RUNNING starsze niż BUILD_JOB_ORPHAN_HOURS) oznaczone TERMINATE. */
+  buildJobOrphans: number;
   uploadRecordRows: number;
   answersAnonymized: number;
   answersDeleted: number;
@@ -169,6 +171,9 @@ export interface RetentionRunResult {
   feedbackRows: number;
   llmUsageRows: number;
 }
+
+/** Po tylu godzinach wiersz build_jobs w stanie nieterminalnym uznajemy za osierocony (unit builda ma limit 2 h). */
+const BUILD_JOB_ORPHAN_HOURS = 12;
 
 function emptyResult(): RetentionRunResult {
   return {
@@ -182,6 +187,7 @@ function emptyResult(): RetentionRunResult {
     exportRunRows: 0,
     exportFileRows: 0,
     buildJobRows: 0,
+    buildJobOrphans: 0,
     uploadRecordRows: 0,
     answersAnonymized: 0,
     answersDeleted: 0,
@@ -289,6 +295,18 @@ function purgeRows(db: Db, policy: RetentionPolicy, now: number, result: Retenti
       .run(exportCut).changes;
     result.exportRunRows += db.prepare(`DELETE FROM export_runs WHERE id IN (${staleRuns})`).run(exportCut).changes;
 
+    // Osierocone joby: akcja builda zginęła (restart panelu w trakcie builda, 2026-09-23) i wiersz
+    // został w INIT/RUNNING na zawsze — backup.sh liczył go jako „trwający build" przy każdym
+    // snapshocie, a retencja go omijała. Żaden build nie trwa dłużej niż limit unitu (2 h), więc
+    // po BUILD_JOB_ORPHAN_HOURS wiersz jest martwy: TERMINATE (stan OpenSPG i tak jest w mysql joba).
+    const orphanCut = new Date(now - BUILD_JOB_ORPHAN_HOURS * 3_600_000).toISOString();
+    const nowIso = new Date(now).toISOString();
+    result.buildJobOrphans += db
+      .prepare(
+        `UPDATE build_jobs SET status = 'TERMINATE', gmt_modified = ?, finished_at = ?
+          WHERE status IN ('INIT','WAITING','RUNNING') AND COALESCE(gmt_create, '') < ?`,
+      )
+      .run(nowIso, nowIso, orphanCut).changes;
     const buildCut = cutoffIso(now, policy.buildJobRowsDays);
     result.buildJobRows += db
       .prepare(
