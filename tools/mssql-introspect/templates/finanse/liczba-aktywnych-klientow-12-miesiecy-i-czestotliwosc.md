@@ -4,7 +4,8 @@ title: Liczba aktywnych klientów (12 miesięcy) i częstotliwość zakupów
 area: finanse
 order: 100
 questions:
-  - "Jak policzyć: Liczba aktywnych klientów (12 miesięcy) i częstotliwość zakupów?"
+  - "Ilu mieliśmy aktywnych klientów w ostatnich 12 miesiącach?"
+  - "Ilu klientów kupiło u nas więcej niż raz w 2025 roku i jaką część sprzedaży dają?"
 params:
   od:
     type: date
@@ -14,7 +15,7 @@ params:
     type: date
     description: koniec zakresu (wyłącznie)
     example: 2026-09-14
-verified: 2026-09-14
+verified: 2026-09-28
 ---
 Definicja: liczba różnych kontrahentów (`dok_PlatnikId`), którzy mają co najmniej jeden wykonany dokument sprzedaży FS/PA w ostatnich 12 miesiącach, z rozkładem liczby dokumentów na klienta.
 

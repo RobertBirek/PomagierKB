@@ -4,7 +4,8 @@ title: Średni czas zapłaty należności (ACP) i opóźnienie względem terminu
 area: finanse
 order: 140
 questions:
-  - "Jak policzyć: Średni czas zapłaty należności (ACP) i opóźnienie względem terminu?"
+  - "Po ilu dniach średnio klienci płacą nam faktury i o ile spóźniają się względem terminu?"
+  - "Ile dni czekamy na wypłaty od operatorów płatności (Allegro Finance, PayU, Przelewy24)?"
 params:
   od:
     type: date
@@ -14,7 +15,7 @@ params:
     type: date
     description: koniec zakresu (wyłącznie)
     example: 2026-09-14
-verified: 2026-09-14
+verified: 2026-09-28
 ---
 Definicja: średnia liczba dni od daty rozrachunku (= data dokumentu) do daty spłaty dla należności rozliczonych w okresie, z pominięciem rozliczeń automatycznych przy wystawianiu (gotówka, cesja karty); dodatkowo średnie opóźnienie względem terminu i odsetek rozliczeń po terminie; osobno kontrahenci i operatorzy.
 

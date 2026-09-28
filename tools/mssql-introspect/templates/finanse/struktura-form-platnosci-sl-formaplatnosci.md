@@ -4,7 +4,9 @@ title: Struktura form płatności (sl_FormaPlatnosci)
 area: finanse
 order: 90
 questions:
-  - "Jak policzyć: Struktura form płatności (sl_FormaPlatnosci)?"
+  - "Jak klienci nam płacą — jaki procent sprzedaży to przedpłaty przelewem, Allegro, Przelewy24, pobrania, a jaki gotówka?"
+  - "Jaką część sprzedaży w 2025 roku stanowiły pobrania kurierskie?"
+  - "Ile sprzedaży mamy z odroczonym terminem płatności?"
 params:
   od:
     type: date
@@ -14,7 +16,7 @@ params:
     type: date
     description: koniec zakresu (wyłącznie)
     example: 2026-09-14
-verified: 2026-09-14
+verified: 2026-09-28
 ---
 Definicja: podział dokumentów sprzedaży (FS, PA) w okresie według faktycznej formy zapłaty — gotówka, karta/operator, kredyt/pobranie, odroczona, przelew (przedpłata) — z nazwą formy ze słownika.
 

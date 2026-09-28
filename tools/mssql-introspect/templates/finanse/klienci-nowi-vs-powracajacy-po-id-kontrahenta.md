@@ -4,7 +4,8 @@ title: Klienci nowi vs powracający (po id kontrahenta)
 area: finanse
 order: 110
 questions:
-  - "Jak policzyć: Klienci nowi vs powracający (po id kontrahenta)?"
+  - "Ilu nowych, a ilu powracających klientów mieliśmy w każdym miesiącu ostatniego roku?"
+  - "Jak zmieniał się odsetek powracających klientów miesiąc po miesiącu w 2026 roku?"
 params:
   od:
     type: date
@@ -14,7 +15,7 @@ params:
     type: date
     description: koniec zakresu (wyłącznie)
     example: 2026-09-01
-verified: 2026-09-14
+verified: 2026-09-28
 ---
 Definicja: w każdym miesiącu okresu — liczba klientów, których pierwszy w historii dokument sprzedaży przypada w tym miesiącu (nowi), oraz tych, którzy kupowali już wcześniej (powracający), wraz z wartością brutto obu grup.
 

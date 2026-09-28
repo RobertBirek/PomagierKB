@@ -4,7 +4,8 @@ title: Klienci hurtowi vs detaliczni wg flagi kh_OdbDet
 area: finanse
 order: 130
 questions:
-  - "Jak policzyć: Klienci hurtowi vs detaliczni wg flagi kh_OdbDet?"
+  - "Jaka część sprzedaży imiennej w ostatnim roku przypada na klientów firmowych (hurtowych), a jaka na detalicznych?"
+  - "Ilu klientów hurtowych kupiło u nas w ostatnich 12 miesiącach i ile średnio wydaje jeden klient?"
 params:
   od:
     type: date
@@ -14,7 +15,7 @@ params:
     type: date
     description: koniec zakresu (wyłącznie)
     example: 2026-09-14
-verified: 2026-09-14
+verified: 2026-09-28
 ---
 Definicja: podział aktywnych klientów z 12 miesięcy na segment „hurtowy" (`kh_OdbDet = 0`, definicja robocza — DO POTWIERDZENIA) i „detaliczny" (`kh_OdbDet = 1`) z liczbą klientów, dokumentów, wartością, średnią wartością dokumentu i liczbą dokumentów z terminem odroczonym.
 
