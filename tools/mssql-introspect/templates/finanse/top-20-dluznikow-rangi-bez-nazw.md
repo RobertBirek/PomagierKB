@@ -71,6 +71,7 @@ Pułapki:
 - Klienci powiązani (kilka `kh_Id`) rozmywają ranking.
 - Na pytanie „kto" odpowiedzią jest ranga, rodzaj dłużnika i `kontrahent_id` (do odszukania w programie) — nigdy nazwa.
 - Rozliczenia częściowe: `saldo_pln` to reszta, `liczba_rozrachunkow` — liczba otwartych pozycji, nie faktur wystawionych.
+- Konwencja terminu: rozrachunek z terminem równym `@dzien` NIE jest tu po terminie (`nzf_TerminPlatnosci < @dzien`), tak jak w udziale przeterminowanych i Top 20 dłużników; aging należności liczy go już do przedziału „B 0-30 dni po terminie" (DATEDIFF = 0) — suma B–E z agingu może być wyższa o rozrachunki z terminem dokładnie D.
 - Lista zawiera identyfikatory kontrahentów; nie łącz jej z nazwami w dokumentach publikowanych w bazie wiedzy.
 - Szablon liczy stan na KONIEC dnia `@dzien` z dat spłat (`nzs_Data` = data dokumentu spłaty), a nie saldo z chwili, w której patrzono do programu. Przykład 2026-09-14: program ok. 10:20 pokazywał 853,9 tys. PLN należności, szablon z `dzien=2026-09-14` daje 101,8 tys. (kontrahenci 59,6 tys., operatorzy 42,2 tys.) — różnica to głównie spłaty z datą 14.09 wprowadzone tego dnia po pomiarze: m.in. 2 379 rozliczeń wypłat operatorów płatności (ok. 724,3 tys. PLN) i 4 spłaty kontrahentów (ok. 70,8 tys.); reszta (ok. +43 tys., niemal cała po stronie operatorów) to przypuszczalnie należności powstałe 14.09 po pomiarze (niezmierzone). Rozkład w `_zasady.md`.
 
