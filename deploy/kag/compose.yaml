@@ -75,7 +75,8 @@ services:
       #
       # UWAGA: działa TYLKO przy inicjalizacji PUSTEGO wolumenu. Na działającej instalacji
       # konto `root@'%'` trzeba usunąć ręcznie — procedura (wraz z kolejnością, bo
-      # skip_name_resolve=ON) w docs/design/audit-2026-09-operator.md §B1.
+      # skip_name_resolve=ON) w docs/design/audit-2026-09-operator.md §B1. Produkcja:
+      # wykonane 2026-09-28 (konta root: root@127.0.0.1 + root@localhost).
       MYSQL_ROOT_HOST: 127.0.0.1
       # dla mysql-init/10-create-app-user.sh — serwer OpenSPG łączy się jako user
       # aplikacyjny, NIE root

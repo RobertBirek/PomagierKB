@@ -138,13 +138,22 @@ Wymuszenie (rekomendowane):
    ```python
    # kag-e2e = konto SKRYPTÓW (tools/ux-audit, tools/kb-import, timery odświeżania) — loguje się
    # hasłem bez interakcji; wymuszone MFA zatrzymałoby nocne odświeżenia i import (2026-09-25)
-   return ak_is_group_member(request.user, name="kag-admin") and request.user.username != "kag-e2e"
+   # W trakcie logowania request.user bywa jeszcze anonimowy — logujący się to pending_user.
+   # is_superuser: akadmin nie musi należeć do kag-admin, a to jego MFA jest celem (D3-03).
+   user = request.context.get("pending_user") or request.user
+   if user.username == "kag-e2e":
+       return False
+   return user.is_superuser or ak_is_group_member(user, name="kag-admin")
    ```
+   Przed wymuszeniem: zarejestruj TOTP (+ Static tokens do menedżera haseł) dla `akadmin`,
+   trzymaj otwartą sesję admina i testuj w oknie prywatnym. Awaryjnie (osobna sesja SSH —
+   link jest sekretem): `docker exec -it edge-authentik-server ak create_recovery_key 10 akadmin`.
    Wyjątek dla `kag-e2e` jest świadomy: konto ma tylko hasło (w `/etc/kag/e2e.env`, 0600),
    nie jest superuserem i nie ma sesji w przeglądarkach ludzi. Po włączeniu wymuszenia sprawdź:
    `node tools/ux-audit/e2e.mjs` (10/10) i `node tools/kb-import/quality-gate.mjs StagingSmoke`.
 
-   i ustaw na bindingu „Evaluate when stage is run" (re-evaluate policies).
+   i ustaw na bindingu „Evaluate when stage is run" = ON oraz „Evaluate when flow is planned"
+   = OFF (przy planowaniu nie wiadomo jeszcze, kto się loguje).
 
 Test: wyloguj się, zaloguj kontem z `kag-admin` — przy braku urządzenia MFA Authentik
 wymusi konfigurację TOTP.

@@ -230,7 +230,15 @@ STIRLING_IMAGE_CHECK_TAG=latest
 
 ## B. Zablokowane w tej sesji przez uprawnienia — gotowe do wykonania
 
-### B1. Usunięcie konta `root@'%'` w MariaDB (D6-07)
+### B1. Usunięcie konta `root@'%'` w MariaDB (D6-07) — ✅ WYKONANE 2026-09-28
+
+**Stan 2026-09-28:** procedura poniżej wykonana przez operatora jednym skryptem (następca →
+weryfikacja `CURRENT_USER() = root@127.0.0.1` → `DROP` → healthcheck). Konta root po zmianie:
+`root@127.0.0.1`, `root@localhost`. Healthcheck 5/5 exit 0, smoke 6/6 PASS (2 SKIP bez klucza),
+wyszukiwanie wektorowe przez OpenSPG działa (serwer łączy się kontem aplikacyjnym), zero
+`access denied` w logach. Otwarta część `D6-07`: TLS MariaDB wyłączony (ruch tylko w sieci
+`internal`, bez zmian).
+
 Konto ma `ALL PRIVILEGES ... WITH GRANT OPTION` i jest osiągalne z **każdego** kontenera
 w sieci `kag-datastores`. Nie da się go po prostu skasować: `skip_name_resolve=ON`, więc
 połączenie TCP z 127.0.0.1 jako root trafia właśnie na `root@'%'` — zależy od tego healthcheck
