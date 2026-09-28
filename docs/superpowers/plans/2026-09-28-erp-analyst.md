@@ -1048,8 +1048,8 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ### Task 3: Migracja 46 szablonów i konwencji do repo
 
 **Files:**
-- Create: `tools/mssql-introspect/migrate-kpi-templates.mjs` (jednorazowy — usuwany w Task 8)
-- Create: `tools/mssql-introspect/test/migrate-kpi-templates.test.mjs` (usuwany razem ze skryptem w Task 8)
+- Create: skrypt migracji migrate-kpi-templates w tools/mssql-introspect (jednorazowy — usunięty w Task 8, jest w historii git)
+- Create: test skryptu migracji w tools/mssql-introspect/test (usunięty razem ze skryptem w Task 8, jest w historii git)
 - Create: `tools/mssql-introspect/templates/{sprzedaz,finanse,magazyn}/*.md` (wynik skryptu)
 - Create: `tools/mssql-introspect/instance/konwencje-instancji.md` (kopia + potwierdzenia właściciela)
 - Test: `tools/mssql-introspect/test/templates-catalog.test.mjs` (stały — pilnuje prawdziwego katalogu)
@@ -1060,7 +1060,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 - [ ] **Step 1: Test funkcji rozcinającej (failing)**
 
-Create `tools/mssql-introspect/test/migrate-kpi-templates.test.mjs`:
+Create test skryptu migracji (migrate-kpi-templates.test w tools/mssql-introspect/test — usunięty w Task 8, jest w historii git):
 
 ```js
 import { describe, expect, it } from 'vitest';
@@ -1152,12 +1152,12 @@ describe('splitKpiDoc', () => {
 
 - [ ] **Step 2: Uruchom — ma paść**
 
-Run: `npx vitest run tools/mssql-introspect/test/migrate-kpi-templates.test.mjs`
+Run: `npx vitest run` na teście skryptu migracji (migrate-kpi-templates.test w tools/mssql-introspect/test — usunięty w Task 8, jest w historii git)
 Expected: FAIL — brak `../migrate-kpi-templates.mjs`.
 
 - [ ] **Step 3: Zaimplementuj skrypt migracji**
 
-Create `tools/mssql-introspect/migrate-kpi-templates.mjs`:
+Create skrypt migracji migrate-kpi-templates w tools/mssql-introspect (usunięty w Task 8, jest w historii git):
 
 ```js
 #!/usr/bin/env node
@@ -1267,7 +1267,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
 
 - [ ] **Step 4: Uruchom test — ma przejść**
 
-Run: `npx vitest run tools/mssql-introspect/test/migrate-kpi-templates.test.mjs`
+Run: `npx vitest run` na teście skryptu migracji (migrate-kpi-templates.test w tools/mssql-introspect/test — usunięty w Task 8, jest w historii git)
 Expected: PASS. Jeśli `slugify` zostawia końcowy myślnik lub ucina w pół słowa, popraw wyrażenie tak, by test `aging-naleznosci-0-30-31-60` przechodził (cięcie do 60 znaków na granicy słowa).
 
 - [ ] **Step 5: Uruchom migrację na prawdziwych dokumentach**
@@ -1723,7 +1723,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 - Modify: `docs/design/PLAN.md` (wiersz w „Zmiany decyzji po zatwierdzeniu”, na końcu tabeli)
 - Modify: `CLAUDE.md` (sekcja Komendy)
 - Modify: `tools/mssql-introspect/mcp-server.mjs` (tylko komentarz rejestracji — bez zmian kodu, jeśli już zrobione w Task 2)
-- Delete: `tools/mssql-introspect/migrate-kpi-templates.mjs`, `tools/mssql-introspect/test/migrate-kpi-templates.test.mjs`
+- Delete: skrypt migracji migrate-kpi-templates i jego test (usunięte po migracji, są w historii git)
 
 **Interfaces:**
 - Consumes: narzędzia MCP `list_templates`, `run_template`, `execute_sql`; CLI `run-template.mjs`; katalog i konwencje w repo.

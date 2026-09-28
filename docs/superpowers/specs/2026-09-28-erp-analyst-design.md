@@ -88,8 +88,8 @@ Reguły (egzekwowane testami):
 
 ### Migracja istniejących 46 szablonów
 
-1. Jednorazowy skrypt (`tools/mssql-introspect/migrate-kpi-templates.mjs`, usuwany w ostatnim commicie
-   migracji — zostaje w historii git) rozcina `kpi-*.md` po nagłówkach `##` na pliki, sekcję
+1. Jednorazowy skrypt migracji (migrate-kpi-templates w tools/mssql-introspect — usunięty po migracji,
+   jest w historii git) rozcina `kpi-*.md` po nagłówkach `##` na pliki, sekcję
    „Zasady wspólne”/„Model…”/„Wspólne ustalenia” na `_zasady.md`, „Słownik kodów…” dołącza do `_zasady.md`.
 2. Ręczny przegląd każdego pliku: literały dat → `@od`/`@do` (szablony z dwoma zakresami, np. YoY,
    dostają `@od`, `@do`, `@od_prev`, `@do_prev` albo liczą poprzedni zakres w SQL — per szablon), inne stałe

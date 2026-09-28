@@ -22,6 +22,7 @@ Deployment: 2 stacki docker compose na tym VPS (deploy/edge + deploy/kag).
   świadomie zmieniona i tam jest to odnotowane wraz z dowodem w kodzie.
 - `docs/design/{infra,backend-mcp,pipeline-frontend}.md` — szczegółowe projekty podsystemów
 - `.claude/skills/openspg-api/SKILL.md` — API i pułapki OpenSPG (obowiązkowe przy pracy z OpenSPG)
+- `.claude/skills/erp-analyst/SKILL.md` — pytania o liczby firmy z bazy Subiekta GT: szablon SQL z katalogu → ad hoc z kontrolą krzyżową → propozycja szablonu (spec: `docs/superpowers/specs/2026-09-28-erp-analyst-design.md`)
 
 ## Komendy
 
@@ -46,10 +47,10 @@ node tools/mssql-introspect/{list-dbs,dump-schema}.mjs   # katalog żywej bazy M
 node tools/mssql-introspect/run-select.mjs "SELECT …"        # JEDNO zapytanie do produkcyjnej bazy Subiekta GT przez bramkę tylko-odczyt + deny-listę PII + log (to samo co MCP mssql)
 node tools/mssql-introspect/run-template.mjs <id> od=2026-09-01 do=2026-10-01   # szablon SQL z katalogu templates/ (to samo co MCP run_template)
 node tools/mssql-introspect/verify-templates.mjs [--area sprzedaz] [--write]      # katalog szablonów na produkcji; --write ustawia verified
-node tools/kb-import/prepare-kpi.mjs --out <out/docs> --source-base <url>          # dokumenty KPI+konwencje IloveKB z katalogu szablonów
+node tools/kb-import/prepare-kpi.mjs --out <out/docs> --source-base <url>          # dokumenty KPI+konwencje IloveKB z katalogu szablonów (niezacommitowany katalog = odmowa; --allow-dirty tylko do podglądu)
 node tools/mssql-introspect/{dump-dictionaries,dump-aggregates,dump-suppliers}.mjs   # IloveKB: słowniki z allow-listy (--only), agregaty z progiem k, dostawcy-osoby prawne
 node tools/kb-import/{prepare-md,prepare-instance}.mjs   # Markdown→fragmenty KB (tabele→rekordy; AnalizyERP) / dokumenty instancji z agregatów i dostawców (IloveKB)
-deploy/scripts/refresh_ilovekb.sh   # miesięczne odświeżenie IloveKB (timer kag-ilovekb-refresh, 5. dzień 02:30): tylko agregaty+słowniki+dostawcy
+deploy/scripts/refresh_ilovekb.sh   # miesięczne odświeżenie IloveKB (timer kag-ilovekb-refresh, 5. dzień 02:30): agregaty+słowniki+dostawcy oraz KPI+konwencje z repo (prepare-kpi, tylko zacommitowany katalog)
 node tools/kb-import/set-limits.mjs 1500 1500   # limity szkiców na czas importu (PRZYWRÓĆ: 100 25)
 node tools/kb-import/quality-gate.mjs <NS>        # sama bramka jakości bez builda (po purge nagrobków)
 node tools/eval/gaps.mjs list|probes <plik>|resolve <id>|ignore <id>   # luki wiedzy z CLI (pętla uczenia)
