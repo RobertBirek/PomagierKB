@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # refresh_ilovekb.sh — cykliczne odświeżenie IloveKB z produkcyjnej instancji Subiekta GT (Magnum_Profi):
 # TYLKO słowniki z allow-listy, agregaty z progiem k=10 i lista dostawców-osób prawnych. Szablony KPI
-# i konwencje są renderowane z repo (tools/mssql-introspect/templates, instance/) przez prepare-kpi;
+# i konwencje są renderowane z repo (tools/mssql-introspect/templates, instance/) przez prepare-kpi —
+# tylko ZACOMMITOWANY katalog (niezatwierdzone zmiany = odmowa i przerwanie; celowo bez --allow-dirty);
 # katalog schematu NIE jest regenerowany. Oba prepare-* scalają manifest. Poświadczenie: /etc/kag/mssql-ilovelighting.env (0600), przez WireGuard.
 # Governance: docs/data-governance.md §1.2 (IloveKB) i §1.3 droga 3. Uruchamiane z timera kag-ilovekb-refresh.
 set -euo pipefail

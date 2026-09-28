@@ -48,6 +48,13 @@ na hoście. Jeśli `list_templates` nie jest dostępne (proces MCP ze starym kod
      o zgodę; commit (`feat(mssql): template <id>`) dopiero po „tak".
    - Szablon pasował, ale `list_templates` go nie znalazło po słowach pytania → zaproponuj dopisanie
      pytania do jego `questions` (ta sama ścieżka: diff → zgoda → commit).
+   - **Odmowa albo brak zgody = wycofaj propozycję.** Plik w katalogu roboczym jest od razu
+     wykonywalny przez MCP i CLI, więc nie zostawiaj go: nowy plik →
+     `rm tools/mssql-introspect/templates/<obszar>/<id>.md`, zmieniony →
+     `git checkout -- tools/mssql-introspect/templates/<obszar>/<id>.md`. Potwierdź, że
+     `git status --porcelain -- tools/mssql-introspect/templates tools/mssql-introspect/instance`
+     jest puste. (`prepare-kpi` odmawia publikacji przy niezacommitowanych zmianach katalogu — to
+     ostatnia zapora, nie zastępstwo sprzątania.)
    - Zmiana w szablonach dociera do IloveKB przy miesięcznym odświeżeniu (5. dnia) albo ręcznie wg
      skilla `kb-reimport` (`prepare-kpi` → upload → promote → build).
 
