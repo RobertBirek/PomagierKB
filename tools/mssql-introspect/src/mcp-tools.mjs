@@ -8,6 +8,7 @@ import { loadCatalog, searchTemplates, validateParams } from './templates.mjs';
 
 export const MAX_ROWS = 200;
 export const MAX_CHARS = 60_000;
+export const MAX_LOGGED_PARAMS = 1000;
 export const DEFAULT_CATALOG_DIR = process.env.MSSQL_TEMPLATES_DIR ?? fileURLToPath(new URL('../templates/', import.meta.url));
 
 export const TOOL_DEFS = [
@@ -28,6 +29,7 @@ export const TOOL_DEFS = [
     name: 'list_templates',
     description:
       'Lista zweryfikowanych szablonów SQL (KPI sprzedaży, finansów, magazynu) dla instancji Magnum_Profi: ' +
+      'z zapytaniem najwyżej 10 najlepiej dopasowanych; ' +
       'id, tytuł, parametry z przykładami, przykładowe pytania, data weryfikacji. Filtr po obszarze i słowach pytania.',
     inputSchema: {
       type: 'object',
@@ -89,6 +91,18 @@ function formatRows(rows, footer) {
   return `${note}\n${body}${footer ? `\n— ${footer}` : ''}`;
 }
 
+/** Odrzucone parametry pochodzą wprost od wołającego — do logu najwyżej MAX_LOGGED_PARAMS znaków JSON. */
+function paramsForLog(params) {
+  const value = params ?? {};
+  let json;
+  try {
+    json = JSON.stringify(value) ?? '';
+  } catch {
+    return '(parametry nie do serializacji)';
+  }
+  return json.length <= MAX_LOGGED_PARAMS ? value : `${json.slice(0, MAX_LOGGED_PARAMS)}… (przycięto, ${json.length} znaków)`;
+}
+
 const errText = (err) => (err instanceof Error ? err.message : String(err)).slice(0, 300);
 
 export function createTools({ getPool, sql, catalogDir = DEFAULT_CATALOG_DIR, audit }) {
@@ -115,6 +129,7 @@ export function createTools({ getPool, sql, catalogDir = DEFAULT_CATALOG_DIR, au
   function listTemplates({ area, query } = {}) {
     const { templates, errors } = loadCatalog(catalogDir);
     const found = searchTemplates(templates, { area, query });
+    const total = searchTemplates(templates, { area, query, limit: Infinity }).length;
     const out = found.map((t) => ({
       id: t.id,
       title: t.title,
@@ -123,7 +138,9 @@ export function createTools({ getPool, sql, catalogDir = DEFAULT_CATALOG_DIR, au
       questions: t.questions,
       verified: t.verified,
     }));
-    let text = `${out.length} szablon(ów)${query ? ` dla „${query}”` : ''}${area ? ` w obszarze ${area}` : ''}\n${JSON.stringify(out, null, 1)}`;
+    let text = `${out.length} szablon(ów)${query ? ` dla „${query}”` : ''}${area ? ` w obszarze ${area}` : ''}`;
+    if (total > found.length) text += ` — pokazano ${found.length} najlepiej dopasowanych z ${total}; doprecyzuj pytanie albo podaj area`;
+    text += `\n${JSON.stringify(out, null, 1)}`;
     if (errors.length) text += `\nBłędne pliki katalogu (pominięte):\n- ${errors.join('\n- ')}`;
     return text;
   }
@@ -137,7 +154,7 @@ export function createTools({ getPool, sql, catalogDir = DEFAULT_CATALOG_DIR, au
     }
     const v = validateParams(template, params ?? {});
     if (!v.ok) {
-      audit('template', { templateId: id, ok: false, reason: v.reason, params: params ?? {} });
+      audit('template', { templateId: id, ok: false, reason: v.reason, params: paramsForLog(params) });
       throw new Error(`parametry: ${v.reason}`);
     }
     const gate = checkReadOnly(template.sql);

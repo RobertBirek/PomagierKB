@@ -10,7 +10,7 @@ import sql from 'mssql';
 import { configFromEnv, parseEnvFile } from './src/env.mjs';
 import { createTools, DEFAULT_CATALOG_DIR } from './src/mcp-tools.mjs';
 import { auditQuery } from './src/query-log.mjs';
-import { loadCatalog, setVerified } from './src/templates.mjs';
+import { loadCatalog, localDate, setVerified } from './src/templates.mjs';
 
 const args = process.argv.slice(2);
 const opt = (n, d = null) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : d; };
@@ -18,7 +18,7 @@ const envFile = opt('--env', '/etc/kag/mssql-ilovelighting.env');
 const area = opt('--area');
 const onlyId = opt('--id');
 const write = args.includes('--write');
-const today = new Date().toISOString().slice(0, 10);
+const today = localDate();
 
 const { templates, errors } = loadCatalog(DEFAULT_CATALOG_DIR);
 for (const e of errors) console.log(`BŁĄD PLIKU  ${e}`);

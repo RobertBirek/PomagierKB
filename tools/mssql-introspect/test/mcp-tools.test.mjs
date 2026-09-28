@@ -95,6 +95,16 @@ describe('run_template', () => {
     expect(calls.connects).toBe(0);
     expect(log.at(-1)).toMatchObject({ via: 'template', ok: false, templateId: 'brand-top' });
   });
+  it('odrzucone parametry w logu przycięte do 1000 znaków', async () => {
+    const { tools, log } = setup();
+    await expect(tools.runTemplate({ id: 'brand-top', params: { od: '2026-07-01', do: '2026-10-01', zly: 'x'.repeat(5000) } })).rejects.toThrow(/nieznane parametry/);
+    const entry = log.at(-1);
+    expect(typeof entry.params).toBe('string');
+    expect(entry.params.length).toBeLessThan(1100);
+    expect(entry.params).toMatch(/przycięto/);
+    await expect(tools.runTemplate({ id: 'brand-top', params: { od: '2026-10-01', do: '2026-07-01' } })).rejects.toThrow();
+    expect(log.at(-1).params).toEqual({ od: '2026-10-01', do: '2026-07-01' });
+  });
   it('nieznany szablon vs szablon z błędem', async () => {
     const { tools } = setup({ 'sprzedaz/brand-top.md': TPL, 'sprzedaz/zepsuty.md': '---\nid: zepsuty\n---\n' });
     await expect(tools.runTemplate({ id: 'nie-ma', params: {} })).rejects.toThrow(/nieznany szablon: nie-ma/);
@@ -111,6 +121,14 @@ describe('list_templates', () => {
     expect(out).toContain('date — od (np. 2025-01-01)');
     expect(out).toContain('int? — top N (np. 10)');
     expect(out).toMatch(/Błędne pliki katalogu[\s\S]*sprzedaz\/zepsuty\.md/);
+  });  it('najwyżej 10 wyników dla zapytania, z notą o przycięciu', () => {
+    const files = {};
+    for (let i = 0; i < 12; i += 1) files[`sprzedaz/brand-top-${i}.md`] = TPL.replace('id: brand-top', `id: brand-top-${i}`);
+    const { tools } = setup(files);
+    const out = tools.listTemplates({ query: 'najlepsze marki' });
+    expect(out).toMatch(/^10 szablon/);
+    expect(out).toMatch(/pokazano 10 najlepiej dopasowanych z 12/);
+    expect(tools.listTemplates({ area: 'sprzedaz' })).toMatch(/^12 szablon/);
   });
 });
 

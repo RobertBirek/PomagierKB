@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
-  extractParamNames, loadCatalog, parseTemplate, searchTemplates, setVerified, splitFrontMatter, validateParams,
+  extractParamNames, loadCatalog, localDate, parseTemplate, searchTemplates, setVerified, splitFrontMatter, validateParams,
 } from '../src/templates.mjs';
 
 const GOOD = `---
@@ -57,8 +57,11 @@ describe('splitFrontMatter', () => {
 
 describe('extractParamNames', () => {
   it('pomija @@zmienne systemowe, komentarze i literały', () => {
-    const sql = "SELECT @@ROWCOUNT, 'a@b' AS x /* @ukryty */ FROM t -- użyj @od\nWHERE a >= @Od AND b < @do AND c = @do";
+    const sql = "SELECT @@ROWCOUNT, 'a@b' AS x /* @ukryty */ FROM t -- użyj @od\nWHERE a >= @od AND b < @do AND c = @do";
     expect(extractParamNames(sql)).toEqual(['do', 'od']);
+  });
+  it('nie zmienia wielkości liter — @Od to inna nazwa niż zadeklarowane od', () => {
+    expect(extractParamNames('SELECT 1 WHERE a >= @Od AND b < @do')).toEqual(['Od', 'do']);
   });
 });
 
@@ -85,6 +88,11 @@ describe('parseTemplate', () => {
     expect(parseTemplate(`${GOOD}\n\`\`\`sql\nSELECT 1\n\`\`\`\n`, f).error).toMatch(/jeden blok/);
     expect(parseTemplate(GOOD.replace('SELECT SUM(d.dok_WartNetto) AS net_sales', 'DELETE'), f).error).toMatch(/SQL/);
   });
+  it('odrzuca @Od w SQL przy zadeklarowanym od (dokładna wielkość liter)', () => {
+    const r = parseTemplate(GOOD.replace('d.dok_DataWyst >= @od', 'd.dok_DataWyst >= @Od'), { file: 'sprzedaz/sales-net-monthly.md', area: 'sprzedaz' });
+    expect(r.error).toMatch(/niezadeklarowane: Od/);
+    expect(r.error).toMatch(/nieużyte w SQL: od/);
+  });
   it('odrzuca zepsuty YAML z nazwą pliku', () => {
     const r = parseTemplate(GOOD.replace('title: Przychód', 'title: [Przychód'), { file: 'sprzedaz/sales-net-monthly.md', area: 'sprzedaz' });
     expect(r.error).toMatch(/^sprzedaz\/sales-net-monthly\.md: YAML/);
@@ -107,6 +115,20 @@ describe('loadCatalog', () => {
     expect(c.rules.sprzedaz).toContain('Zasady wspólne');
     expect(c.errors).toHaveLength(1);
     expect(c.errors[0]).toMatch(/^sprzedaz\/zepsuty\.md:/);
+  });
+  it('zasady obszaru: zdejmuje front matter i wiodący nagłówek H1, metadane w rulesMeta', () => {
+    const c = loadCatalog(catalog({
+      'finanse/_zasady.md': '---\nowner: firma X\nlicense: użytek wewnętrzny\ndate: 2026-09-14\n---\n# Tytuł obszaru\n\nWstęp.\n\n## Model\n\nx\n',
+      'sprzedaz/_zasady.md': 'Wstęp bez nagłówka.\n\n## Zasady\n\ny\n',
+    }));
+    expect(c.rules.finanse).toBe('Wstęp.\n\n## Model\n\nx');
+    expect(c.rulesMeta.finanse).toEqual({ owner: 'firma X', license: 'użytek wewnętrzny', date: '2026-09-14' });
+    expect(c.rules.sprzedaz).toBe('Wstęp bez nagłówka.\n\n## Zasady\n\ny');
+    expect(c.rulesMeta.sprzedaz).toEqual({});
+  });
+  it('zepsuty front matter zasad = błąd katalogu', () => {
+    const c = loadCatalog(catalog({ 'finanse/_zasady.md': '---\nowner: [x\n---\ntreść\n' }));
+    expect(c.errors[0]).toMatch(/^finanse\/_zasady\.md: YAML/);
   });
   it('duplikat id w innym obszarze = błąd, pierwszy wygrywa', () => {
     const fin = GOOD.replace('area: sprzedaz', 'area: finanse');
@@ -131,6 +153,19 @@ describe('searchTemplates', () => {
   it('filtr obszaru i puste zapytanie = cała lista obszaru', () => {
     expect(searchTemplates(list, { area: 'sprzedaz' }).map((x) => x.id)).toEqual(['brand-top']);
     expect(searchTemplates(list, { query: 'kosmos' })).toEqual([]);
+  });
+  it('pomija tokeny z samych cyfr (rok, liczby z pytania)', () => {
+    const withYear = [t('rok', 'Przychód 2025', ['Ile w 2025?']), t('brand-top', 'Top marek', ['Które marki?'], 'sprzedaz')];
+    expect(searchTemplates(withYear, { query: 'marki 2025' }).map((x) => x.id)).toEqual(['brand-top']);
+    expect(searchTemplates(withYear, { query: '2025' })).toEqual(withYear);
+  });
+  it('najwyżej 10 wyników, malejąco po liczbie trafień; limit można zmienić', () => {
+    const many = Array.from({ length: 15 }, (_, i) => t(`n${i}`, `Należności ${i}`, ['Ile należności?']));
+    many.push(t('best', 'Należności przeterminowane', ['Należności przeterminowane?']));
+    const r = searchTemplates(many, { query: 'należności przeterminowane' });
+    expect(r).toHaveLength(10);
+    expect(r[0].id).toBe('best');
+    expect(searchTemplates(many, { query: 'należności', limit: Infinity })).toHaveLength(16);
   });
 });
 
@@ -172,5 +207,22 @@ describe('setVerified', () => {
     const out = setVerified(GOOD, '2026-09-28');
     expect(out).toContain('verified: 2026-09-28');
     expect(out.replace('verified: 2026-09-28', 'verified: 2026-09-14')).toBe(GOOD);
+  });
+  it('zachowuje CRLF', () => {
+    const crlf = GOOD.replace(/\n/g, '\r\n');
+    const out = setVerified(crlf, '2026-09-28');
+    expect(out).toContain('verified: 2026-09-28\r\n');
+    expect(out.replace('verified: 2026-09-28', 'verified: 2026-09-14')).toBe(crlf);
+  });
+  it('czytelny błąd bez zamykającego ---', () => {
+    expect(() => setVerified('---\nid: x\nverified: 2026-01-01\n', '2026-09-28')).toThrow(/brak zamykającego ---/);
+  });
+});
+
+describe('localDate', () => {
+  it('data kalendarzowa w Europe/Warsaw, nie UTC', () => {
+    expect(localDate(new Date('2026-09-27T22:30:00Z'))).toBe('2026-09-28'); // 00:30 CEST
+    expect(localDate(new Date('2026-01-31T23:30:00Z'))).toBe('2026-02-01'); // 00:30 CET
+    expect(localDate(new Date('2026-09-28T21:59:00Z'))).toBe('2026-09-28');
   });
 });

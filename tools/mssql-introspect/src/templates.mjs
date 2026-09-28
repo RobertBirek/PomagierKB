@@ -14,6 +14,7 @@ const PARAM_NAME_RE = /^[a-z][a-z0-9_]*$/;
 const DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 const DEFAULT_TEXT_MAX = 100;
 const RULES_FILE = '_zasady.md';
+export const SEARCH_LIMIT = 10;
 // Słowa pytające i spójniki — bez znaczenia dla dopasowania szablonu.
 const STOP_WORDS = new Set(['ile', 'jak', 'jaki', 'jaka', 'jakie', 'czy', 'ktore', 'ktory', 'ktora', 'dla', 'nas', 'mamy', 'sie', 'oraz', 'jest', 'byl', 'tym', 'ten', 'ta', 'to', 'po', 'na', 'do', 'od', 'w', 'we', 'z', 'ze', 'i', 'a', 'o']);
 
@@ -25,8 +26,9 @@ export function normalizeText(s) {
   return String(s).toLowerCase().replace(/ł/g, 'l').normalize('NFD').replace(/[̀-ͯ]/g, '');
 }
 
+// Tokeny z samych cyfr (rok, „top 10") nie odróżniają szablonów — trafiałyby w przykładowe pytania.
 function tokenize(s) {
-  return normalizeText(s).split(/[^a-z0-9]+/).filter((w) => w.length >= 2 && !STOP_WORDS.has(w));
+  return normalizeText(s).split(/[^a-z0-9]+/).filter((w) => w.length >= 2 && !/^\d+$/.test(w) && !STOP_WORDS.has(w));
 }
 
 /** Rdzeń słowa do dopasowania odmian („należności"/„należność", „marki"/„marek"). */
@@ -55,7 +57,10 @@ export function splitFrontMatter(raw) {
   return m ? { meta: m[1], body: m[2] } : null;
 }
 
-/** Nazwy parametrów `@x` w SQL (bez `@@zmiennych`, komentarzy, literałów i identyfikatorów w cudzysłowach). */
+/**
+ * Nazwy parametrów `@x` w SQL (bez `@@zmiennych`, komentarzy, literałów i identyfikatorów w cudzysłowach).
+ * Wielkość liter bez zmian: klucze deklaracji są małymi literami (PARAM_NAME_RE), więc `@Od` = błąd katalogu.
+ */
 export function extractParamNames(sql) {
   const cleaned = String(sql)
     .replace(/\/\*[\s\S]*?\*\//g, ' ')
@@ -64,7 +69,7 @@ export function extractParamNames(sql) {
     .replace(/"(?:""|[^"])*"/g, '""')
     .replace(/\[(?:\]\]|[^\]])*\]/g, '[]');
   const names = new Set();
-  for (const m of cleaned.matchAll(/(^|[^@\w])@([A-Za-z_][A-Za-z0-9_]*)/g)) names.add(m[2].toLowerCase());
+  for (const m of cleaned.matchAll(/(^|[^@\w])@([A-Za-z_][A-Za-z0-9_]*)/g)) names.add(m[2]);
   return [...names].sort();
 }
 
@@ -174,11 +179,33 @@ export function parseTemplate(raw, { file, area }) {
   return { template: { id, title: meta.title.trim(), area, order, questions, params, verified, sql, body: fm.body.trim(), file } };
 }
 
-/** Cały katalog: szablony (posortowane obszar → order → id), zasady obszarów, błędy plików. */
+/**
+ * Plik zasad obszaru → {rules, meta} albo {error}. Zdejmuje front matter (metadane źródła: owner,
+ * license, date — trafiają do nagłówka dokumentu KPI) i wiodący nagłówek `# ` (dokument ma własny tytuł).
+ */
+export function parseRules(raw, { file }) {
+  const text = String(raw).replace(/^\uFEFF/, '').replace(/\r\n/g, '\n');
+  const fm = splitFrontMatter(text);
+  let meta = {};
+  if (fm) {
+    try {
+      meta = parseYaml(fm.meta) ?? {};
+    } catch (e) {
+      return { error: `${file}: YAML: ${e.message.split('\n')[0]}` };
+    }
+    if (typeof meta !== 'object' || Array.isArray(meta)) return { error: `${file}: YAML: nagłówek musi być mapą` };
+    meta = Object.fromEntries(Object.entries(meta).map(([k, v]) => [k, asDateString(v)]));
+  }
+  const body = (fm ? fm.body : text).trim().replace(/^# [^\n]*\n*/, '');
+  return { rules: body.trim(), meta };
+}
+
+/** Cały katalog: szablony (posortowane obszar → order → id), zasady obszarów z metadanymi, błędy plików. */
 export function loadCatalog(dir) {
   const templates = [];
   const errors = [];
   const rules = {};
+  const rulesMeta = {};
   const seen = new Map();
   for (const area of AREAS) {
     let files;
@@ -191,7 +218,12 @@ export function loadCatalog(dir) {
       const rel = `${area}/${f}`;
       const raw = readFileSync(join(dir, area, f), 'utf8');
       if (f === RULES_FILE) {
-        rules[area] = raw.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').trim();
+        const r = parseRules(raw, { file: rel });
+        if (r.error) errors.push(r.error);
+        else {
+          rules[area] = r.rules;
+          rulesMeta[area] = r.meta;
+        }
         continue;
       }
       const r = parseTemplate(raw, { file: rel, area });
@@ -206,11 +238,14 @@ export function loadCatalog(dir) {
     }
   }
   templates.sort((a, b) => AREAS.indexOf(a.area) - AREAS.indexOf(b.area) || a.order - b.order || a.id.localeCompare(b.id));
-  return { templates, rules, errors };
+  return { templates, rules, rulesMeta, errors };
 }
 
-/** Dopasowanie słów zapytania do id/tytułu/pytań; wynik malejąco po liczbie trafionych słów. */
-export function searchTemplates(templates, { area, query } = {}) {
+/**
+ * Dopasowanie słów zapytania do id/tytułu/pytań; wynik malejąco po liczbie trafionych słów, najwyżej
+ * `limit` pozycji (domyślnie SEARCH_LIMIT). Bez słów zapytania — cała pula (lista obszaru/katalogu).
+ */
+export function searchTemplates(templates, { area, query, limit = SEARCH_LIMIT } = {}) {
   const pool = area ? templates.filter((t) => t.area === area) : templates;
   const words = tokenize(query ?? '');
   if (words.length === 0) return pool;
@@ -219,7 +254,7 @@ export function searchTemplates(templates, { area, query } = {}) {
     const hits = words.filter((w) => hay.some((h) => h.startsWith(stem(w)) || w.startsWith(stem(h)))).length;
     return { t, hits };
   });
-  return scored.filter((s) => s.hits > 0).sort((a, b) => b.hits - a.hits).map((s) => s.t);
+  return scored.filter((s) => s.hits > 0).sort((a, b) => b.hits - a.hits).slice(0, limit).map((s) => s.t);
 }
 
 /** Walidacja wejścia run_template: typy, wymagane, nieznane klucze, default, zakresy od*<do*. */
@@ -251,10 +286,16 @@ export function validateParams(template, input = {}) {
   return { ok: true, values };
 }
 
-/** Podmienia datę `verified:` w nagłówku (reszta pliku bajt w bajt bez zmian). */
+/** Data kalendarzowa RRRR-MM-DD w strefie firmy (nie UTC — po północy czasu polskiego UTC to jeszcze wczoraj). */
+export function localDate(now = new Date(), timeZone = 'Europe/Warsaw') {
+  return new Intl.DateTimeFormat('sv-SE', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
+}
+
+/** Podmienia datę `verified:` w nagłówku (reszta pliku bajt w bajt bez zmian, także końce linii CRLF). */
 export function setVerified(raw, date) {
   if (!isCalendarDate(date)) throw new Error(`setVerified: zła data ${date}`);
-  const end = raw.indexOf('\n---', 3);
+  const end = raw.search(/\r?\n---(?:\r?\n|$)/);
+  if (!/^\uFEFF?---/.test(raw) || end < 0) throw new Error('setVerified: brak zamykającego --- nagłówka YAML');
   const head = raw.slice(0, end);
   if (!/^verified:.*$/m.test(head)) throw new Error('setVerified: brak linii verified w nagłówku');
   return head.replace(/^verified:.*$/m, `verified: ${date}`) + raw.slice(end);
