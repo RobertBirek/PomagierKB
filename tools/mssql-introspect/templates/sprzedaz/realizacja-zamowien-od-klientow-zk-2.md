@@ -1,29 +1,32 @@
 ---
 id: realizacja-zamowien-od-klientow-zk-2
-title: Realizacja zamówień od klientów (ZK) (wariant 2)
+title: Otwarte zamówienia od klientów (ZK) starsze niż N dni
 area: sprzedaz
 order: 150
 questions:
-  - "Jak policzyć: Realizacja zamówień od klientów (ZK) (wariant 2)?"
-params: {}
-verified: 2026-09-23
+  - "Które zamówienia od klientów wiszą niezrealizowane dłużej niż tydzień?"
+  - "Pokaż otwarte zamówienia od klientów starsze niż 14 dni."
+params:
+  dni:
+    type: int
+    description: minimalny wiek otwartego zamówienia w dniach (liczony od chwili wykonania zapytania)
+    required: false
+    default: 7
+    example: 7
+verified: 2026-09-28
 ---
-- Definicja: stan i tempo realizacji zamówień od klientów — ile ZK jest otwartych (bez rezerwacji / z rezerwacją), ile zrealizowano, ile dni mija od ZK do pierwszego dokumentu sprzedaży i ile zamówień „wisi” dłużej niż tydzień.
-- Formuła: `open_orders = COUNT(ZK: dok_Status IN (6,7))`, `realized_orders = COUNT(ZK: dok_Status = 8)`; `lead_time_days = DATEDIFF(day, ZK.dok_DataWyst, MIN(FS/PA.dok_DataWyst))` po dokumentach sprzedaży, które wskazują ZK przez `dok_DoDokId`.
-- Tabele i kolumny: `dok__Dokument` (`dok_Typ`, `dok_Podtyp`, `dok_Status`, `dok_DataWyst`, `dok_DoDokId`, `dok_WartNetto`), `dok_Pozycja` (`ob_DokHanId`, `ob_TowId`, `ob_Ilosc`, `ob_IloscMag`) tylko do zawartości zamówień.
-- Kody: dok_Typ 16 = ZK (podtyp 1 = ZKzal, zamówienie do zaliczek); realizujące: 2 = FS, 21 = PA. Statusy ZK w `dok_Status`: 5 = nie zrealizowane, 6 = nie zrealizowane bez rezerwacji, 7 = nie zrealizowane z rezerwacją, 8 = zrealizowane.
-- Jak realizacja jest zapisana W TEJ INSTANCJI (sprawdzone 2026-09-23): dokument sprzedaży powstały z ZK ma `dok_DoDokId` = `dok_Id` zamówienia (240 557 FS/PA wskazuje ZK); powiązanie pozycji `ob_DoId` NIE jest używane dla ZK (0 pozycji), a WZ nigdy nie wskazuje ZK. Praktycznie 1 ZK = 1 dokument sprzedaży (2025: 52 014 ZK z jednym FS/PA, 3 z dwoma, 415 zrealizowanych bez powiązanego FS/PA — zrealizowane ręcznie albo dokument usunięto).
-
-
-
-Otwarte zamówienia starsze niż 7 dni (lista do pracy, bez danych kontrahenta — po id i wartości):
+- Definicja: lista otwartych (niezrealizowanych) zamówień od klientów starszych niż N dni — do pracy nad zaległościami, bez danych kontrahenta (po id, dacie, statusie i wartości netto).
+- Formuła: `age_days = DATEDIFF(day, dok_DataWyst, GETDATE())`; filtr `dok_Typ = 16`, `dok_Status IN (5, 6, 7)`, `dok_DataWyst < GETDATE() − N dni`; sortowanie od najstarszego.
+- Tabele i kolumny: `dok__Dokument` (`dok_Id`, `dok_Typ`, `dok_Status`, `dok_DataWyst`, `dok_WartNetto`).
+- Kody: dok_Typ 16 = ZK (podtyp 1 = ZKzal, zamówienie do zaliczek). Statusy ZK w `dok_Status`: 5 = nie zrealizowane, 6 = nie zrealizowane bez rezerwacji, 7 = nie zrealizowane z rezerwacją, 8 = zrealizowane.
 
 ```sql
+-- otwarte ZK starsze niż @dni dni, liczone od chwili wykonania (GETDATE)
 SELECT dok_Id, dok_DataWyst, dok_Status, dok_WartNetto, DATEDIFF(day, dok_DataWyst, GETDATE()) AS age_days
 FROM dbo.dok__Dokument
-WHERE dok_Typ = 16 AND dok_Status IN (5, 6, 7) AND dok_DataWyst < DATEADD(day, -7, GETDATE())
+WHERE dok_Typ = 16 AND dok_Status IN (5, 6, 7) AND dok_DataWyst < DATEADD(day, -@dni, GETDATE())
 ORDER BY dok_DataWyst
 ```
 
-- Pułapki: (1) Status 8 może nie mieć dokumentu sprzedaży (zrealizowano ręcznie / usunięto FS) — licz realizację po `dok_Status`, a czas realizacji po `dok_DoDokId`. (2) ZKzal (podtyp 1) realizuje się przez FSzal, a nie FS — jeśli chcesz osobno, filtruj `dok_Podtyp`. (3) `dok_DoDokId` na samym ZK (1 088 rekordów) wskazuje w drugą stronę na inne typy — nie używaj go do liczenia realizacji. (4) Nie łącz przez `dok_Pozycja.ob_DoId` — w tej instancji jest puste dla zamówień.
-- Interpretacja: instancja realizuje zamówienia praktycznie od ręki — 2025: średnio 2 dni, 53% w ciągu doby, 40% w 2–7 dni, 7% powyżej tygodnia (max 129 dni); otwartych ZK jest ok. 4,3 tys. (3 647 bez rezerwacji, 638 z rezerwacją), statusu 5 instancja nie używa.
+- Pułapki: (1) Wynik zależy od chwili wykonania — `dok_Status` zamówienia to stan bieżący, więc lista opisuje „teraz”, a wiek liczony jest od `GETDATE()`; dlatego szablon nie ma parametru daty odniesienia. (2) ZKzal (podtyp 1) realizuje się przez FSzal, a nie FS — jeśli chcesz osobno, filtruj `dok_Podtyp`. (3) Wynik to lista (po jednym wierszu na zamówienie); narzędzie pokazuje najwyżej 200 wierszy (najstarsze pierwsze) — NIE licz zamówień z tej listy; liczbę wszystkich otwartych ZK podaje szablon „Realizacja zamówień od klientów (ZK)” (`orders_by_status`, statusy 6 i 7, dla zakresu dat wystawienia zamówień).
+- Interpretacja: instancja realizuje zamówienia praktycznie od ręki — 2025: 7% powyżej tygodnia (max 129 dni); otwartych ZK jest ok. 4,3 tys. (3 647 bez rezerwacji, 638 z rezerwacją), statusu 5 instancja nie używa.

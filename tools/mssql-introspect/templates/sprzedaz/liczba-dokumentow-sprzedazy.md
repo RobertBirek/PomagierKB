@@ -4,7 +4,8 @@ title: Liczba dokumentów sprzedaży
 area: sprzedaz
 order: 70
 questions:
-  - "Jak policzyć: Liczba dokumentów sprzedaży?"
+  - "Ile faktur i paragonów wystawiamy miesięcznie?"
+  - "Ile dokumentów sprzedaży przypada średnio na jeden dzień?"
 params:
   od:
     type: date
@@ -14,7 +15,7 @@ params:
     type: date
     description: koniec zakresu (wyłącznie)
     example: 2026-01-01
-verified: 2026-09-14
+verified: 2026-09-28
 ---
 - Definicja: miesięczna liczba faktur (FS), paragonów (PA), korekt (KFS) i zwrotów (ZW) plus liczba dni sprzedaży i dokumentów na dzień (S14 „Liczba transakcji"); osobno liczone FSd i zaliczkowe pośrednie, które przychodu nie tworzą.
 - Formuła: `COUNT` per typ i status; `sales_docs_per_day = liczba FS+PA / liczba dni z co najmniej jednym dokumentem`.

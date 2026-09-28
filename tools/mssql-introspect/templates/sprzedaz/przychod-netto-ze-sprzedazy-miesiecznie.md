@@ -4,7 +4,9 @@ title: Przychód netto ze sprzedaży — miesięcznie
 area: sprzedaz
 order: 10
 questions:
-  - "Jak policzyć: Przychód netto ze sprzedaży — miesięcznie?"
+  - "Ile wyniósł przychód netto ze sprzedaży w każdym miesiącu 2025 roku?"
+  - "Jaka była sprzedaż netto w sierpniu 2026 w podziale na faktury i paragony?"
+  - "Ile sprzedał netto magazyn w Krośnie miesiąc po miesiącu?"
 params:
   od:
     type: date
@@ -14,15 +16,21 @@ params:
     type: date
     description: koniec zakresu (wyłącznie)
     example: 2026-01-01
-verified: 2026-09-14
+  mag:
+    type: enum
+    description: magazyn (dok_MagId) — 1 MAG Główny, 5 RKR Krosno (sprzedaż od 2025-08), 6 KOS Koszt (bez sprzedaży); brak = wszystkie magazyny łącznie
+    values: [1, 5, 6]
+    required: false
+    example: 5
+verified: 2026-09-28
 ---
 - Definicja: suma wartości netto faktur sprzedaży (FS) i paragonów (PA) wykonanych w miesiącu, przed korektami i zwrotami (odpowiednik KPI F1 „Revenue" i S1 „Sprzedaż wg okresów" z katalogu ERP).
 - Formuła: `Przychód netto (M) = Σ dok_WartNetto` dla `dok_Typ IN (2, 21)`, `dok_Status = 1`, `dok_DataWyst` w miesiącu M; dodatkowo rozbicie na towary (`dok_WartTwNetto`) i usługi (`dok_WartUsNetto`) oraz FS vs PA.
-- Tabele i kolumny: `dok__Dokument` (`dok_Typ`, `dok_Status`, `dok_DataWyst`, `dok_WartNetto`, `dok_WartTwNetto`, `dok_WartUsNetto`, `dok_WartBrutto`).
+- Tabele i kolumny: `dok__Dokument` (`dok_Typ`, `dok_Status`, `dok_DataWyst`, `dok_MagId`, `dok_WartNetto`, `dok_WartTwNetto`, `dok_WartUsNetto`, `dok_WartBrutto`).
 - Kody dok_Typ: 2 = FS, 21 = PA (bez 6 KFS i 14 ZW — te wchodzą w KPI „po korektach i zwrotach"; bez 11 WZ i 16 ZK).
 
 ```sql
--- zakres: [@od, @do) — przedział półotwarty
+-- zakres: [@od, @do) — przedział półotwarty; @mag opcjonalny (NULL = wszystkie magazyny)
 SELECT
   YEAR(d.dok_DataWyst)  AS year_no,
   MONTH(d.dok_DataWyst) AS month_no,
@@ -38,6 +46,7 @@ WHERE d.dok_Typ IN (2, 21)          -- 2 = FS (faktura sprzedaży), 21 = PA (par
   AND d.dok_Status = 1              -- 1 = wykonany; wyklucza FSd (status 0, dubel paragonu) i odłożone (3)
   AND d.dok_DataWyst >= @od
   AND d.dok_DataWyst <  @do
+  AND (@mag IS NULL OR d.dok_MagId = @mag)   -- magazyn opcjonalnie; NULL = wszystkie
 GROUP BY YEAR(d.dok_DataWyst), MONTH(d.dok_DataWyst)
 ORDER BY year_no, month_no
 ```

@@ -4,7 +4,8 @@ title: Korekty faktur sprzedaży (KFS)
 area: sprzedaz
 order: 120
 questions:
-  - "Jak policzyć: Korekty faktur sprzedaży (KFS)?"
+  - "Ile korekt faktur sprzedaży wystawiliśmy miesięcznie i na jaką kwotę?"
+  - "Jaki procent wartości faktur stanowią korekty?"
 params:
   od:
     type: date
@@ -14,7 +15,7 @@ params:
     type: date
     description: koniec zakresu (wyłącznie)
     example: 2026-01-01
-verified: 2026-09-14
+verified: 2026-09-28
 ---
 - Definicja: miesięczna liczba i wartość korekt faktur sprzedaży (KFS), z rozbiciem na składnik ze zwrotu ilości i składnik ze zmiany ceny/rabatu, w relacji do wartości i liczby faktur (część KPI „korekty i zwroty").
 - Formuła: `corrections_net = Σ dok_WartNetto (KFS)`; `value_from_returned_qty = −Σ ob_WartNetto` dla pozycji `ob_Znak = −1`; `value_from_price_change = Σ ob_WartNetto` dla pozycji `ob_Znak = 1`; `udział % = −corrections_net / Σ FS × 100`.
@@ -75,5 +76,5 @@ GROUP BY f.year_no, f.month_no, f.invoices_net, f.invoices_count
 ORDER BY f.year_no, f.month_no
 ```
 
-- Pułapki: (1) Tylko `dok_Status = 1` — KFS ze statusem 0 (do faktur detalicznych FSd) dublują zwroty ZW. (2) Korekta jest w miesiącu wystawienia korekty, a faktura pierwotna często w poprzednim — wskaźnik miesięczny jest przybliżeniem; dla rzetelnego „return rate" faktur połącz KFS z fakturą przez `dok_DoDokId` i licz w miesiącu faktury. (3) Znak: obniżka = ujemne; korekty in plus (dopłata) występują i zmniejszają moduł sumy. (4) Zwrot ilości vs zmiana ceny odczytuje się z `ob_Znak` pozycji: `−1` = towar wraca (jest koszt), `1` = zmiana wartości bez ruchu towaru (koszt 0). (5) Korekty faktur zakupu (KFZ, typ 5) to zupełnie inny wskaźnik (zakupy). (6) Przyczyna korekty (`ob_PrzyczynaKorektyId` → `sl_PrzyczynaKorekty`) jest dostępna, ale w tej instancji rzadko wypełniana — sprawdź liczności przed użyciem.
+- Pułapki: (1) Tylko `dok_Status = 1` — KFS ze statusem 0 (do faktur detalicznych FSd) dublują zwroty ZW. (2) Korekta jest w miesiącu wystawienia korekty, a faktura pierwotna często w poprzednim — wskaźnik miesięczny jest przybliżeniem; dla rzetelnego „return rate" faktur połącz KFS z fakturą przez `dok_DoDokId` i licz w miesiącu faktury. (3) Znak: obniżka = ujemne; korekty in plus (dopłata) występują i zmniejszają moduł sumy. (4) Zwrot ilości vs zmiana ceny odczytuje się z `ob_Znak` pozycji: `−1` = towar wraca (jest koszt), `1` = zmiana wartości bez ruchu towaru (koszt 0). (5) Korekty faktur zakupu (KFZ, typ 5) to zupełnie inny wskaźnik (zakupy). (6) Przyczyna korekty (`ob_PrzyczynaKorektyId` → `sl_PrzyczynaKorekty`) jest dostępna, ale w tej instancji rzadko wypełniana — sprawdź liczności przed użyciem. (7) Od 03.2026 sprzedaż detaliczna jest dokumentowana fakturą FS zamiast paragonu PA, a zwroty korektą KFS zamiast ZW (potwierdzone przez właściciela 2026-09-28) — w porównaniach przez tę datę detal = PA + FS detaliczne, zwroty = ZW + KFS; spadek PA i ZW po 02.2026 to zmiana dokumentowania, nie sprzedaży.
 - Interpretacja: w instancji korekty to ok. 3–4% wartości faktur i ok. 4–5% ich liczby (2025), niemal w całości ze zwrotów ilości (zmiany ceny to ułamek procenta). Wzrost składnika cenowego = błędy cennika lub rabaty posprzedażowe; wzrost ilościowego = reklamacje/zwroty B2B.

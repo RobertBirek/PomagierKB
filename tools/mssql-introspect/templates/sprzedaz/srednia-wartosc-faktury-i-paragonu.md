@@ -4,7 +4,8 @@ title: Średnia wartość faktury i paragonu
 area: sprzedaz
 order: 80
 questions:
-  - "Jak policzyć: Średnia wartość faktury i paragonu?"
+  - "Jak zmienia się średnia wartość paragonu i faktury miesiąc do miesiąca w tym roku?"
+  - "Jaka jest średnia i mediana wartości paragonu w 2025 roku?"
 params:
   od:
     type: date
@@ -14,7 +15,7 @@ params:
     type: date
     description: koniec zakresu (wyłącznie)
     example: 2026-01-01
-verified: 2026-09-14
+verified: 2026-09-28
 ---
 - Definicja: średnia i mediana wartości netto jednego dokumentu sprzedaży, osobno dla faktur i paragonów, miesięcznie (S13 „Średnia wartość zamówienia — AOV").
 - Formuła: `AOV = Σ dok_WartNetto / COUNT(dokumentów)` per typ; mediana przez `PERCENTILE_CONT(0.5)`.
@@ -53,5 +54,5 @@ GROUP BY year_no, month_no, dok_Typ
 ORDER BY year_no, month_no, dok_Typ
 ```
 
-- Pułapki: (1) Średnia jest wrażliwa na pojedyncze duże faktury (B2B, faktury zbiorcze do WZ po kilkadziesiąt tys. zł) — decyzje opieraj na medianie. (2) Faktury zaliczkowe końcowe mają netto ≈ 0 i zaniżają średnią — wykluczone; zaliczkowe pośrednie i tak nie mają statusu 1. (3) `PERCENTILE_CONT` to funkcja okna (nie agregat) — stąd CTE i `MAX(median_net)`. (4) Wartość dokumentu zawiera usługi (koszt wysyłki), które podnoszą średnią paragonu ze sklepu internetowego; do „koszyka towarowego" użyj `dok_WartTwNetto`. (5) Zwroty nie pomniejszają wartości dokumentu pierwotnego. (6) Wynik ma 2 wiersze na miesiąc (FS i PA) — 24 wiersze rocznie.
+- Pułapki: (1) Średnia jest wrażliwa na pojedyncze duże faktury (B2B, faktury zbiorcze do WZ po kilkadziesiąt tys. zł) — decyzje opieraj na medianie. (2) Faktury zaliczkowe końcowe mają netto ≈ 0 i zaniżają średnią — wykluczone; zaliczkowe pośrednie i tak nie mają statusu 1. (3) `PERCENTILE_CONT` to funkcja okna (nie agregat) — stąd CTE i `MAX(median_net)`. (4) Wartość dokumentu zawiera usługi (koszt wysyłki), które podnoszą średnią paragonu ze sklepu internetowego; do „koszyka towarowego" użyj `dok_WartTwNetto`. (5) Zwroty nie pomniejszają wartości dokumentu pierwotnego. (6) Wynik ma 2 wiersze na miesiąc (FS i PA) — 24 wiersze rocznie. (7) Od 03.2026 sprzedaż detaliczna jest dokumentowana fakturą FS zamiast paragonu PA, a zwroty korektą KFS zamiast ZW (potwierdzone przez właściciela 2026-09-28) — w porównaniach przez tę datę detal = PA + FS detaliczne, zwroty = ZW + KFS; spadek PA i ZW po 02.2026 to zmiana dokumentowania, nie sprzedaży.
 - Interpretacja: wzrost średniej przy stałej liczbie dokumentów = skuteczny cross-/up-selling lub podwyżki; spadek mediany paragonu przy rosnącej średniej = polaryzacja koszyka. W instancji (2025) średnia faktura ≈ 290–340 zł netto, średni paragon ≈ 190–210 zł netto, mediana wyraźnie niżej.

@@ -4,7 +4,8 @@ title: Dynamika MoM
 area: sprzedaz
 order: 40
 questions:
-  - "Jak policzyć: Dynamika MoM?"
+  - "Jak zmieniała się sprzedaż netto miesiąc do miesiąca w ostatnim roku?"
+  - "Czy sierpień 2026 był lepszy od lipca i jaki jest trend z 3 miesięcy?"
 params:
   od:
     type: date
@@ -14,7 +15,7 @@ params:
     type: date
     description: koniec zakresu (wyłącznie)
     example: 2026-09-01
-verified: 2026-09-14
+verified: 2026-09-28
 ---
 - Definicja: zmiana przychodu netto miesiąca względem miesiąca poprzedniego oraz średnia krocząca 3-miesięczna (F3 „Dynamika MoM", S9 „Trend — moving average").
 - Formuła: `MoM % = (Przychód(M) − Przychód(M−1)) / Przychód(M−1) × 100`; `avg_3m = średnia z M, M−1, M−2`.

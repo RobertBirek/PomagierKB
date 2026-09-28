@@ -4,7 +4,8 @@ title: Przychód netto po korektach i zwrotach
 area: sprzedaz
 order: 50
 questions:
-  - "Jak policzyć: Przychód netto po korektach i zwrotach?"
+  - "Ile wyniósł przychód netto po odjęciu zwrotów i korekt w 2025 roku?"
+  - "Jaki procent sprzedaży wraca co miesiąc w zwrotach i korektach?"
 params:
   od:
     type: date
@@ -14,7 +15,7 @@ params:
     type: date
     description: koniec zakresu (wyłącznie)
     example: 2026-01-01
-verified: 2026-09-14
+verified: 2026-09-28
 ---
 - Definicja: przychód netto miesiąca po odjęciu korekt faktur (KFS) i zwrotów detalicznych (ZW) — najbliższy „Net Sales" z katalogu ERP (F1 z uwzględnieniem korekt).
 - Formuła: `Net Sales = Σ FS+PA (dok_WartNetto) + Σ KFS (dok_WartNetto, zwykle ujemne) − Σ ZW (dok_WartNetto, dodatnie)`; `wskaźnik zwrotów i korekt % = (−Σ KFS + Σ ZW) / Σ FS+PA × 100`.

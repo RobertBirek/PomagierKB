@@ -4,7 +4,8 @@ title: Zwroty detaliczne (ZW)
 area: sprzedaz
 order: 130
 questions:
-  - "Jak policzyć: Zwroty detaliczne (ZW)?"
+  - "Ile wynoszą zwroty paragonów miesięcznie i jaki to procent sprzedaży detalicznej?"
+  - "Po ilu dniach od zakupu klienci średnio zwracają towar?"
 params:
   od:
     type: date
@@ -14,7 +15,7 @@ params:
     type: date
     description: koniec zakresu (wyłącznie)
     example: 2026-01-01
-verified: 2026-09-14
+verified: 2026-09-28
 ---
 - Definicja: miesięczna liczba i wartość zwrotów detalicznych do paragonów (ZW), koszt zwróconego towaru, rodzaj zwrotu i średni czas od paragonu do zwrotu, w relacji do wartości i liczby paragonów (część KPI „korekty i zwroty").
 - Formuła: `returns_net = Σ dok_WartNetto (ZW)`; `wskaźnik zwrotów % = returns_net / Σ PA × 100`; `avg_days_from_receipt = AVG(dok_DataWyst ZW − dok_DataWyst paragonu)`.
@@ -68,5 +69,5 @@ LEFT JOIN zw_month r ON r.year_no = p.year_no AND r.month_no = p.month_no
 ORDER BY p.year_no, p.month_no
 ```
 
-- Pułapki: (1) Wartości ZW są dodatnie — to kwota, którą trzeba ODJĄĆ od sprzedaży; w KPI „po zwrotach" idzie ze znakiem minus. (2) Zwrot jest w miesiącu zwrotu, paragon w miesiącu sprzedaży (średnio 15–20 dni wcześniej) — w styczniu wskaźnik jest zawyżony przez zwroty z grudnia; wersja „w miesiącu paragonu" = grupuj po `pa.dok_DataWyst`. (3) ZW dotyczy WYŁĄCZNIE paragonów; zwroty do faktur są korektami KFS (osobny KPI); do paragonu z FSd korekta KFS ma status 0 i jest dublem ZW — ignoruj ją. (4) Zwrot częściowy to ZW o wartości mniejszej niż paragon; `returns_count_to_receipts_pct` liczy dokumenty, nie „udział zwróconych zamówień". (5) `dok_StatusEx` w tej instancji to prawie zawsze 1 (zwrot ze sprzedaży) — rozbicie na reklamacje/pomyłki jest informacyjne. (6) Odbiór własny w sklepie kontra wysyłka nie jest rozróżnialny w nagłówku ZW.
+- Pułapki: (1) Wartości ZW są dodatnie — to kwota, którą trzeba ODJĄĆ od sprzedaży; w KPI „po zwrotach" idzie ze znakiem minus. (2) Zwrot jest w miesiącu zwrotu, paragon w miesiącu sprzedaży (średnio 15–20 dni wcześniej) — w styczniu wskaźnik jest zawyżony przez zwroty z grudnia; wersja „w miesiącu paragonu" = grupuj po `pa.dok_DataWyst`. (3) ZW dotyczy WYŁĄCZNIE paragonów; zwroty do faktur są korektami KFS (osobny KPI); do paragonu z FSd korekta KFS ma status 0 i jest dublem ZW — ignoruj ją. (4) Zwrot częściowy to ZW o wartości mniejszej niż paragon; `returns_count_to_receipts_pct` liczy dokumenty, nie „udział zwróconych zamówień". (5) `dok_StatusEx` w tej instancji to prawie zawsze 1 (zwrot ze sprzedaży) — rozbicie na reklamacje/pomyłki jest informacyjne. (6) Odbiór własny w sklepie kontra wysyłka nie jest rozróżnialny w nagłówku ZW. (7) Od 03.2026 sprzedaż detaliczna jest dokumentowana fakturą FS zamiast paragonu PA, a zwroty korektą KFS zamiast ZW (potwierdzone przez właściciela 2026-09-28) — w porównaniach przez tę datę detal = PA + FS detaliczne, zwroty = ZW + KFS; spadek PA i ZW po 02.2026 to zmiana dokumentowania, nie sprzedaży.
 - Interpretacja: w instancji zwroty to ok. 9,5–12% wartości i ok. 10% liczby paragonów (2025) — typowe dla e-commerce z prawem odstąpienia (14 dni), co potwierdza średni czas ok. 15–20 dni od paragonu. `returns_cost` pokazuje, ile wartości magazynowej wraca (towar do ponownej sprzedaży lub odpisu). Wzrost wskaźnika powyżej 12–13% przy stałej sprzedaży to sygnał do sprawdzenia opisów produktów, opakowań i przewoźnika.

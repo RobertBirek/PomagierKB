@@ -4,7 +4,8 @@ title: Przychód netto ze sprzedaży — rocznie z dynamiką YoY
 area: sprzedaz
 order: 20
 questions:
-  - "Jak policzyć: Przychód netto ze sprzedaży — rocznie z dynamiką YoY?"
+  - "O ile procent wzrosła sprzedaż netto w 2025 roku względem 2024?"
+  - "Jak rósł przychód netto rok do roku w ostatnich latach?"
 params:
   od:
     type: date
@@ -14,7 +15,7 @@ params:
     type: date
     description: koniec zakresu (wyłącznie)
     example: 2026-01-01
-verified: 2026-09-14
+verified: 2026-09-28
 ---
 - Definicja: roczna suma wartości netto FS+PA z porównaniem do roku poprzedniego (F2 „Dynamika przychodu YoY").
 - Formuła: `YoY % = (Przychód_rok − Przychód_rok−1) / Przychód_rok−1 × 100`; przychód jak w KPI miesięcznym.

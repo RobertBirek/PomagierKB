@@ -4,7 +4,8 @@ title: Sezonowość sprzedaży
 area: sprzedaz
 order: 110
 questions:
-  - "Jak policzyć: Sezonowość sprzedaży?"
+  - "Które miesiące są dla nas najmocniejsze, a które najsłabsze w roku?"
+  - "Jaki procent rocznej sprzedaży przypada na grudzień?"
 params:
   od:
     type: date
@@ -14,7 +15,7 @@ params:
     type: date
     description: koniec zakresu (wyłącznie)
     example: 2026-01-01
-verified: 2026-09-14
+verified: 2026-09-28
 ---
 - Definicja: indeks sezonowości każdego miesiąca kalendarzowego = przychód miesiąca / przeciętny miesiąc danego roku, uśredniony z kilku pełnych lat (S8 „Analiza sezonowości").
 - Formuła: `indeks(M, R) = Przychód(M, R) / AVG_M Przychód(·, R)`; `indeks(M) = AVG_R indeks(M, R)`; `udział roku % = indeks(M) / 12 × 100`.

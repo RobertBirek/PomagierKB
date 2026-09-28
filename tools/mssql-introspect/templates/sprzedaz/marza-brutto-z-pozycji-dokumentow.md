@@ -4,7 +4,9 @@ title: Marża brutto z pozycji dokumentów
 area: sprzedaz
 order: 60
 questions:
-  - "Jak policzyć: Marża brutto z pozycji dokumentów?"
+  - "Jaka była marża brutto w 2025 roku miesiąc po miesiącu?"
+  - "Ile zarobiliśmy na marży w sierpniu 2026 i jaki to procent sprzedaży?"
+  - "Jaka jest marża na samych towarach, bez opłat za wysyłkę?"
 params:
   od:
     type: date
@@ -14,7 +16,7 @@ params:
     type: date
     description: koniec zakresu (wyłącznie)
     example: 2026-01-01
-verified: 2026-09-14
+verified: 2026-09-28
 ---
 - Definicja: marża brutto = przychód netto po korektach i zwrotach minus koszt własny sprzedanych towarów (wartość magazynowa z pozycji dokumentów), kwotowo i procentowo, z osobnym wynikiem dla samych towarów (F4 „Gross Profit Margin", F19 „Contribution Margin").
 - Formuła: `Marża = Σ znak × ob_WartNetto − Σ znak × ob_WartMag`; `Marża % = Marża / Σ znak × ob_WartNetto × 100`; znak = `ob_Znak` (KFS) × (−1 dla ZW); dla FS zbiorczych (podtyp 2) wartość i koszt z pozycji WZ wskazanej przez `ob_DoId`.
