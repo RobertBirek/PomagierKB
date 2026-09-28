@@ -2,9 +2,14 @@
 // Katalog szablonów SQL (tools/mssql-introspect/templates) + konwencje instancji → dokumenty IloveKB:
 // kpi-sprzedaz.md, kpi-finanse.md, kpi-magazyn.md, konwencje-instancji.md — z TYMI SAMYMI tytułami
 // i sourceUrl co przy imporcie 2026-09-14 (re-import zastępuje wersje; goldens po sourceRef).
-// Manifest SCALANY z istniejącym (wpisy agregatów, dostawców, słowników zostają).
-// Użycie: node tools/kb-import/prepare-kpi.mjs --out <out/docs> --source-base <url> [--templates <dir>] [--konwencje <plik>]
+// Każdy dokument zaczyna się od front mattera źródła (owner/license/date — panel czyta metadane tylko
+// z bloku na SAMYM początku) i ma dokładnie jeden nagłówek `# `.
+// Manifest SCALANY z istniejącym (wpisy agregatów, dostawców, słowników zostają); uszkodzony = stop.
+// Publikuje tylko ZATWIERDZONY katalog: niezacommitowane zmiany w templates/ lub instance/ = odmowa
+// (kod 3), chyba że --allow-dirty (wyłącznie lokalny podgląd; refresh_ilovekb.sh go NIE podaje).
+// Użycie: node tools/kb-import/prepare-kpi.mjs --out <out/docs> --source-base <url> [--templates <dir>] [--konwencje <plik>] [--allow-dirty]
 
+import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -23,15 +28,33 @@ const KONWENCJE = {
   keywords: ['Magnum_Profi', 'konwencje', 'rola kontrahenta', 'klient hurtowy', 'pola własne', 'poziomy cen', 'marki', 'typy dokumentów', 'kanały sprzedaży'],
 };
 const HOST_RE = /192\.168\.|INSERTGT|DESKTOP-/;
+// Metadane źródła dla obszaru, którego zasady ich nie mają (sprzedaż) — te same klucze co w IloveKB.
+const DEFAULT_META = {
+  owner: 'ilovelighting (instancja produkcyjna Magnum_Profi)',
+  license: 'użytek wewnętrzny — mapowanie KPI na SQL, bez danych osobowych',
+};
+const FRONT_MATTER_RE = /^---\n[\s\S]*?\n---\n/;
+const REPO = fileURLToPath(new URL('../../', import.meta.url));
+const APPROVED_PATHS = ['tools/mssql-introspect/templates', 'tools/mssql-introspect/instance'];
 
-function paramLine(name, d) {
+/** Blok front mattera: owner, license, pozostałe klucze zasad, na końcu date (deterministyczna). */
+function frontMatter(meta, date) {
+  const fields = { ...DEFAULT_META, ...meta };
+  delete fields.date;
+  const lines = Object.entries(fields).map(([k, v]) => `${k}: ${String(v).replace(/\s+/g, ' ').trim()}`);
+  return ['---', ...lines, `date: ${date}`, '---'].join('\n');
+}
+
+export function paramLine(name, d) {
   const flags = [d.type, ...(d.required ? [] : ['opcjonalny']), ...(d.default !== undefined ? [`domyślnie ${d.default}`] : [])];
   const extra = d.type === 'enum' ? `; dozwolone: ${d.values.join(', ')}` : d.type === 'text' ? `; maks. ${d.maxLength} znaków` : '';
   return `- \`@${name}\` (${flags.join(', ')}) — ${d.description}; przykład: ${d.example}${extra}`;
 }
 
-export function renderAreaDoc({ area, templates, rules }) {
-  const L = [`# ${DOCS[area].title}`, '', rules.trim(), ''];
+export function renderAreaDoc({ area, templates, rules, meta = {} }) {
+  // Data dokumentu = najpóźniejsza weryfikacja jego szablonów (nie dzień generowania — wynik deterministyczny).
+  const date = templates.map((t) => t.verified).sort().at(-1);
+  const L = [frontMatter(meta, date), `# ${DOCS[area].title}`, '', rules.trim(), ''];
   for (const t of [...templates].sort((a, b) => a.order - b.order || a.id.localeCompare(b.id))) {
     L.push(`## ${t.title}`, '', t.body.trim(), '');
     const params = Object.entries(t.params);
@@ -59,16 +82,39 @@ export function generateKpiDocs({ catalog, konwencje, sourceBase }) {
     const templates = catalog.templates.filter((t) => t.area === area);
     if (templates.length === 0) continue;
     const d = DOCS[area];
-    const text = renderAreaDoc({ area, templates, rules: catalog.rules[area] ?? '' });
+    const text = renderAreaDoc({ area, templates, rules: catalog.rules[area] ?? '', meta: catalog.rulesMeta?.[area] ?? {} });
     guard(d.file, text);
     files.push({ file: d.file, text });
     entries.push(entry({ ...d, category: 'mapowanie KPI → SQL', keywords: [PRODUCT, INSTANCE, ...d.keywords, ...templates.map((t) => t.title)], text, sourceBase, sourceFile: `templates/${area}` }));
   }
-  const k = `${konwencje.trim()}\n`;
+  const k = `${konwencje.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').trim()}\n`;
+  if (!FRONT_MATTER_RE.test(k)) throw new Error(`${KONWENCJE.file}: brak front mattera (owner/license/date) na początku pliku`);
+  if (k.split('\n').filter((l) => l.startsWith('# ')).length !== 1) throw new Error(`${KONWENCJE.file}: wymagany dokładnie jeden nagłówek \`# \``);
   guard(KONWENCJE.file, k);
   files.push({ file: KONWENCJE.file, text: k });
   entries.push(entry({ ...KONWENCJE, text: k, sourceBase, sourceFile: 'instance/konwencje-instancji.md' }));
   return { files, entries };
+}
+
+/** Scalenie manifestu: `previousRaw` = treść istniejącego manifest.json albo null (brak pliku). */
+export function mergeManifest(previousRaw, entries, generatedAt) {
+  let previous = { entries: [] };
+  if (previousRaw !== null) {
+    try {
+      previous = JSON.parse(previousRaw);
+    } catch (err) {
+      throw new Error(`manifest.json jest uszkodzony (${err.message}) — nie nadpisuję; napraw albo usuń plik`);
+    }
+    if (!previous || typeof previous !== 'object' || Array.isArray(previous)) throw new Error('manifest.json jest uszkodzony (oczekiwano obiektu) — nie nadpisuję');
+  }
+  const mine = new Set(entries.map((e) => e.file));
+  const kept = (Array.isArray(previous.entries) ? previous.entries : []).filter((e) => !mine.has(e.file));
+  return { ...previous, generatedAt, entries: [...kept, ...entries] };
+}
+
+/** Niezacommitowane zmiany katalogu (git status --porcelain) — pusty string = czysto. */
+function uncommittedCatalogChanges() {
+  return execFileSync('git', ['-C', REPO, 'status', '--porcelain', '--', ...APPROVED_PATHS], { encoding: 'utf8' }).trim();
 }
 
 function main() {
@@ -79,8 +125,21 @@ function main() {
   const tplDir = opt('--templates', fileURLToPath(new URL('../mssql-introspect/templates/', import.meta.url)));
   const konwFile = opt('--konwencje', fileURLToPath(new URL('../mssql-introspect/instance/konwencje-instancji.md', import.meta.url)));
   if (!out || !sourceBase) {
-    console.error('użycie: prepare-kpi.mjs --out <out/docs> --source-base <url> [--templates <dir>] [--konwencje <plik>]');
+    console.error('użycie: prepare-kpi.mjs --out <out/docs> --source-base <url> [--templates <dir>] [--konwencje <plik>] [--allow-dirty]');
     process.exit(2);
+  }
+  if (!args.includes('--allow-dirty')) {
+    let dirty;
+    try {
+      dirty = uncommittedCatalogChanges();
+    } catch (err) {
+      console.error(`nie mogę sprawdzić stanu katalogu w git (${err.message.split('\n')[0]}) — dokumenty NIE zostały wygenerowane`);
+      process.exit(3);
+    }
+    if (dirty) {
+      console.error(`niezatwierdzone zmiany w katalogu szablonów/konwencjach — dokumenty NIE zostały wygenerowane (publikujemy tylko zacommitowany katalog; --allow-dirty wyłącznie do lokalnego podglądu):\n${dirty}`);
+      process.exit(3);
+    }
   }
   const catalog = loadCatalog(tplDir);
   if (catalog.errors.length) {
@@ -94,14 +153,23 @@ function main() {
     console.error(`błąd: ${err.message}`);
     process.exit(3);
   }
+  const manifestPath = join(out, 'manifest.json');
+  let manifest;
+  try {
+    let previousRaw = null;
+    try {
+      previousRaw = readFileSync(manifestPath, 'utf8');
+    } catch (err) {
+      if (err.code !== 'ENOENT') throw err; // pierwszy przebieg = brak pliku; inny błąd = stop
+    }
+    manifest = mergeManifest(previousRaw, result.entries, new Date().toISOString());
+  } catch (err) {
+    console.error(`błąd: ${err.message}`);
+    process.exit(3);
+  }
   mkdirSync(out, { recursive: true });
   for (const f of result.files) writeFileSync(join(out, f.file), f.text);
-  const manifestPath = join(out, 'manifest.json');
-  let previous = { entries: [] };
-  try { previous = JSON.parse(readFileSync(manifestPath, 'utf8')); } catch { /* pierwszy przebieg */ }
-  const mine = new Set(result.entries.map((e) => e.file));
-  const kept = (previous.entries ?? []).filter((e) => !mine.has(e.file));
-  writeFileSync(manifestPath, JSON.stringify({ ...previous, generatedAt: new Date().toISOString(), entries: [...kept, ...result.entries] }, null, 2));
+  writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
   console.log(`szablonów: ${catalog.templates.length}, plików: ${result.files.length}, znaków: ${result.entries.reduce((a, e) => a + e.chars, 0)}`);
 }
 

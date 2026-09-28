@@ -1,7 +1,7 @@
 ---
 owner: ilovelighting (instancja produkcyjna Magnum_Profi)
 license: użytek wewnętrzny — semantyka instancji, bez danych osobowych
-date: 2026-09-11
+date: 2026-09-28
 ---
 # Magnum_Profi — konwencje i semantyka instancji
 
