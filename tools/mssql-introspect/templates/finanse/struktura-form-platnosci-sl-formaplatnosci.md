@@ -24,8 +24,6 @@ Tabele i kolumny: `dok__Dokument` (dok_KwGotowka, dok_KwKarta, dok_KwKredyt, dok
 
 Kody: `dok_Typ` 2, 21; `dok_Status` 1; bez FS podtyp 1.
 
-Szablon SQL:
-
 ```sql
 -- KPI 8: struktura form płatności na dokumentach sprzedaży (FS + PA)
 -- zakres: [@od, @do) — przedział półotwarty
@@ -61,8 +59,6 @@ GROUP BY
   d.dok_Typ
 ORDER BY brutto_pln DESC
 ```
-
-Test: 2025-09-14 … 2026-09-13, 43 wiersze, wykonano 2026-09-14.
 
 Pułapki:
 - `dok_PlatId` NIE jest formą płatności dokumentu — tylko terminem odroczonym; w 2025 r. wypełnione na 1,2% FS. Struktura oparta na samym `dok_PlatId` pokaże „brak" dla 98% dokumentów.

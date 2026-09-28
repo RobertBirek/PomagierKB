@@ -46,6 +46,29 @@ SELECT dok_Id FROM dbo.dok__Dokument WHERE dok_Typ = 16 AND dok_DataWyst < DATEA
 - 2 = FS.
 `;
 
+const FIN_DOC = `# Magnum_Profi — KPI: finanse (szablony SQL)
+
+Wstęp finanse.
+
+## Model rozrachunków i płatności w tej instancji (przeczytaj najpierw)
+
+- Salda liczone z \`dok__Dokument\`.
+
+## KPI 1 — Należności otwarte (saldo AR)
+
+- Definicja: suma sald otwartych.
+
+Szablon SQL (stan bieżący):
+
+\`\`\`sql
+SELECT SUM(d.dok_WartNetto) AS ar
+FROM dbo.dok__Dokument d
+WHERE d.dok_Status = 1
+\`\`\`
+
+Test: stan na 2026-09-14, 8 wierszy, wykonano 2026-09-14.
+`;
+
 describe('slugify', () => {
   it('ascii kebab-case z polskich znaków, bez prefiksu KPI', () => {
     expect(slugify('KPI 3 — Aging należności (0–30 / 31–60)')).toBe('aging-naleznosci-0-30-31-60');
@@ -81,5 +104,17 @@ describe('splitKpiDoc', () => {
     expect(zk[1].flags.join(' ')).toMatch(/GETDATE/);
     expect(zk[1].flags.join(' ')).toMatch(/dwa bloki SQL/);
     for (const t of zk) expect(parseTemplate(t.raw, { file: `sprzedaz/${t.id}.md`, area: 'sprzedaz' }).error).toBeUndefined();
+  });
+});
+
+describe('splitKpiDoc — nagłówki i linia QA w stylu finanse/magazyn (bez „(T-SQL)" i bez myślnika)', () => {
+  const r = splitKpiDoc(FIN_DOC, { area: 'finanse', fallbackVerified: '2026-01-01' });
+  it('usuwa "Szablon SQL (stan bieżący):" i bare "Test: …, wykonano …", ale zachowuje verified', () => {
+    const t = r.templates[0];
+    expect(t.raw).not.toMatch(/^Szablon SQL/m);
+    expect(t.raw).not.toMatch(/^Test:/m);
+    const p = parseTemplate(t.raw, { file: `finanse/${t.id}.md`, area: 'finanse' });
+    expect(p.error).toBeUndefined();
+    expect(p.template.verified).toBe('2026-09-14');
   });
 });

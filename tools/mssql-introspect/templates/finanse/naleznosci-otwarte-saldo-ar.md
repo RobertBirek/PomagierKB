@@ -16,8 +16,6 @@ Tabele i kolumny: `nz__Finanse` (nzf_Typ, nzf_Wartosc, nzf_WartoscPierwotna, nzf
 
 Kody: `nzf_Typ` 39; źródłowe `dok_Typ` 2 (FS), 21 (PA), 5 (KFZ — należność od dostawcy); operator: `nzf_Podtyp` 4 (karta/operator) i 5 (pobranie).
 
-Szablon SQL (stan bieżący):
-
 ```sql
 -- KPI 1: należności otwarte (saldo AR) — stan bieżący rozrachunków
 -- zakres: zamień datę odniesienia '2026-09-14' (służy tylko do oznaczenia części po terminie)
@@ -46,13 +44,7 @@ GROUP BY CASE WHEN op.id IS NULL THEN 'kontrahent' ELSE 'operator platnosci' END
 ORDER BY rodzaj_dluznika, podtyp_rozrachunku, waluta
 ```
 
-Test: stan na 2026-09-14, 8 wierszy, wykonano 2026-09-14.
 
-Szablon SQL (wariant historyczny — saldo na koniec dnia D):
-
-
-
-Test: D = 2025-12-31, 1 wiersz, wykonano 2026-09-14. Walidacja: ten sam szablon z D = 2026-09-14 odtworzył saldo bieżące co do grosza (PLN 848 271,97; CZK, EUR, HUF również zgodne) — rekonstrukcja ze spłat jest wiarygodna.
 
 Pułapki:
 - Rozrachunki rozliczone częściowo: `nzf_Wartosc` to reszta, `nzf_WartoscPierwotna` to całość — do salda bierz `nzf_Wartosc`, do „ile wystawiono" `nzf_WartoscPierwotna`.

@@ -24,8 +24,6 @@ Tabele i kolumny: `dok__Dokument` (dok_PlatnikId, dok_WartBrutto, dok_Typ, dok_P
 
 Kody: `dok_Typ` 2, 6, 21; `dok_Status` 1; bez FS podtyp 1; tylko klienci z dodatnią sumą (HAVING > 0).
 
-Szablon SQL:
-
 ```sql
 -- KPI 11: koncentracja sprzedaży wg klientów — rangi, udział Top 10 / Top 50, HHI (bez nazw)
 -- zakres: [@od, @do) — przedział półotwarty
@@ -59,8 +57,6 @@ FROM r CROSS JOIN t
 WHERE r.ranga <= 50
 ORDER BY r.ranga
 ```
-
-Test: 2025-09-14 … 2026-09-13, 50 wierszy, wykonano 2026-09-14.
 
 Pułapki:
 - Klienci powiązani (grupa kapitałowa, kilka `kh_Id` tej samej firmy) są liczeni osobno — koncentracja niedoszacowana.

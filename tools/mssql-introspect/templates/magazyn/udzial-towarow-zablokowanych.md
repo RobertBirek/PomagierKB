@@ -16,8 +16,6 @@ Tabele i kolumny: `tw__Towar` (tw_Zablokowany, tw_Usuniety, tw_SklepInternet); `
 
 Kody dok_Typ: brak.
 
-Szablon SQL:
-
 ```sql
 -- zakres: stan bieżący (bez dat)
 WITH stock AS (
@@ -44,5 +42,3 @@ ORDER BY t.tw_Zablokowany
 Pułapki: blokada w Subiekcie GT blokuje wystawianie dokumentów na towar, ale nie zeruje stanu — wartość > 0 u zablokowanych to zapas nie do sprzedania bez odblokowania; blokada nie jest tożsama z wycofaniem z e-sklepu (4 357 zablokowanych ma nadal flagę `tw_SklepInternet`); `tw_Usuniety` na instancji jest zawsze 0 — kartoteka nigdy nie jest czyszczona, więc 79 691 SKU zawiera historyczne pozycje.
 
 Interpretacja (2026-09-14): zablokowane 7 883 SKU (9,9% kartoteki), żaden ze stanem, wartość 0 — blokada jest używana konsekwentnie jako „koniec życia produktu" po wyprzedaniu. Aktywne 71 808 SKU, z czego tylko 5 683 (7,9%) ma stan. Sygnał do sprawdzenia: 4 357 zablokowanych z flagą e-sklepu — czy integrator (tabele `sublinker_*`) filtruje po blokadzie, czy po fladze?
-
-Test: stan bieżący (bez dat), 2 wiersze, wykonano 2026-09-14.

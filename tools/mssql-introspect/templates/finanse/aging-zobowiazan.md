@@ -16,8 +16,6 @@ Tabele i kolumny: `nz__Finanse`, `dok__Dokument` (dok_Typ źródłowy).
 
 Kody: `nzf_Typ` 40; `dok_Typ` 1/5 = dostawca, 6/14 = klient (zwrot), NULL = ręczny.
 
-Szablon SQL:
-
 ```sql
 -- KPI 4: aging zobowiązań (przedziały dni po terminie) — stan bieżący
 -- zakres: zamień datę odniesienia '2026-09-14' (we wszystkich miejscach)
@@ -50,8 +48,6 @@ GROUP BY
        ELSE 'inny' END
 ORDER BY przedzial, rodzaj_wierzyciela
 ```
-
-Test: D = 2026-09-14, 8 wierszy, wykonano 2026-09-14.
 
 Pułapki:
 - Świadome opóźnienie płatności (negocjowany termin) vs. przeterminowanie wbrew umowie są nieodróżnialne w danych — trzeba porównać z `dok_PlatTermin` na FZ i ustaleniami z dostawcą.

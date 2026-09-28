@@ -65,7 +65,10 @@ export function splitKpiDoc(markdown, { area, fallbackVerified }) {
     if (RULE_HEADINGS.test(heading)) { rules.push(`## ${heading}\n${content.trim()}`); continue; }
     if (CODES_HEADING.test(heading)) { codes.push(`## ${heading}\n${content.trim()}`); continue; }
     const verified = content.match(/wykona(?:no|ne)\s+(\d{4}-\d{2}-\d{2})/)?.[1] ?? fallbackVerified;
-    const cleaned = content.replace(/^Szablon SQL \(T-SQL\):\s*\n/m, '').replace(/^- Test:.*\n?/m, '');
+    // Nagłówek bywa „Szablon SQL:", „Szablon SQL (T-SQL):", „Szablon SQL (stan bieżący):",
+    // „Szablon SQL (wariant historyczny — …):"; linia QA bywa z myślnikiem („- Test: …") albo bez
+    // (finanse/magazyn: „Test: …") — obie usuwamy globalnie (/g), nie tylko pierwsze wystąpienie.
+    const cleaned = content.replace(/^Szablon SQL(?:\s*\([^)]*\))?:\s*\n/gm, '').replace(/^-?\s*Test:.*\n?/gm, '');
     const blocks = [...cleaned.matchAll(/```sql\n([\s\S]*?)```/g)];
     const title = heading.replace(/^KPI\s+\d+\s+—\s+/, '');
     const baseId = slugify(heading);

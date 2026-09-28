@@ -24,8 +24,6 @@ Tabele i kolumny: `dok__Dokument` (dok_Typ, dok_Status, dok_DataWyst, dok_DoDokI
 
 Kody dok_Typ: PZ 10 (→ FZ 1 zakup; → ZW 14 / KFS 6 zwrot klienta), WZ 11 (→ FS 2 / PA 21 sprzedaż; → KFZ 5 zwrot do dostawcy), PW 12, RW 13, MM 9; `dok_Status = 1`.
 
-Szablon SQL:
-
 ```sql
 -- zakres: [@od, @do) — przedział półotwarty
 SELECT YEAR(d.dok_DataWyst) AS y, MONTH(d.dok_DataWyst) AS m,
@@ -49,5 +47,3 @@ ORDER BY 1, 2
 Pułapki: `dok_DataWyst` dokumentu magazynowego może różnić się od `dok_DataMag` (data operacji) — przy zamknięciach miesiąca użyj `dok_DataMag`; PZ podtyp 2 („PZv", 2 dok. w 2025, 132 tys. zł) to przyjęcia bez FZ — wchodzą do `pz_purchases`; IW (inwentaryzacja, typ 29) generuje techniczne PW/RW z `dok_DokumentTechniczny` — różnice inwentaryzacyjne zobaczysz w `pw_receipts` / `rw_issues` w miesiącu remanentu; wartości w cenach magazynowych (koszt), nie w cenach sprzedaży; suma `net_stock_change` za okres ≈ różnica zapasów z KPI „Rotacja" (2025: ok. +0,43 mln).
 
 Interpretacja (2025): zakupy 0,51–1,09 mln zł miesięcznie (szczyt marzec i październik), koszt sprzedaży 0,55–0,99 mln (szczyt grudzień), zwroty do dostawcy 4–278 tys. miesięcznie (razem ~2,1 mln), zwroty klientów 40–88 tys. (razem ~0,67 mln). Zapas rósł od marca (+271 tys.) i topniał w grudniu (−116 tys.) — typowa sezonowość oświetlenia.
-
-Test: 2025-01-01..2026-01-01, 12 wierszy, wykonano 2026-09-14.

@@ -16,8 +16,6 @@ Tabele i kolumny: `dok_MagRuch` (mr_Data, mr_Ilosc, mr_Cena, mr_MagId, mr_DoId, 
 
 Kody dok_Typ: WZ 11 (wydanie), z wykluczeniem WZ, których `dok_DoDokId` wskazuje KFZ 5; RW 13 raportowane osobno; zwroty = warstwy z rodzicem-rozchodem (PZ 10 do ZW 14 / KFS 6).
 
-Szablon SQL:
-
 ```sql
 -- zakres: zamień daty — okres 2025-01-01 (początek) .. 2026-01-01 (koniec, wyłącznie)
 WITH mv AS (
@@ -55,5 +53,3 @@ FROM agg
 Pułapki: rekonstrukcja opiera się na `mr_Cena` warstwy, a KFZ zmieniające cenę serii zapisują się w `dok_MagWart` — zapas na datę odbiega od bieżącej wyceny FIFO o ok. 4% (koniec 2025: 1,597 mln wg rekonstrukcji vs 1,748 mln FIFO w 09.2026 to także realny wzrost zapasu); średnia z dwóch punktów zaniża przy sezonowym szczycie w IV kwartale — dla dokładności policz zapas na koniec każdego miesiąca (ten sam CASE z 12 datami); zapytanie czyta całą `dok_MagRuch` (0,57 mln wierszy, ~4 s) — nie uruchamiaj w pętli; wynik globalny — wersja per magazyn wymaga przypisania rozchodu do magazynu rodzica (`p.mr_MagId`) i odjęcia przesunięć MM od magazynu źródłowego.
 
 Interpretacja (rok 2025): zapas 1,168 mln → 1,597 mln zł (średnio 1,383 mln); rozchody sprzedażowe 8,504 mln, zwroty klientów 0,674 mln, COGS netto 7,831 mln; rotacja 5,66 obrotu/rok, DIO 64 dni — w widełkach katalogu dla handlu (4–8). Osobno: zwroty do dostawcy 2,098 mln zł (27% COGS!) i RW 52 tys. zł. Wysoki wolumen zwrotów do dostawcy sugeruje model „zamawiaj pod klienta, oddawaj niesprzedane" — potwierdza to KPI „Stany ujemne i braki".
-
-Test: 2025-01-01..2026-01-01, 1 wiersz, wykonano 2026-09-14.

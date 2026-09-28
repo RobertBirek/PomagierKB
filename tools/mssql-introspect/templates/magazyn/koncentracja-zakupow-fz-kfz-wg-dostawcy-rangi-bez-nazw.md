@@ -24,8 +24,6 @@ Tabele i kolumny: `dok__Dokument` (dok_Typ, dok_Status, dok_DataWyst, dok_Platni
 
 Kody dok_Typ: FZ 1, KFZ 5; `dok_Status = 1`.
 
-Szablon SQL:
-
 ```sql
 -- zakres: [@od, @do) — przedział półotwarty
 WITH sp AS (
@@ -68,5 +66,3 @@ ORDER BY MIN(rnk)
 Pułapki: `dok_WartNetto` obejmuje FZ usługowe (marketplace, transport, koszty) — kolumna `goods_value_pz` (Σ `dok_WartMagP` FZ) pokazuje część towarową; rozjazd `goods_value_pz` ≫ `net_value` oznacza dużo KFZ (zwrotów do dostawcy) — ranga 4 w 2025: towar 2,47 mln, netto po KFZ 0,94 mln; FZ walutowe są w PLN po kursie z dokumentu; HHI liczony po `dok_PlatnikId` — ten sam dostawca pod dwoma kartotekami zaniża koncentrację; okno OVER liczone przed grupowaniem po randze, więc `hhi_index` jest stały w każdym wierszu; dostawcy w rangach są anonimowi — dla rozmowy z właścicielem potrzebne jest osobne, autoryzowane zapytanie z nazwą.
 
 Interpretacja (2025): 68 dostawców; Top 1 16,5%, Top 3 44,8%, Top 5 66,1%, Top 10 85,8%, pozostałych 58 dostawców 14,2%; HHI 1 012 — niska/umiarkowana koncentracja, bez zależności od jednego dostawcy (próg ryzyka katalogu: Top 1 powyżej 40%). Ranga 5 ma 301 KFZ na 247 FZ, ranga 2 — 180 KFZ na 683 FZ: to dostawcy z rozliczeniem zwrotów niesprzedanego towaru.
-
-Test: 2025-01-01..2026-01-01, 11 wierszy, wykonano 2026-09-14.

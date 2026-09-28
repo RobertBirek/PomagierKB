@@ -16,8 +16,6 @@ Tabele i kolumny: `nz__Finanse` (jak KPI 1, `nzf_Typ = 40`, `nzf_IdDokumentAuto`
 
 Kody: `nzf_Typ` 40; źródłowe `dok_Typ` 1 (FZ), 5 (KFZ zwiększająca), 6 (KFS — zwrot dla klienta), 14 (ZW — zwrot detaliczny); NULL = zobowiązanie ręczne/dekret.
 
-Szablon SQL:
-
 ```sql
 -- KPI 2: zobowiązania otwarte (saldo AP) — stan bieżący rozrachunków
 -- zakres: zamień datę odniesienia '2026-09-14'
@@ -46,8 +44,6 @@ GROUP BY CASE WHEN d.dok_Typ IN (1, 5) THEN 'dostawca (FZ/KFZ)'
          d.dok_Typ, f.nzf_IdWaluty
 ORDER BY saldo_otwarte_pln DESC
 ```
-
-Test: stan na 2026-09-14, 2 wiersze, wykonano 2026-09-14.
 
 Pułapki:
 - Zakupy udokumentowane tylko PZ (bez FZ) nie mają rozrachunku — w 2025 r. 4 094 z 12 467 PZ było bez płatnika; AP nie widzi zobowiązań „w drodze" do czasu wprowadzenia FZ.

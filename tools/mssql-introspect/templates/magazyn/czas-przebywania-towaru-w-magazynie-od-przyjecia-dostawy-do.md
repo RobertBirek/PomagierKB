@@ -24,8 +24,6 @@ Tabele i kolumny: `dok_MagRuch` (mr_Id, mr_DoId, mr_MagId, mr_Data, mr_Ilosc, mr
 
 Kody dok_Typ: WZ 11, z wykluczeniem powiązanych z KFZ 5.
 
-Szablon SQL:
-
 ```sql
 -- zakres: [@od, @do) — przedział półotwarty
 WITH pairs AS (
@@ -57,5 +55,3 @@ ORDER BY 1, 2
 Pułapki: FIFO wydaje najstarszą warstwę, więc czas przebywania to czas najstarszej sztuki, nie „typowej"; warstwa pochodna (MM, zwrot) liczy od swojej daty — kolumna `rows_from_transfer_or_return_layer` pokazuje skalę (ok. 9% wierszy); dni kalendarzowe; rozkład jest silnie prawoskośny (maksima ~2 000 dni), więc średnia ważona > mediany — dla mediany użyj PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY days_in_stock) OVER (PARTITION BY miesiąc) w podzapytaniu; zwroty do dostawcy celowo wyłączone (ich czas to okres „na próbę", nie sprzedaż).
 
 Interpretacja (2025): średnia ważona 51–93 dni (minimum maj 51,1, maksimum styczeń 93,3 — wyprzedaż poświąteczna starszego towaru); 63–74% sztuk wychodzi w ciągu 30 dni od przyjęcia (obsługa zamówień pod klienta), 3–9% leżało ponad rok. Spójne z DIO 64 dni z KPI „Rotacja".
-
-Test: 2025-01-01..2026-01-01, 12 wierszy, wykonano 2026-09-14.

@@ -16,8 +16,6 @@ Tabele i kolumny: `tw__Towar` (tw_Rodzaj, tw_Zablokowany, tw_SklepInternet, tw_I
 
 Kody dok_Typ: brak. Kody tw_Rodzaj: 1 towar, 2 usługa, 4 opakowanie, 8 komplet, 16 opłata.
 
-Szablon SQL:
-
 ```sql
 -- zakres: stan bieżący (bez dat)
 WITH stock AS (
@@ -46,5 +44,3 @@ ORDER BY t.tw_Rodzaj
 Pułapki: rodzaj jest kopiowany na pozycje (`ob_TowRodzaj`) w chwili wystawienia — zmiana rodzaju w kartotece nie zmienia historii; komplet (8) ma stan tylko po PW kompletu, składniki liczą się osobno — nie sumować kompletu i składników; `tw_IdPodstDostawca` wskazuje `kh__Kontrahent` (dane osobowe — nigdy nie dołączać nazw, tylko liczyć).
 
 Interpretacja (2026-09-14): towary 79 685 (71 802 aktywne, 7 883 zablokowane, 26 208 z flagą e-sklepu, 21 021 z dostawcą domyślnym, 5 682 na stanie, 1,748 mln zł); usługi 3 (wszystkie w e-sklepie — usługi transportu/montażu sprzedawane online); opakowanie 1; komplety 2 (1 na stanie, 77 zł); opłat 0. Kartoteka to w 99,99% towary — analizy rodzajowe z katalogu (usługi vs towary) nie mają tu zastosowania; dostawca domyślny jest wypełniony tylko u 26% towarów, więc analizy „per dostawca" trzeba prowadzić po FZ, nie po kartotece.
-
-Test: stan bieżący (bez dat), 4 wiersze, wykonano 2026-09-14.

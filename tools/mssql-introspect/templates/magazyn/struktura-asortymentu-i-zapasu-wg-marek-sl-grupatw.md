@@ -24,8 +24,6 @@ Tabele i kolumny: `tw__Towar` (tw_IdGrupa, tw_Zablokowany, tw_SklepInternet); `s
 
 Kody dok_Typ: WZ 11 (bez WZ→KFZ 5), `dok_Status = 1`.
 
-Szablon SQL:
-
 ```sql
 -- zakres: [@od, @do) — przedział półotwarty
 WITH stock AS (
@@ -66,5 +64,3 @@ ORDER BY SUM(COALESCE(s.value_fifo, 0)) DESC
 Pułapki: grupa to jedna marka na towar — towary bez grupy trafiają do wiersza z `grt_Id NULL` (grupa 1 „Podstawowa" to domyślna); rotacja liczona na zapasie „dziś" przy koszcie z innego okresu — porównawcza, nie księgowa (marki, które właśnie dostały dużą dostawę, mają zaniżoną); `cost_sold_period` obejmuje towar sprzedany bez magazynowania; udział procentowy liczony nad wszystkimi 93 markami (okno OVER działa przed TOP).
 
 Interpretacja (zapas 2026-09-14, koszt 2025): TK Lighting 16,9% wartości zapasu (294 tys. zł), Zuma Line 16,2%, Rabalux 13,1%, Azzardo 11,6%, Markslojd 9,8% — pięć marek to 67% zapasu; rotacja na bieżącym zapasie: Italux 21,9 i GLOBO 8,8 (sprzedawane głównie pod zamówienie), TK Lighting 4,6, Rabalux 3,6, Zuma 3,3, Markslojd 1,4, Paul Neuhaus 1,1 (droższy zapas, wolny obrót). Markslojd ma tylko 539 z 2 957 SKU w e-sklepie, a 9,8% wartości zapasu — sprawdź ekspozycję online.
-
-Test: 2025-01-01..2026-01-01, 30 wierszy, wykonano 2026-09-14.

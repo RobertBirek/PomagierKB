@@ -16,8 +16,6 @@ Tabele i kolumny: `dok_MagRuch` (mr_TowId, mr_MagId, mr_Data, mr_Pozostalo, mr_C
 
 Kody dok_Typ: rozchód = każdy wiersz `mr_MagId IS NULL` (WZ 11 i RW 13); MM nie jest ruchem.
 
-Szablon SQL:
-
 ```sql
 -- zakres: zamień daty — data odniesienia '2026-09-14' (progi 90/180/365 dni w CASE)
 WITH stock AS (
@@ -57,5 +55,3 @@ ORDER BY no_move_bucket
 Pułapki: „ruch" obejmuje też RW (likwidacje, wydania wewnętrzne) i zwroty do dostawcy (WZ→KFZ) — towar, który tylko wracał do dostawcy, wygląda na ruchomy; ostatni ruch liczony jest globalnie (nie per magazyn) — towar sprzedawany z MAG, a leżący na AZZ, nie wpadnie do koszyka; sezonowość oświetlenia (szczyt IV kwartał) sprawia, że próg 180 dni wiosną łapie towar sezonowy — porównuj rok do roku; lista konkretnych towarów wymaga wersji per `tw_id` (dopuszczalna: nazwy towarów nie są danymi osobowymi).
 
 Interpretacja (2026-09-14): ruch w ostatnich 90 dniach — 2 667 SKU, 59,7% wartości; 91–180 dni — 561 SKU, 8,3%; 181–365 dni — 823 SKU, 11,3%; ponad 365 dni — 1 038 SKU, 220 tys. zł, 12,6%; nigdy nie wydane — 594 SKU, 143 tys. zł, 8,2%. Dead stock (>365 dni + nigdy) = 20,8% wartości (ok. 363 tys. zł) wobec benchmarku „poniżej 5%". Żaden z tych towarów nie jest zablokowany — blokada nie jest używana do oznaczania towaru do likwidacji.
-
-Test: data odniesienia 2026-09-14, 5 wierszy, wykonano 2026-09-14.

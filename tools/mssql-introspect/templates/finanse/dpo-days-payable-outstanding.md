@@ -24,8 +24,6 @@ Tabele i kolumny: `nz__Finanse` (nzf_Typ 40), `dok__Dokument` (dok_Typ 1, 5).
 
 Kody: `nzf_Typ` 40; `dok_Typ` 1 (FZ), 5 (KFZ).
 
-Szablon SQL:
-
 ```sql
 -- KPI 7: DPO — dni zobowiązań w zakupach (saldo AP wobec dostawców / zakupy brutto 365 dni x 365)
 -- zakres: [@od, @do) — przedział półotwarty
@@ -54,8 +52,6 @@ SELECT
   ROUND(365.0 * ap.zobowiazania_pln / NULLIF(zak.zakupy_brutto_pln, 0), 1) AS dpo_wszystkie_zobowiazania_dni
 FROM ap CROSS JOIN zak
 ```
-
-Test: zakupy 2025-09-14 … 2026-09-13, AP na 2026-09-14, 1 wiersz, wykonano 2026-09-14.
 
 Pułapki:
 - Zakupy tylko na PZ (bez FZ) nie są w mianowniku ani w liczniku — DPO odnosi się do zakupów zafakturowanych.

@@ -16,8 +16,6 @@ Tabele i kolumny: `sl_Magazyn` (mag_Id, mag_Symbol, mag_Nazwa); `tw_Stan` (st_Ma
 
 Kody dok_Typ: brak — KPI liczony ze stanów, nie z dokumentów.
 
-Szablon SQL:
-
 ```sql
 -- zakres: stan bieżący na chwilę wykonania (tw_Stan i mr_Pozostalo nie mają historii) — historię daje KPI „Rotacja"
 WITH fifo AS (
@@ -49,5 +47,3 @@ ORDER BY value_fifo DESC
 Pułapki: `qty_tw_stan` i `qty_fifo` muszą być równe — rozjazd oznacza niespójność bazy (np. przerwana operacja) i unieważnia wycenę FIFO; wartość kartotekowa zaniża tam, gdzie `tc_CenaNetto0 = 0` (kolumna `sku_in_stock_without_card_price`); `st_StanRez` to rezerwacje z ZK — zapas dostępny = `st_Stan − st_StanRez`; zapas na magazynie AZZ (skład marki Azzardo) jest wyceniony po cenie wprowadzenia i może być towarem powierzonym — do potwierdzenia u właściciela.
 
 Interpretacja (2026-09-14): MAG 4 388 SKU / 35 702 szt. / 1,264 mln zł (kartotekowo 1,242 mln); AZZ 1 053 SKU / 5 930 szt. / 352 tys.; RKR 510 SKU / 3 281 szt. / 112 tys.; EIL 145 SKU / 263 szt. / 20 tys.; KOS pusty. Razem ok. 1,75 mln zł w 6 096 pozycjach ze stanem. Wartość zablokowanych towarów na stanie = 0 (blokada = wycofanie z oferty, nie zamrożenie). Porównuj z miesięcznym kosztem sprzedaży (~0,7–1,0 mln zł, KPI „Bilans ruchów") — zapas to niecałe 2 miesiące sprzedaży.
-
-Test: stan bieżący (bez dat), 5 wierszy, wykonano 2026-09-14.

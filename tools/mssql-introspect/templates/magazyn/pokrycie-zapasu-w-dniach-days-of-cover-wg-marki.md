@@ -24,8 +24,6 @@ Tabele i kolumny: `dok_MagRuch` (mr_TowId, mr_Pozostalo, mr_Cena); `dok_Pozycja`
 
 Kody dok_Typ: WZ 11 (bez WZ→KFZ 5); PZ 10 z `dok_DoDokId` → ZW 14 lub KFS 6; `dok_Status = 1`.
 
-Szablon SQL:
-
 ```sql
 -- zakres: [@od, @do) — przedział półotwarty
 WITH stock AS (
@@ -72,5 +70,3 @@ ORDER BY value_fifo DESC
 Pułapki: sprzedaż obejmuje towary sprzedane „z ręki" (zamówione pod klienta), których na stanie nigdy nie było — pokrycie na poziomie marki jest zaniżone względem pokrycia realnie magazynowanych SKU; okno 90 dni latem (czerwiec–wrzesień) to sezonowy dołek — pokrycie na jesień będzie niższe; `NULL` w `days_of_cover` = brak sprzedaży netto w oknie; TOP 30 obcina długi ogon 93 marek — zdejmij TOP, gdy potrzebna pełna lista; nie mnożyć `ob_IloscMag` przez `ob_Znak` (patrz ustalenia wspólne).
 
 Interpretacja (okno 2026-06-16..2026-09-14): TK Lighting 132 dni (476 z 1 006 SKU na stanie bez sprzedaży), Rabalux 148, Zuma Line 242, Azzardo 308, GLOBO i Italux ok. 70–80 dni, Markslojd i Wojnarowscy kilkaset dni (duże ilości niskocennego towaru). Marki z pokryciem powyżej 180 dni i dużym udziałem SKU bez sprzedaży to naturalny cel redukcji zamówień.
-
-Test: 2026-06-16..2026-09-15, 30 wierszy, wykonano 2026-09-14.

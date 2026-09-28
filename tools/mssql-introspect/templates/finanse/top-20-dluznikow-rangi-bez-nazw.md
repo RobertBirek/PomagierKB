@@ -16,8 +16,6 @@ Tabele i kolumny: `nz__Finanse` (nzf_IdObiektu, nzf_Wartosc, nzf_TerminPlatnosci
 
 Kody: `nzf_Typ` 39; `nzf_TypObiektu` 1.
 
-Szablon SQL:
-
 ```sql
 -- KPI 14: Top 20 dłużników (rangi i identyfikatory kontrahentów, bez nazw) — stan bieżący
 -- zakres: zamień datę odniesienia '2026-09-14' (we wszystkich miejscach)
@@ -42,8 +40,6 @@ WHERE f.nzf_Typ = 39
 GROUP BY f.nzf_IdObiektu, CASE WHEN op.id IS NULL THEN 'kontrahent' ELSE 'operator platnosci' END
 ORDER BY saldo_pln DESC
 ```
-
-Test: D = 2026-09-14, 20 wierszy, wykonano 2026-09-14.
 
 Pułapki:
 - Operatorzy płatności zajmują czołowe rangi — lista windykacyjna wymaga filtra `WHERE op.id IS NULL` (lub osobnego raportu „wypłaty operatorów do uzgodnienia").

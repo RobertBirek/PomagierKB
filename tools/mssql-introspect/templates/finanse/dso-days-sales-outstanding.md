@@ -24,8 +24,6 @@ Tabele i kolumny: `nz__Finanse` (nzf_Wartosc, nzf_IdObiektu), `sl_FormaPlatnosci
 
 Kody: `nzf_Typ` 39; `dok_Typ` 2, 6, 21; wykluczenie `dok_Typ = 2 AND dok_Podtyp = 1`.
 
-Szablon SQL:
-
 ```sql
 -- KPI 6: DSO — dni należności w sprzedaży (saldo AR / sprzedaż brutto 365 dni x 365)
 -- zakres: [@od, @do) — przedział półotwarty
@@ -58,8 +56,6 @@ SELECT
   ROUND(365.0 * ar.naleznosci_bez_operatorow_pln / NULLIF(sprz.sprzedaz_brutto_pln, 0), 1) AS dso_bez_operatorow_dni
 FROM ar CROSS JOIN sprz
 ```
-
-Test: sprzedaż 2025-09-14 … 2026-09-13, AR na 2026-09-14, 1 wiersz, wykonano 2026-09-14.
 
 Pułapki:
 - Mianownik to CAŁA sprzedaż (także gotówkowa i przedpłacona), zgodnie z prostą formułą z katalogu; DSO „kredytowe" wymagałoby ograniczenia sprzedaży do FS z `dok_PlatId IS NOT NULL` (odroczone) — wtedy licznik też tylko należności podtypu 1 od kontrahentów.

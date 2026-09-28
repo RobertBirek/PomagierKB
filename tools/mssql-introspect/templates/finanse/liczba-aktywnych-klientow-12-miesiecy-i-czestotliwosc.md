@@ -24,8 +24,6 @@ Tabele i kolumny: `dok__Dokument` (dok_PlatnikId, dok_Typ, dok_Podtyp, dok_Statu
 
 Kody: `dok_Typ` 2, 21; `dok_Status` 1; bez FS podtyp 1.
 
-Szablon SQL:
-
 ```sql
 -- KPI 9: liczba aktywnych klientów (kupili w ostatnich 12 miesiącach) i częstotliwość zakupów
 -- zakres: [@od, @do) — przedział półotwarty
@@ -56,8 +54,6 @@ GROUP BY ROLLUP(CASE WHEN liczba_dok = 1 THEN 'A 1 dokument'
                      ELSE 'D 10 i wiecej dokumentow' END)
 ORDER BY czestotliwosc_zakupow
 ```
-
-Test: 2025-09-14 … 2026-09-13, 5 wierszy, wykonano 2026-09-14.
 
 Pułapki:
 - PA anonimowe (bez `dok_PlatnikId`) nie liczą się jako klient — do 02.2026 to była większość sprzedaży detalicznej; okno 12 miesięcy mieszające oba reżimy zaniża liczbę klientów sprzed marca 2026.

@@ -24,8 +24,6 @@ Tabele i kolumny: `tw_Stan` (st_Stan, st_StanRez, st_StanMin); `tw__Towar` (tw_S
 
 Kody dok_Typ: WZ 11 (bez WZ→KFZ 5), `dok_Status = 1`.
 
-Szablon SQL:
-
 ```sql
 -- zakres: [@od, @do) — przedział półotwarty
 WITH sold AS (
@@ -58,5 +56,3 @@ ORDER BY m.mag_Id
 Pułapki: Subiekt GT nie dopuszcza stanów ujemnych bez specjalnego parametru (`dok_Parametr`) — `negative_sku` = 0 jest oczekiwane, a wartość > 0 to sygnał awarii spójności; „brak z obrotem" nie jest tu utraconą sprzedażą: firma sprzedaje głównie z zamówień pod klienta (towar przychodzi i wychodzi tego samego dnia), więc `stockout_sku_sold_last_30d` mierzy raczej skalę modelu just-in-time niż realne braki; rezerwacje (`st_StanRez`) zależą od parametru „rezerwuj stany przy ZK" — niedobór pod rezerwacje to zamówienia klientów czekające na dostawę; progi min/max nie są prowadzone (0 towarów) — alerty M10/M11 z katalogu wymagają najpierw ich ustawienia albo wyliczenia z historii (KPI „Pokrycie").
 
 Interpretacja (2026-09-14, okno 2026-08-15..2026-09-14): stany ujemne 0 na każdym magazynie; MAG — 742 SKU z rezerwacją, w tym 486 z rezerwacją ponad stan (brakuje 1 056 szt.), 2 013 SKU sprzedanych w 30 dni, a dziś bez stanu; RKR — 34 z rezerwacją, 13 ponad stan, 47 sprzedanych bez stanu; AZZ i EIL bez rezerwacji i bez obrotu. Relacja 2 013 „braków z obrotem" do 4 388 SKU na stanie pokazuje, że około jedna trzecia sprzedawanego asortymentu w ogóle nie jest magazynowana.
-
-Test: 2026-08-15..2026-09-15, 5 wierszy, wykonano 2026-09-14.

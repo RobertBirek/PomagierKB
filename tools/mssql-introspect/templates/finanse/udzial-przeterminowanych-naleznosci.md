@@ -16,8 +16,6 @@ Tabele i kolumny: `nz__Finanse` (nzf_TerminPlatnosci, nzf_Wartosc), `sl_FormaPla
 
 Kody: `nzf_Typ` 39, `nzf_TypObiektu` 1.
 
-Szablon SQL:
-
 ```sql
 -- KPI 5: udział przeterminowanych należności (wartościowo i ilościowo)
 -- zakres: zamień datę odniesienia '2026-09-14' (we wszystkich miejscach)
@@ -43,8 +41,6 @@ WHERE f.nzf_Typ = 39
 GROUP BY ROLLUP(CASE WHEN op.id IS NULL THEN 'kontrahent' ELSE 'operator platnosci' END)
 ORDER BY rodzaj_dluznika
 ```
-
-Test: D = 2026-09-14, 3 wiersze, wykonano 2026-09-14.
 
 Pułapki:
 - Bez wyłączenia operatorów wskaźnik jest bezużyteczny (90% „przeterminowanych" to wypłaty marketplace'ów z terminem równym dacie dokumentu).

@@ -16,8 +16,6 @@ Tabele i kolumny: `nz__Finanse` (nzf_TerminPlatnosci, nzf_Wartosc, nzf_IdObiektu
 
 Kody: `nzf_Typ` 39, `nzf_TypObiektu` 1.
 
-Szablon SQL:
-
 ```sql
 -- KPI 3: aging należności (przedziały dni po terminie) — stan bieżący
 -- zakres: zamień datę odniesienia '2026-09-14' (we wszystkich miejscach)
@@ -50,8 +48,6 @@ GROUP BY
   CASE WHEN op.id IS NULL THEN 'kontrahent' ELSE 'operator platnosci' END
 ORDER BY przedzial, rodzaj_dluznika
 ```
-
-Test: D = 2026-09-14, 8 wierszy, wykonano 2026-09-14.
 
 Pułapki:
 - Aging na datę HISTORYCZNĄ nie może użyć `nzf_Wartosc` (to stan dzisiejszy) — trzeba połączyć logikę wariantu historycznego z KPI 1 (saldo na dzień D ze spłat) z przedziałami po `nzf_TerminPlatnosci`.

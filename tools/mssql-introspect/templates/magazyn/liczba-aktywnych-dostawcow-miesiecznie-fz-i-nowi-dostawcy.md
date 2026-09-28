@@ -24,8 +24,6 @@ Tabele i kolumny: `dok__Dokument` (dok_Typ, dok_Status, dok_DataWyst, dok_Platni
 
 Kody dok_Typ: FZ 1, `dok_Status = 1`.
 
-Szablon SQL:
-
 ```sql
 -- zakres: [@od, @do) — przedział półotwarty
 WITH first_fz AS (
@@ -53,5 +51,3 @@ ORDER BY 1, 2
 Pułapki: historia FZ zaczyna się 2015-08 — „nowy" w pierwszych miesiącach bazy to każdy; FZ kosztowe (marketplace, paliwo, usługi) podnoszą liczbę aktywnych — `active_goods_suppliers` filtruje po wartości magazynowej; w 2026 liczba dostawców skoczyła do 222 rocznie, bo FZ w walutach (prowizje marketplace) i magazyn KOS „Koszt" zaczęły być księgowane jako FZ — porównania rok do roku wymagają rozdzielenia dostawców towaru od kosztowych; ten sam dostawca pod kilkoma kartotekami liczy się wielokrotnie.
 
 Interpretacja (2025): 28–41 aktywnych dostawców miesięcznie (minimum maj 28, maksimum grudzień 41), praktycznie wszyscy towarowi; 0–4 nowych miesięcznie (17 w roku); 540–812 FZ miesięcznie; średnia wartość zakupów na dostawcę 15,5–34,1 tys. zł/mies. Stabilna, wąska baza ok. 30 dostawców towaru — spójne z HHI ~1 000 i z listą 21 dostawców domyślnych w kartotece.
-
-Test: 2025-01-01..2026-01-01, 12 wierszy, wykonano 2026-09-14.

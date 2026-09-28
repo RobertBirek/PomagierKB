@@ -24,8 +24,6 @@ Tabele i kolumny: `dok__Dokument` (dok_PlatnikId, dok_DataWyst, dok_Typ, dok_Pod
 
 Kody: `dok_Typ` 2, 21; `dok_Status` 1; bez FS podtyp 1.
 
-Szablon SQL:
-
 ```sql
 -- KPI 10: klienci nowi vs powracający (po id kontrahenta dok_PlatnikId), miesięcznie
 -- zakres: [@od, @do) — przedział półotwarty
@@ -61,8 +59,6 @@ JOIN pierwszy p ON p.dok_PlatnikId = o.dok_PlatnikId
 GROUP BY o.miesiac
 ORDER BY o.miesiac
 ```
-
-Test: miesiące 2025-09 … 2026-08, 12 wierszy, wykonano 2026-09-14.
 
 Pułapki:
 - Skok „nowych" od 03.2026 (z ok. 750–1 150 do 2 770–3 700 miesięcznie) to efekt dokumentowania sprzedaży FS z płatnikiem zamiast anonimowego PA, nie wzrostu pozyskania — porównuj miesiące w obrębie jednego reżimu.

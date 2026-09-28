@@ -16,8 +16,6 @@ Tabele i kolumny: `dok_MagRuch` (mr_Data, mr_Pozostalo, mr_Cena, mr_TowId, mr_Ma
 
 Kody dok_Typ: brak (warstwy powstają z PZ 10, PW 12, MM 9 i zwrotów).
 
-Szablon SQL:
-
 ```sql
 -- zakres: zamień daty — data odniesienia '2026-09-14'
 WITH b AS (
@@ -46,5 +44,3 @@ ORDER BY age_bucket
 Pułapki: warstwy pochodne (`mr_DoId` wypełnione — z MM lub ze zwrotu) mają datę przesunięcia/zwrotu, nie pierwotnego zakupu, więc odmładzają zapas (na instancji to 3 084 z 7 692 warstw); ten sam towar może mieć warstwy w kilku przedziałach; przy `mr_Pozostalo` ułamkowym (5 013,7 szt. w przedziale 31–90) w bazie są rozbicia po korektach — to nie błąd; wiek w dniach kalendarzowych, nie roboczych.
 
 Interpretacja (2026-09-14): 0–30 dni 23,0% wartości, 31–90 dni 10,3%, 91–180 dni 21,5%, 181–365 dni 17,5%, 366–730 dni 19,1%, powyżej 730 dni 8,7%. Ponad rok leży 27,8% wartości zapasu (ok. 485 tys. zł) — kandydaci do wyprzedaży (cecha „Wyprzedaże" w `sl_CechaTw`) albo zwrotu do dostawcy. Benchmark katalogu dla handlu: powyżej 180 dni nie więcej niż 20–25%.
-
-Test: data odniesienia 2026-09-14, 6 wierszy, wykonano 2026-09-14.

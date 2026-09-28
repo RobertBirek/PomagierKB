@@ -24,8 +24,6 @@ Tabele i kolumny: `nz_FinanseSplata` (nzs_IdDlugu, nzs_Data, nzs_Auto, nzs_Warto
 
 Kody: `nzf_Typ` 39; `nzs_Auto` 0; okres po `nzs_Data`.
 
-Szablon SQL:
-
 ```sql
 -- KPI 13: średni czas zapłaty należności (ACP) i średnie opóźnienie względem terminu — z rozliczeń spłat
 -- zakres: [@od, @do) — przedział półotwarty
@@ -62,8 +60,6 @@ FROM x
 GROUP BY rodzaj_platnika
 ORDER BY rodzaj_platnika
 ```
-
-Test: spłaty 2025-09-14 … 2026-09-13, 2 wiersze, wykonano 2026-09-14.
 
 Pułapki:
 - Bias przeżycia: należności wciąż niezapłacone nie wchodzą do średniej (katalog N7) — czytaj razem z agingiem (KPI 3).

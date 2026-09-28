@@ -24,8 +24,6 @@ Tabele i kolumny: `dok__Dokument` (dok_PlatnikId, dok_PlatId, dok_WartBrutto …
 
 Kody: `dok_Typ` 2, 21; `dok_Status` 1; bez FS podtyp 1; `kh_OdbDet` 0/1.
 
-Szablon SQL:
-
 ```sql
 -- KPI 12: klienci hurtowi vs detaliczni wg flagi kh_OdbDet (hurtowy = kh_OdbDet = 0 — DO POTWIERDZENIA)
 -- zakres: [@od, @do) — przedział półotwarty
@@ -58,8 +56,6 @@ JOIN dbo.kh__Kontrahent k ON k.kh_Id = c.dok_PlatnikId
 GROUP BY CASE WHEN k.kh_OdbDet = 0 THEN 'hurtowy (kh_OdbDet = 0) - DO POTWIERDZENIA' ELSE 'detaliczny (kh_OdbDet = 1)' END
 ORDER BY segment
 ```
-
-Test: 2025-09-14 … 2026-09-13, 2 wiersze, wykonano 2026-09-14.
 
 Pułapki:
 - `kh_OdbDet = 0` oznacza w praktyce „nabywca z NIP / firma" (flagę nadaje integrator osobom), a nie „hurtownik" — większość firm kupuje jednorazowo; do potwierdzenia przez właściciela, alternatywy w sekcji o modelu.
