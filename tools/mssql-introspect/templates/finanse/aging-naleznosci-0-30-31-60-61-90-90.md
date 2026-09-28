@@ -17,7 +17,7 @@ Definicja: rozkład otwartych należności według liczby dni po terminie płatn
 
 Formuła: dni = DATEDIFF(day, `nzf_TerminPlatnosci`, D), D = `@dzien`; przedziały: < 0 przed terminem; 0–30; 31–60; 61–90; > 90. Udział = saldo przedziału / saldo AR.
 
-Tabele i kolumny: `nz__Finanse` (nzf_TerminPlatnosci, nzf_Wartosc, nzf_IdObiektu), `nz_FinanseSplata` (saldo na dzień D jak KPI 1), `sl_FormaPlatnosci` (operatorzy).
+Tabele i kolumny: `nz__Finanse` (nzf_Id, nzf_Typ, nzf_TypObiektu, nzf_Data, nzf_IdObiektu, nzf_TerminPlatnosci, nzf_WartoscPierwotnaWaluta, nzf_Kurs, nzf_LiczbaJednostek), `nz_FinanseSplata` (nzs_IdDlugu, nzs_Data, nzs_WartoscWalutaDlugu — saldo na dzień D jak KPI 1), `sl_FormaPlatnosci` (operatorzy).
 
 Kody: `nzf_Typ` 39, `nzf_TypObiektu` 1.
 
@@ -67,7 +67,8 @@ ORDER BY przedzial, rodzaj_dluznika
 ```
 
 Pułapki:
-- Aging na datę HISTORYCZNĄ nie może użyć `nzf_Wartosc` (to stan dzisiejszy) — szablon łączy logikę wariantu historycznego z KPI 1 (saldo na dzień D ze spłat) z przedziałami po `nzf_TerminPlatnosci`.
+- Saldo nie pochodzi z `nzf_Wartosc` (to stan dzisiejszy) — szablon odtwarza resztę na dzień D ze spłat jak KPI 1 (`nzf_WartoscPierwotnaWaluta` − spłaty z `nzs_Data <= D`, przeliczona kursem rozrachunku) i dzieli ją na przedziały po `nzf_TerminPlatnosci`.
+- Konwencja terminu: rozrachunek z terminem równym `@dzien` (DATEDIFF = 0) trafia tu do przedziału „B 0-30 dni po terminie", a KPI 1 (`w_tym_po_terminie_pln`), udział przeterminowanych i Top 20 dłużników liczą po terminie tylko `nzf_TerminPlatnosci < @dzien` — suma B–E może być wyższa o rozrachunki z terminem dokładnie D.
 - Szablon liczy stan na KONIEC dnia `@dzien` z dat spłat (`nzs_Data` = data dokumentu spłaty), a nie saldo z chwili, w której patrzono do programu. Przykład 2026-09-14: program ok. 10:20 pokazywał 853,9 tys. PLN należności, szablon z `dzien=2026-09-14` daje 101,8 tys. (kontrahenci 59,6 tys., operatorzy 42,2 tys.) — różnica to głównie spłaty z datą 14.09 wprowadzone tego dnia po pomiarze: m.in. 2 379 rozliczeń wypłat operatorów płatności (ok. 724,3 tys. PLN) i 4 spłaty kontrahentów (ok. 70,8 tys.); reszta (ok. +43 tys., niemal cała po stronie operatorów) to przypuszczalnie należności powstałe 14.09 po pomiarze (niezmierzone). Rozkład w `_zasady.md`. Suma przedziałów = saldo z szablonu „Należności otwarte (saldo AR)” dla tego samego dnia.
 - „Ponad 60 dni po terminie" = suma przedziałów `D 61-90 dni` i `E ponad 90 dni`; procent = suma ich `udzial_proc` (udział liczony od całego salda, łącznie z operatorami — dla samych kontrahentów podziel przez sumę `saldo_pln` wierszy `kontrahent`).
 - Rozliczenia częściowe: rozrachunek trafia do przedziału całym pozostałym saldem, a nie proporcjonalnie.

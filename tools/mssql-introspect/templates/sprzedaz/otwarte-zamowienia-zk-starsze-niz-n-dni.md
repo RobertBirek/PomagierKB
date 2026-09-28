@@ -1,5 +1,5 @@
 ---
-id: realizacja-zamowien-od-klientow-zk-2
+id: otwarte-zamowienia-zk-starsze-niz-n-dni
 title: Otwarte zamówienia od klientów (ZK) starsze niż N dni
 area: sprzedaz
 order: 150
@@ -9,7 +9,7 @@ questions:
 params:
   dni:
     type: int
-    description: minimalny wiek otwartego zamówienia w dniach (liczony od chwili wykonania zapytania)
+    description: minimalny wiek otwartego zamówienia w dniach (≥ 1), liczony od chwili wykonania zapytania
     required: false
     default: 7
     example: 7

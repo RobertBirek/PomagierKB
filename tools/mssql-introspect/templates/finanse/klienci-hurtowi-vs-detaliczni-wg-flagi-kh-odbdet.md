@@ -61,7 +61,6 @@ ORDER BY segment
 Pułapki:
 - `kh_OdbDet = 0` oznacza w praktyce „nabywca z NIP / firma" (flagę nadaje integrator osobom), a nie „hurtownik" — większość firm kupuje jednorazowo; do potwierdzenia przez właściciela, alternatywy w sekcji o modelu.
 - Poziom cen 2 nazywa się „Hurtowa", ale w tej instancji jest poziomem kanału zamówień, nie segmentu (konwencje instancji).
-- Strażnik odrzuca `SELECT *` i mnożenie zapisane jako ` * ` w zapytaniach z `kh__Kontrahent` (wzorzec gwiazdki) — pisz `100.0*SUM(...)` bez spacji przed gwiazdką.
 - Kolumna `w_tym_osoby_fizyczne` może zwrócić liczbę < 10 — w raportach publikowanych zapisuj ją jako „<10".
 
 Interpretacja (12 miesięcy do 2026-09-13): detaliczni 21 356 klientów, 62,3% sprzedaży imiennej, średni dokument 271 PLN, tylko 28 klientów z ≥ 3 dokumentami, 0 dokumentów z terminem odroczonym; „hurtowi" (kh_OdbDet = 0) 5 742 klientów (osób fizycznych <10), 37,7% sprzedaży, średni dokument 492 PLN, 219 klientów z ≥ 3 dokumentami i 172 dokumenty z terminem odroczonym. Flaga rozdziela B2C od „B2B z NIP", ale prawdziwy segment hurtowy to raczej te 219 firm z powtarzalnymi zakupami i/lub 170 FS z terminem — wymaga decyzji właściciela.

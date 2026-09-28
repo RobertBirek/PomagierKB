@@ -1,10 +1,9 @@
 ---
-id: naleznosci-otwarte-saldo-ar-2
+id: saldo-naleznosci-na-dzien-wg-waluty
 title: Saldo należności na dzień wg waluty (z historii spłat)
 area: finanse
 order: 20
 questions:
-  - "Ile wynosiły należności na koniec 2025 roku?"
   - "Jakie było saldo należności w euro, koronach i forintach na koniec czerwca 2026?"
 params:
   dzien:
@@ -41,7 +40,7 @@ LEFT JOIN splaty sp ON sp.nzs_IdDlugu = f.nzf_Id
 WHERE f.nzf_Typ = 39
   AND f.nzf_TypObiektu = 1
   AND f.nzf_Data <= @dzien
-  AND f.nzf_WartoscPierwotnaWaluta - ISNULL(sp.splacono_w_walucie_dlugu, 0) > 0.005
+  AND f.nzf_WartoscPierwotnaWaluta - ISNULL(sp.splacono_w_walucie_dlugu, 0) <> 0
 GROUP BY f.nzf_IdWaluty
 ORDER BY waluta
 ```
@@ -54,6 +53,6 @@ Pułapki:
 - Kontrahent jednorazowy (`kh_Jednorazowy = 1`, 384 w kartotece) nie ma otwartych należności w instancji; gdyby miał, `liczba_kontrahentow` liczy go raz per `kh_Id`.
 - Wariant historyczny nie uwzględnia rozrachunków usuniętych i zmian statusu na „nieściągalny" po dniu D.
 - Szablon liczy stan na KONIEC dnia `@dzien` z dat spłat (`nzs_Data` = data dokumentu spłaty), a nie saldo z chwili, w której patrzono do programu. Przykład 2026-09-14: program ok. 10:20 pokazywał 853,9 tys. PLN należności, szablon z `dzien=2026-09-14` daje 101,8 tys. (kontrahenci 59,6 tys., operatorzy 42,2 tys.) — różnica to głównie spłaty z datą 14.09 wprowadzone tego dnia po pomiarze: m.in. 2 379 rozliczeń wypłat operatorów płatności (ok. 724,3 tys. PLN) i 4 spłaty kontrahentów (ok. 70,8 tys.); reszta (ok. +43 tys., niemal cała po stronie operatorów) to przypuszczalnie należności powstałe 14.09 po pomiarze (niezmierzone). Rozkład w `_zasady.md`.
-- Saldo PLN jest sumą niezaokrąglonych przeliczeń — może różnić się o grosze od `saldo_otwarte_pln` z szablonu „Należności otwarte (saldo AR)”, który zaokrągla każdy rozrachunek do grosza jak program.
+- Ten sam zbiór rozrachunków co szablon „Należności otwarte (saldo AR)” (reszta `<> 0`, więc także ujemne reszty, np. nadpłaty) — różnica sum to wyłącznie zaokrąglenie: tu saldo PLN jest sumą niezaokrąglonych przeliczeń, AR zaokrągla każdy rozrachunek do grosza jak program. Na pytanie o saldo ogółem, podział kontrahent/operator albo część po terminie używaj AR; ten szablon — do podziału na waluty.
 
 Interpretacja (stan na 2025-12-31, odtworzony 2026-09-28): 161,0 tys. PLN w 78 rozrachunkach od 24 kontrahentów, wyłącznie w PLN i bez należności od operatorów płatności (operatorzy stali się istotni dopiero od 02–03.2026, gdy sprzedaż z zamówień przeszła na FS z płatnikiem). Porównanie z bieżącym saldem ma sens tylko w części „kontrahent” szablonu „Należności otwarte (saldo AR)”.

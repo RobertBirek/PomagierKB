@@ -22,9 +22,9 @@ verified: 2026-09-28
 ---
 Definicja: N (domyślnie 20) kontrahentów z największym otwartym saldem należności na dzień odniesienia (`@dzien`, saldo na koniec tego dnia odtworzone z historii spłat jak KPI 1), z kwotą po terminie, maksymalnym opóźnieniem i identyfikatorem kontrahenta (bez nazwy).
 
-Formuła: per `nzf_IdObiektu`: Σ `nzf_Wartosc`, Σ po terminie, MAX dni po terminie, MIN terminu; ranga po saldzie malejąco.
+Formuła: per `nzf_IdObiektu`: Σ saldo PLN na dzień D (odtworzone z historii spłat jak KPI 1: `nzf_WartoscPierwotnaWaluta` − spłaty z `nzs_Data <= D`, × `nzf_Kurs` / `nzf_LiczbaJednostek`; dla dzisiejszej daty = `nzf_Wartosc`), Σ po terminie, MAX dni po terminie, MIN terminu; ranga po saldzie malejąco.
 
-Tabele i kolumny: `nz__Finanse` (nzf_IdObiektu, nzf_Wartosc, nzf_TerminPlatnosci), `nz_FinanseSplata` (saldo na dzień D), `sl_FormaPlatnosci` (operatorzy). Nazwa kontrahenta jest w `adr__Ewid`/`kh__Kontrahent` — poza strażnikiem; identyfikator wystarcza do odszukania w programie.
+Tabele i kolumny: `nz__Finanse` (nzf_Id, nzf_Typ, nzf_TypObiektu, nzf_Data, nzf_IdObiektu, nzf_TerminPlatnosci, nzf_WartoscPierwotnaWaluta, nzf_Kurs, nzf_LiczbaJednostek), `nz_FinanseSplata` (nzs_IdDlugu, nzs_Data, nzs_WartoscWalutaDlugu — saldo na dzień D jak KPI 1), `sl_FormaPlatnosci` (operatorzy). Nazwa kontrahenta jest w `adr__Ewid`/`kh__Kontrahent` — poza strażnikiem; identyfikator wystarcza do odszukania w programie.
 
 Kody: `nzf_Typ` 39; `nzf_TypObiektu` 1.
 

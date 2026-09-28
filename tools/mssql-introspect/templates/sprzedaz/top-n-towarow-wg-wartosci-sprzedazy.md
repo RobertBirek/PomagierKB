@@ -17,7 +17,7 @@ params:
     example: 2026-01-01
   n:
     type: int
-    description: liczba towarów w rankingu (TOP N)
+    description: liczba towarów w rankingu (TOP N, ≥ 1)
     required: false
     default: 10
     example: 10
@@ -50,5 +50,5 @@ GROUP BY t.tw_Id, t.tw_Symbol, LEFT(t.tw_Nazwa, 80), g.grt_Nazwa
 ORDER BY net_sales DESC
 ```
 
-- Pułapki: (1) Faktury zbiorcze (FS podtyp 2) mają wartości na pozycjach WZ, nie FS — szablon „Top marek" pokazuje, jak dociągnąć WZ przez `dok_DoDokId`; tu dla prostoty liczone są pozycje FS/PA bezpośrednio (różnica dotyczy hurtu). (2) Ranking po ilości wygląda inaczej niż po wartości — sortuj po `quantity`, gdy pytanie jest o „najczęściej sprzedawane". (3) Komplety (rodzaj 8) liczone jako całość, nie składniki.
+- Pułapki: (1) Faktury zbiorcze (FS podtyp 2) mają wartości na pozycjach WZ, nie FS — szablon „Top marek" pokazuje, jak dociągnąć pozycje WZ przez `p.ob_DoId`; tu dla prostoty liczone są pozycje FS/PA bezpośrednio (różnica dotyczy hurtu). (2) Ranking po ilości wygląda inaczej niż po wartości — sortuj po `quantity`, gdy pytanie jest o „najczęściej sprzedawane". (3) Komplety (rodzaj 8) liczone jako całość, nie składniki.
 - Interpretacja: top 3 towary z 12 miesięcy (na 2026-09-23) to lampy z segmentu 30–36 tys. PLN netto każdy; lista jest płaska — pierwsza dwudziestka to kilka procent sprzedaży, marki mają większe znaczenie niż pojedyncze indeksy.

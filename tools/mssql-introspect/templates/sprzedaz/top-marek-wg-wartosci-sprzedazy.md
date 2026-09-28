@@ -17,7 +17,7 @@ params:
     example: 2026-01-01
   n:
     type: int
-    description: liczba marek w rankingu (TOP N)
+    description: liczba marek w rankingu (TOP N, ≥ 1)
     required: false
     default: 10
     example: 10
