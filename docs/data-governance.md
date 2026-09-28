@@ -153,6 +153,12 @@ właściciela (delegowana operatorowi, zapis: PLAN.md „Zmiany decyzji" 2026-09
   `pr_*`, `pd_Uzytkownik`, ewidencje). Dozwolone: agregaty po flagach/id, dane towarów, dokumentów
   (bez uwag), słowników. Treść KAŻDEGO zapytania (przyjęte i odrzucone, bez wyników) trafia do
   `/srv/kag-data/kag/mcp-mssql/queries.jsonl` (0600).
+- *Szablony (od 2026-09-28):* narzędzia `list_templates`/`run_template` wykonują zweryfikowane
+  szablony z `tools/mssql-introspect/templates/` (repo, przegląd w git); parametry są typowane
+  i przekazywane do sterownika (`request.input`), SQL szablonu przechodzi tę samą bramkę. Log:
+  wpis `via: "template"` z `templateId` i wartościami parametrów (bez wyników). Parametry tekstowe
+  (np. nazwa marki) nie są danymi osobowymi; kolumn osobowych nie da się użyć w szablonie, bo
+  bramka odrzuci go już w testach katalogu.
 - *Ograniczenie znane:* login ma `db_datareader`, więc gwarancją jest bramka w kodzie, nie
   uprawnienia bazy; docelowo login z prawami tylko do widoków bez PII (decyzja administratora
   Subiekta). Zmiana zakresu (nowe kolumny, tryb inny niż SELECT) wymaga wpisu tutaj.
