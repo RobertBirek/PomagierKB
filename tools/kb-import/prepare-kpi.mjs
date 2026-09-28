@@ -56,11 +56,18 @@ export function renderAreaDoc({ area, templates, rules, meta = {} }) {
   const date = templates.map((t) => t.verified).sort().at(-1);
   const L = [frontMatter(meta, date), `# ${DOCS[area].title}`, '', rules.trim(), ''];
   for (const t of [...templates].sort((a, b) => a.order - b.order || a.id.localeCompare(b.id))) {
-    L.push(`## ${t.title}`, '', t.body.trim(), '');
+    // Blok metadanych (parametry/przykładowe pytania/wykonanie) PRZED treścią szablonu — zaraz
+    // po `## tytule` — żeby chunker (apps/panel-api/src/pipeline/chunker.ts, pakowanie zachłanne
+    // akapitów sekcji do maxLen) złączył go z definicją/formułą, a nie zostawił samotnym, prawie
+    // pustym ogonkiem na końcu sekcji: ten ogonek (krótki chunk, slug id w linii Wykonanie daje
+    // rdzenie tematu szablonu) potrafił wygrywać z realną treścią w lokalnym FTS (2026-09-28,
+    // golden „marża brutto … u nas" — top-5 bez `ob_WartMag`).
+    L.push(`## ${t.title}`, '');
     const params = Object.entries(t.params);
     L.push(params.length ? `Parametry:\n${params.map(([n, d]) => paramLine(n, d)).join('\n')}` : 'Parametry: brak.', '');
     L.push(`Przykładowe pytania: ${t.questions.join(' · ')}`, '');
     L.push(`Wykonanie: \`run_template ${t.id}\` (serwer MCP mssql) albo \`node tools/mssql-introspect/run-template.mjs ${t.id}\`. Zweryfikowano na produkcji: ${t.verified}.`, '');
+    L.push(t.body.trim(), '');
   }
   return `${L.join('\n').replace(/\n{3,}/g, '\n\n').trim()}\n`;
 }

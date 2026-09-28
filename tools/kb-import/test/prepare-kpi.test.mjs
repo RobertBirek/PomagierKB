@@ -47,6 +47,18 @@ describe('renderAreaDoc', () => {
     expect(text).toContain('Zweryfikowano na produkcji: 2026-09-28');
     expect(text).toContain('Przykładowe pytania: Ile wyniósł przychód?');
   });
+  it('blok metadanych (Parametry/Przykładowe pytania/Wykonanie) jest PRZED treścią szablonu, zaraz po `## tytule` — tak żeby chunker pakował go z definicją, nie zostawiał samotnym ogonkiem', () => {
+    const heading = text.indexOf('## Przychód netto — miesięcznie');
+    const params = text.indexOf('- `@od` (date) — początek; przykład: 2025-01-01', heading);
+    const questions = text.indexOf('Przykładowe pytania: Ile wyniósł przychód?', heading);
+    const wykonanie = text.indexOf('Wykonanie: `run_template sales-net-monthly`', heading);
+    const body = text.indexOf('- Definicja: suma.', heading);
+    expect(heading).toBeGreaterThan(-1);
+    expect(params).toBeGreaterThan(heading);
+    expect(questions).toBeGreaterThan(params);
+    expect(wykonanie).toBeGreaterThan(questions);
+    expect(body).toBeGreaterThan(wykonanie);
+  });
   it('deterministyczny', () => {
     expect(renderAreaDoc({ area: 'sprzedaz', templates: catalog.templates.filter((t) => t.area === 'sprzedaz'), rules: catalog.rules.sprzedaz })).toBe(text);
   });
