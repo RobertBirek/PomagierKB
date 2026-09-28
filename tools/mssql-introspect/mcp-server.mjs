@@ -3,34 +3,22 @@
 // Subiekt GT ilovelighting (Magnum_Profi na 192.168.1.20\INSERTGT), osiągalnej przez WireGuard.
 // Sterownik: mssql/tedious (czysty JS, ten sam co tools/mssql-introspect) — bez ODBC/uv.
 // Poświadczenia z pliku 0600 (MSSQL_ENV_FILE, domyślnie /etc/kag/mssql-ilovelighting.env);
-// hasło nigdy nie trafia do argv, logów ani odpowiedzi. Jedyne narzędzie: execute_sql (SELECT).
+// hasło nigdy nie trafia do argv, logów ani odpowiedzi. Narzędzia: execute_sql (SELECT),
+// list_templates i run_template (szablony z templates/, parametry przez request.input).
+// Logika narzędzi: src/mcp-tools.mjs.
 //
 // Rejestracja: claude mcp add mssql -e MSSQL_ENV_FILE=/etc/kag/mssql-ilovelighting.env -s user \
 //   -- node /kag/tools/mssql-introspect/mcp-server.mjs
 
 import { createInterface } from 'node:readline';
+import { readFileSync } from 'node:fs';
 import sql from 'mssql';
 import { parseEnvFile } from './src/env.mjs';
-import { checkReadOnly } from './src/mcp-readonly.mjs';
-import { appendFileSync, mkdirSync, readFileSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { auditQuery } from './src/query-log.mjs';
+import { createTools, TOOL_DEFS } from './src/mcp-tools.mjs';
 
 const ENV_FILE = process.env.MSSQL_ENV_FILE ?? '/etc/kag/mssql-ilovelighting.env';
-// Log TREŚCI każdego zapytania (przyjęte i odrzucone) — ślad rozliczalności dla governance §1.3;
-// plik 0600 na hoście, poza repo. Bez wyników (te mogą nieść dane).
-const QUERY_LOG = process.env.MSSQL_MCP_QUERY_LOG ?? '/srv/kag-data/kag/mcp-mssql/queries.jsonl';
-const MAX_ROWS = 200;
-const MAX_CHARS = 60_000;
 const log = (...a) => process.stderr.write(`[mcp-mssql] ${a.join(' ')}\n`);
-
-function auditQuery(entry) {
-  try {
-    mkdirSync(dirname(QUERY_LOG), { recursive: true, mode: 0o700 });
-    appendFileSync(QUERY_LOG, `${JSON.stringify({ ts: new Date().toISOString(), ...entry })}\n`, { mode: 0o600 });
-  } catch (err) {
-    log(`log zapytań niedostępny: ${err instanceof Error ? err.message : String(err)}`);
-  }
-}
 
 /** Konfiguracja mssql z pliku env; host „adres\\instancja" → server + options.instanceName. */
 function loadConfig() {
@@ -74,52 +62,9 @@ function getPool() {
   return poolPromise;
 }
 
-async function runQuery(text) {
-  const gate = checkReadOnly(text);
-  const query = text.slice(0, 4000);
-  if (!gate.ok) {
-    auditQuery({ ok: false, reason: gate.reason, query });
-    throw new Error(`odrzucone (tryb tylko-do-odczytu): ${gate.reason}`);
-  }
-  const started = Date.now();
-  let res;
-  try {
-    const pool = await getPool();
-    res = await pool.request().query(text);
-  } catch (err) {
-    auditQuery({ ok: false, reason: `błąd wykonania: ${err instanceof Error ? err.message.slice(0, 300) : String(err)}`, query });
-    throw err;
-  }
-  const rows = res.recordset ?? [];
-  auditQuery({ ok: true, rows: rows.length, ms: Date.now() - started, query });
-  const capped = rows.slice(0, MAX_ROWS);
-  let body = JSON.stringify(capped, null, 1);
-  let note = `${rows.length} wierszy`;
-  if (rows.length > MAX_ROWS) note += `, pokazano pierwsze ${MAX_ROWS}`;
-  if (body.length > MAX_CHARS) {
-    body = body.slice(0, MAX_CHARS);
-    note += `, wynik przycięty do ${MAX_CHARS} znaków`;
-  }
-  return `${note}\n${body}`;
-}
+const tools = createTools({ getPool, sql, audit: auditQuery });
 
 // ── protokół MCP: JSON-RPC 2.0 po stdio, komunikaty rozdzielone znakiem nowej linii ──
-const TOOLS = [
-  {
-    name: 'execute_sql',
-    description:
-      'Wykonuje JEDNO zapytanie SELECT (tylko odczyt) na produkcyjnej bazie Subiekt GT ilovelighting ' +
-      '(Magnum_Profi). Zapis, DDL, procedury i wiele zapytań są odrzucane. Zwraca wiersze jako JSON ' +
-      `(do ${MAX_ROWS} wierszy).`,
-    inputSchema: {
-      type: 'object',
-      additionalProperties: false,
-      required: ['query'],
-      properties: { query: { type: 'string', description: 'Zapytanie SELECT (jedno, bez ";")' } },
-    },
-  },
-];
-
 function send(obj) {
   process.stdout.write(`${JSON.stringify(obj)}\n`);
 }
@@ -130,15 +75,20 @@ async function handle(msg) {
     return {
       protocolVersion: params?.protocolVersion ?? '2024-11-05',
       capabilities: { tools: {} },
-      serverInfo: { name: 'mssql-ilovelighting', version: '0.1.0' },
+      serverInfo: { name: 'mssql-ilovelighting', version: '0.2.0' },
     };
   }
-  if (method === 'tools/list') return { tools: TOOLS };
+  if (method === 'tools/list') return { tools: TOOL_DEFS };
   if (method === 'tools/call') {
-    if (params?.name !== 'execute_sql') throw { code: -32601, message: `nieznane narzędzie: ${params?.name}` };
+    const args = params?.arguments ?? {};
+    const run = {
+      execute_sql: () => tools.executeSql(String(args.query ?? '')),
+      list_templates: async () => tools.listTemplates({ area: args.area, query: args.query }),
+      run_template: () => tools.runTemplate({ id: args.id, params: args.params }),
+    }[params?.name];
+    if (!run) throw { code: -32601, message: `nieznane narzędzie: ${params?.name}` };
     try {
-      const text = await runQuery(String(params?.arguments?.query ?? ''));
-      return { content: [{ type: 'text', text }] };
+      return { content: [{ type: 'text', text: await run() }] };
     } catch (err) {
       return { content: [{ type: 'text', text: err instanceof Error ? err.message : String(err) }], isError: true };
     }
