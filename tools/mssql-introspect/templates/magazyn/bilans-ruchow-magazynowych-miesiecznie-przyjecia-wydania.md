@@ -4,7 +4,9 @@ title: Bilans ruchów magazynowych miesięcznie (przyjęcia, wydania, zwroty, pr
 area: magazyn
 order: 70
 questions:
-  - "Jak policzyć: Bilans ruchów magazynowych miesięcznie (przyjęcia, wydania, zwroty, przesunięcia)?"
+  - "Ile towaru przyjęliśmy, a ile wydaliśmy w każdym miesiącu 2025 roku (w cenach zakupu)?"
+  - "W których miesiącach zapas rósł, a w których malał?"
+  - "Ile towaru oddaliśmy dostawcom i ile przyjęliśmy ze zwrotów klientów w poszczególnych miesiącach?"
 params:
   od:
     type: date
@@ -14,7 +16,7 @@ params:
     type: date
     description: koniec zakresu (wyłącznie)
     example: 2026-01-01
-verified: 2026-09-14
+verified: 2026-09-28
 ---
 Definicja: wartość magazynowa przyjęć (PZ z zakupu, PZ ze zwrotów klientów, PW), wydań (WZ sprzedażowe, WZ zwrotów do dostawcy, RW) i przesunięć MM w każdym miesiącu oraz wynikowa zmiana zapasu (katalog: M18 „Analiza wydań i przyjęć WZ/PZ", raport 11.5.9 „Ruchy WZ/PZ/MM/RW/PW w czasie").
 

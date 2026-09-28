@@ -4,22 +4,33 @@ title: Towary bez ruchu N dni (dead stock)
 area: magazyn
 order: 30
 questions:
-  - "Jak policzyć: Towary bez ruchu N dni (dead stock)?"
-params: {}
-verified: 2026-09-14
+  - "Które towary marki X leżą w magazynie ponad 180 dni bez sprzedaży i ile jest w nich zamrożonej gotówki?"
+  - "Ile wartości zapasu to towar, który nie ruszył się od ponad roku?"
+params:
+  dni:
+    type: int
+    description: próg w dniach (≥ 1) — towar na stanie bez żadnego rozchodu od ponad tylu dni (liczone od dziś)
+    example: 180
+  marka:
+    type: text
+    description: nazwa marki dokładnie jak w słowniku grup towarowych sl_GrupaTw (np. Rabalux); brak = wszystkie marki
+    required: false
+    maxLength: 100
+    example: Rabalux
+verified: 2026-09-28
 ---
-Definicja: towary ze stanem, których ostatni rozchód (WZ lub RW) był dawniej niż 90 / 180 / 365 dni temu albo nigdy nie nastąpił, wraz z wartością zapasu w tych koszykach (katalog: M5 „Slow movers", M6 „Dead stock").
+Definicja: lista towarów ze stanem, których ostatni rozchód (WZ lub RW) był dawniej niż `@dni` dni temu albo nigdy nie nastąpił (wtedy liczy się od pierwszego przyjęcia towaru), z wartością zapasu każdego towaru i sumą dla całej listy, opcjonalnie dla jednej marki (katalog: M5 „Slow movers", M6 „Dead stock").
 
-Formuła: dla towaru ze stanem: ostatni ruch = MAX(`mr_Data`) po rozchodach (`mr_MagId IS NULL`); koszyk wg DATEDIFF(day, ostatni ruch, data odniesienia); udział = wartość koszyka / wartość zapasu.
+Formuła: dla towaru ze stanem: ostatni ruch = MAX(`mr_Data`) po rozchodach (`mr_MagId IS NULL`); dni bez rozchodu = DATEDIFF(day, COALESCE(ostatni ruch, pierwsze przyjęcie), dziś); towar na liście, gdy dni bez rozchodu > `@dni`; zamrożona gotówka = Σ(`mr_Pozostalo` × `mr_Cena`) towarów z listy (`dead_value_total`), udział = ta suma / wartość całego zapasu w zakresie (marka albo firma).
 
-Tabele i kolumny: `dok_MagRuch` (mr_TowId, mr_MagId, mr_Data, mr_Pozostalo, mr_Cena); `tw__Towar` (tw_Zablokowany).
+Tabele i kolumny: `dok_MagRuch` (mr_TowId, mr_MagId, mr_Data, mr_Pozostalo, mr_Cena); `tw__Towar` (tw_Symbol, tw_Nazwa, tw_IdGrupa, tw_Zablokowany); `sl_GrupaTw` (grt_Id, grt_Nazwa).
 
 Kody dok_Typ: rozchód = każdy wiersz `mr_MagId IS NULL` (WZ 11 i RW 13); MM nie jest ruchem.
 
 ```sql
--- zakres: zamień daty — data odniesienia '2026-09-14' (progi 90/180/365 dni w CASE)
+-- stan bieżący (GETDATE): towary na stanie bez rozchodu od ponad @dni dni; @marka = nazwa marki z sl_GrupaTw albo NULL (wszystkie marki)
 WITH stock AS (
-  SELECT mr_TowId AS tw_id, SUM(mr_Pozostalo) AS qty, SUM(mr_Pozostalo * mr_Cena) AS value_fifo
+  SELECT mr_TowId AS tw_id, SUM(mr_Pozostalo) AS qty, SUM(mr_Pozostalo * mr_Cena) AS value_fifo, MAX(mr_Data) AS newest_layer_date
   FROM dbo.dok_MagRuch
   WHERE mr_MagId IS NOT NULL AND mr_Pozostalo > 0
   GROUP BY mr_TowId
@@ -27,31 +38,43 @@ WITH stock AS (
 last_issue AS (
   SELECT mr_TowId AS tw_id, MAX(mr_Data) AS last_issue_date
   FROM dbo.dok_MagRuch
-  WHERE mr_MagId IS NULL AND mr_Data <= '2026-09-14'
+  WHERE mr_MagId IS NULL
+  GROUP BY mr_TowId
+),
+first_receipt AS (
+  SELECT mr_TowId AS tw_id, MIN(mr_Data) AS first_receipt_date
+  FROM dbo.dok_MagRuch
+  WHERE mr_MagId IS NOT NULL
   GROUP BY mr_TowId
 ),
 b AS (
-  SELECT s.tw_id, s.qty, s.value_fifo, t.tw_Zablokowany,
-         CASE WHEN li.last_issue_date IS NULL THEN '5: nigdy nie wydany'
-              WHEN DATEDIFF(day, li.last_issue_date, '2026-09-14') > 365 THEN '4: bez ruchu >365 dni'
-              WHEN DATEDIFF(day, li.last_issue_date, '2026-09-14') > 180 THEN '3: bez ruchu 181-365 dni'
-              WHEN DATEDIFF(day, li.last_issue_date, '2026-09-14') > 90 THEN '2: bez ruchu 91-180 dni'
-              ELSE '1: ruch w ostatnich 90 dniach' END AS no_move_bucket
+  SELECT s.tw_id, t.tw_Symbol, LEFT(t.tw_Nazwa, 80) AS tw_name, g.grt_Nazwa AS brand,
+         s.qty, s.value_fifo, t.tw_Zablokowany,
+         li.last_issue_date, fr.first_receipt_date, s.newest_layer_date,
+         DATEDIFF(day, COALESCE(li.last_issue_date, fr.first_receipt_date), GETDATE()) AS days_without_issue,
+         SUM(s.value_fifo) OVER () AS scope_stock_value
   FROM stock s
   JOIN dbo.tw__Towar t ON t.tw_Id = s.tw_id
+  LEFT JOIN dbo.sl_GrupaTw g ON g.grt_Id = t.tw_IdGrupa
   LEFT JOIN last_issue li ON li.tw_id = s.tw_id
+  LEFT JOIN first_receipt fr ON fr.tw_id = s.tw_id
+  WHERE (@marka IS NULL OR g.grt_Nazwa = @marka)
+),
+dead AS (
+  SELECT b.*, COUNT(*) OVER () AS dead_sku_total, SUM(b.value_fifo) OVER () AS dead_value_total
+  FROM b
+  WHERE b.days_without_issue > @dni
 )
-SELECT no_move_bucket,
-       COUNT(*) AS sku_cnt,
-       SUM(qty) AS qty,
-       SUM(value_fifo) AS value_fifo,
-       CAST(100.0 * SUM(value_fifo) / NULLIF(SUM(SUM(value_fifo)) OVER (), 0) AS decimal(6,2)) AS value_share_pct,
-       SUM(CASE WHEN tw_Zablokowany = 1 THEN 1 ELSE 0 END) AS sku_blocked
-FROM b
-GROUP BY no_move_bucket
-ORDER BY no_move_bucket
+SELECT tw_id, tw_Symbol, tw_name, brand, qty, value_fifo,
+       last_issue_date, first_receipt_date, newest_layer_date, days_without_issue,
+       CASE WHEN last_issue_date IS NULL THEN 1 ELSE 0 END AS never_issued,
+       tw_Zablokowany AS blocked,
+       dead_sku_total, dead_value_total,
+       CAST(100.0 * dead_value_total / NULLIF(scope_stock_value, 0) AS decimal(6,2)) AS dead_value_share_pct
+FROM dead
+ORDER BY value_fifo DESC
 ```
 
-Pułapki: „ruch" obejmuje też RW (likwidacje, wydania wewnętrzne) i zwroty do dostawcy (WZ→KFZ) — towar, który tylko wracał do dostawcy, wygląda na ruchomy; ostatni ruch liczony jest globalnie (nie per magazyn) — towar sprzedawany z MAG, a leżący na AZZ, nie wpadnie do koszyka; sezonowość oświetlenia (szczyt IV kwartał) sprawia, że próg 180 dni wiosną łapie towar sezonowy — porównuj rok do roku; lista konkretnych towarów wymaga wersji per `tw_id` (dopuszczalna: nazwy towarów nie są danymi osobowymi).
+Pułapki: stan bieżący — zapas (`mr_Pozostalo`) nie ma historii, więc szablon liczy zawsze na chwilę wykonania (`GETDATE()`), a wynik zmienia się z dnia na dzień; „ruch" obejmuje też RW (likwidacje, wydania wewnętrzne) i zwroty do dostawcy (WZ→KFZ) — towar, który tylko wracał do dostawcy, wygląda na ruchomy, więc lista „bez sprzedaży" jest oszacowaniem z dołu; towar nigdy nie wydany liczy się od pierwszego przyjęcia (`first_receipt_date`) — bez tego na liście lądowałyby świeże dostawy (2026-09-28 przy `dni=180`: 375 SKU, ok. 100 tys. zł nigdy nie wydanych, ale przyjętych w ciągu 180 dni — poza listą); ostatni rozchód nie uwzględnia późniejszych dostaw — 2026-09-28 przy `dni=180` 412 SKU (ok. 126 tys. zł) ma ostatni rozchód ponad 180 dni temu, ale warstwę przyjętą w ciągu 180 dni (dostawa, MM albo zwrot klienta) — kolumna `newest_layer_date` pokazuje, jak długo leży najmłodsza część zapasu; ostatni ruch liczony jest globalnie (nie per magazyn) — towar sprzedawany z MAG, a leżący na AZZ, nie trafi na listę; sezonowość oświetlenia (szczyt IV kwartał) sprawia, że próg 180 dni wiosną łapie towar sezonowy — porównuj rok do roku; `@marka` musi być dokładną nazwą grupy z `sl_GrupaTw` (nazwy marek zwraca szablon „Struktura asortymentu i zapasu wg marek") — nieznana nazwa daje 0 wierszy bez błędu, a nie „brak martwego zapasu"; wynik narzędzia jest obcięty do 200 wierszy (najdroższe pierwsze), ale `dead_sku_total`, `dead_value_total` i `dead_value_share_pct` w każdym wierszu liczą całą listę; udział liczony od wartości zapasu w zakresie (marka albo cała firma); nazwy i symbole towarów nie są danymi osobowymi.
 
-Interpretacja (2026-09-14): ruch w ostatnich 90 dniach — 2 667 SKU, 59,7% wartości; 91–180 dni — 561 SKU, 8,3%; 181–365 dni — 823 SKU, 11,3%; ponad 365 dni — 1 038 SKU, 220 tys. zł, 12,6%; nigdy nie wydane — 594 SKU, 143 tys. zł, 8,2%. Dead stock (>365 dni + nigdy) = 20,8% wartości (ok. 363 tys. zł) wobec benchmarku „poniżej 5%". Żaden z tych towarów nie jest zablokowany — blokada nie jest używana do oznaczania towaru do likwidacji.
+Interpretacja (2026-09-28): `dni=180` — 2 275 SKU, 527 tys. zł, 30,1% wartości zapasu; `dni=365` — 1 278 SKU, 277 tys. zł, 15,8% (benchmark katalogu: dead stock poniżej 5%); Rabalux przy `dni=180` — 49 SKU, 11,8 tys. zł, 5,3% zapasu marki. Poprzednia wersja koszykowa (2026-09-14, wszystkie nigdy niewydane towary bez względu na wiek) dawała dead stock (>365 dni + nigdy) 20,8% wartości (ok. 363 tys. zł) — liczby nie są porównywalne wprost. Żaden towar na stanie nie jest zablokowany — blokada nie jest używana do oznaczania towaru do likwidacji.

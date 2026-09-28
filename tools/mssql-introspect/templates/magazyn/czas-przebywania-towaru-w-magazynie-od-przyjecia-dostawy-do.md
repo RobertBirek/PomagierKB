@@ -4,7 +4,8 @@ title: Czas przebywania towaru w magazynie (od przyjęcia dostawy do wydania WZ)
 area: magazyn
 order: 60
 questions:
-  - "Jak policzyć: Czas przebywania towaru w magazynie (od przyjęcia dostawy do wydania WZ)?"
+  - "Ile dni średnio leży towar na magazynie, zanim go sprzedamy?"
+  - "Jaki procent sprzedanych sztuk wyszedł w ciągu 30 dni od przyjęcia, a jaki leżał ponad rok — miesiąc po miesiącu w 2025?"
 params:
   od:
     type: date
@@ -14,7 +15,7 @@ params:
     type: date
     description: koniec zakresu (wyłącznie)
     example: 2026-01-01
-verified: 2026-09-14
+verified: 2026-09-28
 ---
 Definicja: ile dni sztuka towaru leżała na magazynie od daty przyjęcia warstwy (PZ/PW/MM/zwrot) do daty wydania na WZ sprzedażowej, miesięcznie, ważone ilością (katalog: Z6 „Lead time" w wariancie magazynowym, M2 uzupełnienie). To jest policzalne dzięki parze rozchód → warstwa (`mr_DoId`).
 

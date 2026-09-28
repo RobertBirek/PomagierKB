@@ -4,19 +4,27 @@ title: Struktura asortymentu i zapasu wg marek (sl_GrupaTw)
 area: magazyn
 order: 110
 questions:
-  - "Jak policzyć: Struktura asortymentu i zapasu wg marek (sl_GrupaTw)?"
+  - "Które marki mają największą wartość zapasu i jaki to procent całego magazynu?"
+  - "Ile towarów każdej z głównych marek mamy w kartotece, na stanie i w e-sklepie?"
+  - "Które z marek o największym zapasie rotują najwolniej na tle sprzedaży z 2025 roku?"
 params:
   od:
     type: date
-    description: początek zakresu (włącznie)
+    description: początek okresu sprzedaży (włącznie) — dla kosztu sprzedaży i rotacji
     example: 2025-01-01
   do:
     type: date
-    description: koniec zakresu (wyłącznie)
+    description: koniec okresu sprzedaży (wyłącznie)
     example: 2026-01-01
-verified: 2026-09-14
+  n:
+    type: int
+    description: liczba marek w wyniku (TOP N wg wartości zapasu, ≥ 1); 100 = wszystkie marki
+    required: false
+    default: 10
+    example: 10
+verified: 2026-09-28
 ---
-Definicja: dla każdej marki (grupa towarowa = marka na tej instancji) liczność kartoteki, aktywnych, w e-sklepie, na stanie, wartość zapasu i jej udział, koszt sprzedaży w okresie i „rotacja na bieżącym zapasie" — Top 30 wg wartości zapasu (katalog: M4 „Struktura wartości magazynu", Z2 „Zakupy wg grup", raport 11.5.1).
+Definicja: dla każdej marki (grupa towarowa = marka na tej instancji) liczność kartoteki, aktywnych, w e-sklepie, na stanie, wartość zapasu i jej udział, koszt sprzedaży w okresie i „rotacja na bieżącym zapasie" — Top N marek wg wartości zapasu (domyślnie 10) (katalog: M4 „Struktura wartości magazynu", Z2 „Zakupy wg grup", raport 11.5.1).
 
 Formuła: udział = FIFO marki / FIFO ogółem; rotacja na bieżącym zapasie = Σ `ob_WartMag` WZ sprzedażowych w okresie / FIFO marki dziś (przybliżenie rotacji bez rekonstrukcji historycznej).
 
@@ -25,7 +33,7 @@ Tabele i kolumny: `tw__Towar` (tw_IdGrupa, tw_Zablokowany, tw_SklepInternet); `s
 Kody dok_Typ: WZ 11 (bez WZ→KFZ 5), `dok_Status = 1`.
 
 ```sql
--- zakres: [@od, @do) — przedział półotwarty
+-- zapas = stan bieżący; sprzedaż: [@od, @do) — przedział półotwarty; @n = liczba marek (wg wartości zapasu)
 WITH stock AS (
   SELECT mr_TowId AS tw_id, SUM(mr_Pozostalo) AS qty, SUM(mr_Pozostalo * mr_Cena) AS value_fifo
   FROM dbo.dok_MagRuch
@@ -41,7 +49,7 @@ sold AS (
     AND d.dok_DataWyst >= @od AND d.dok_DataWyst < @do
   GROUP BY z.ob_TowId
 )
-SELECT TOP 30 g.grt_Id, g.grt_Nazwa,
+SELECT TOP (@n) g.grt_Id, g.grt_Nazwa,
        COUNT(*) AS sku_cnt,
        SUM(CASE WHEN t.tw_Zablokowany = 0 THEN 1 ELSE 0 END) AS sku_active,
        SUM(CASE WHEN t.tw_SklepInternet = 1 THEN 1 ELSE 0 END) AS sku_eshop,
@@ -61,6 +69,6 @@ GROUP BY g.grt_Id, g.grt_Nazwa
 ORDER BY SUM(COALESCE(s.value_fifo, 0)) DESC
 ```
 
-Pułapki: grupa to jedna marka na towar — towary bez grupy trafiają do wiersza z `grt_Id NULL` (grupa 1 „Podstawowa" to domyślna); rotacja liczona na zapasie „dziś" przy koszcie z innego okresu — porównawcza, nie księgowa (marki, które właśnie dostały dużą dostawę, mają zaniżoną); `cost_sold_period` obejmuje towar sprzedany bez magazynowania; udział procentowy liczony nad wszystkimi 93 markami (okno OVER działa przed TOP).
+Pułapki: zapas i liczności kartoteki to stan bieżący (bez historii) — tylko koszt i ilość sprzedaży zależą od `[@od, @do)`; grupa to jedna marka na towar — towary bez grupy trafiają do wiersza z `grt_Id NULL` (grupa 1 „Podstawowa" to domyślna); rotacja liczona na zapasie „dziś" przy koszcie z innego okresu — porównawcza, nie księgowa (marki, które właśnie dostały dużą dostawę, mają zaniżoną); `cost_sold_period` obejmuje towar sprzedany bez magazynowania; udział procentowy liczony nad wszystkimi 93 markami (okno OVER działa przed TOP); `TOP (@n)` obcina ogon — pytanie o „najwolniej rotujące" marki wymaga pełnej listy (`n` = 100), bo sortowanie jest po wartości zapasu, nie po rotacji.
 
 Interpretacja (zapas 2026-09-14, koszt 2025): TK Lighting 16,9% wartości zapasu (294 tys. zł), Zuma Line 16,2%, Rabalux 13,1%, Azzardo 11,6%, Markslojd 9,8% — pięć marek to 67% zapasu; rotacja na bieżącym zapasie: Italux 21,9 i GLOBO 8,8 (sprzedawane głównie pod zamówienie), TK Lighting 4,6, Rabalux 3,6, Zuma 3,3, Markslojd 1,4, Paul Neuhaus 1,1 (droższy zapas, wolny obrót). Markslojd ma tylko 539 z 2 957 SKU w e-sklepie, a 9,8% wartości zapasu — sprawdź ekspozycję online.

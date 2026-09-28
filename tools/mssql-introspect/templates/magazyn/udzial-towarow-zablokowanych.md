@@ -4,9 +4,10 @@ title: Udział towarów zablokowanych
 area: magazyn
 order: 90
 questions:
-  - "Jak policzyć: Udział towarów zablokowanych?"
+  - "Ile towarów w kartotece jest zablokowanych i czy leży na nich jakiś zapas?"
+  - "Jaki procent wartości zapasu przypada na towary zablokowane?"
 params: {}
-verified: 2026-09-14
+verified: 2026-09-28
 ---
 Definicja: jaka część kartoteki i jaka część wartości zapasu przypada na towary z flagą `tw_Zablokowany = 1` (katalog: checklista jakości danych 10, alert „towary zablokowane ze stanem").
 
@@ -39,6 +40,6 @@ GROUP BY t.tw_Zablokowany
 ORDER BY t.tw_Zablokowany
 ```
 
-Pułapki: blokada w Subiekcie GT blokuje wystawianie dokumentów na towar, ale nie zeruje stanu — wartość > 0 u zablokowanych to zapas nie do sprzedania bez odblokowania; blokada nie jest tożsama z wycofaniem z e-sklepu (4 357 zablokowanych ma nadal flagę `tw_SklepInternet`); `tw_Usuniety` na instancji jest zawsze 0 — kartoteka nigdy nie jest czyszczona, więc 79 691 SKU zawiera historyczne pozycje.
+Pułapki: stan bieżący — kartoteka i zapas nie mają historii, wynik dotyczy chwili wykonania; blokada w Subiekcie GT blokuje wystawianie dokumentów na towar, ale nie zeruje stanu — wartość > 0 u zablokowanych to zapas nie do sprzedania bez odblokowania; blokada nie jest tożsama z wycofaniem z e-sklepu (4 357 zablokowanych ma nadal flagę `tw_SklepInternet`); `tw_Usuniety` na instancji jest zawsze 0 — kartoteka nigdy nie jest czyszczona, więc 79 691 SKU zawiera historyczne pozycje.
 
 Interpretacja (2026-09-14): zablokowane 7 883 SKU (9,9% kartoteki), żaden ze stanem, wartość 0 — blokada jest używana konsekwentnie jako „koniec życia produktu" po wyprzedaniu. Aktywne 71 808 SKU, z czego tylko 5 683 (7,9%) ma stan. Sygnał do sprawdzenia: 4 357 zablokowanych z flagą e-sklepu — czy integrator (tabele `sublinker_*`) filtruje po blokadzie, czy po fladze?

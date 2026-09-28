@@ -4,7 +4,8 @@ title: Udział towarów w e-sklepie (tw_SklepInternet)
 area: magazyn
 order: 120
 questions:
-  - "Jak policzyć: Udział towarów w e-sklepie (tw_SklepInternet)?"
+  - "Jaka część towarów i wartości zapasu jest oznaczona do sklepu internetowego?"
+  - "Ile towarów bez flagi e-sklepu sprzedaliśmy w 2025 roku?"
 params:
   od:
     type: date
@@ -14,7 +15,7 @@ params:
     type: date
     description: koniec zakresu (wyłącznie)
     example: 2026-01-01
-verified: 2026-09-14
+verified: 2026-09-28
 ---
 Definicja: jaka część towarów (kartoteka, zapas, sprzedaż) ma flagę „przeznaczony do sklepu internetowego", w rozbiciu na aktywne i zablokowane, z flagami serwisu aukcyjnego i sprzedaży mobilnej (katalog: 6.7, raport spójności kanałów).
 
@@ -60,6 +61,6 @@ GROUP BY t.tw_SklepInternet, t.tw_Zablokowany
 ORDER BY t.tw_SklepInternet, t.tw_Zablokowany
 ```
 
-Pułapki: flaga `tw_SklepInternet` jest flagą Subiekta (dla Vendero/Sello, nieużywanych na instancji) — to, czy towar faktycznie jest w sklepie, decyduje integrator (`sublinker_*`); flaga nie mówi, w którym sklepie/marketplace (to kategorie dokumentów, `sl_Kategoria`); sprzedaż „bez flagi" może pochodzić ze sprzedaży stacjonarnej (terminale Sanok/Krosno) albo z towaru dodanego do e-sklepu po sprzedaży; `tw_SprzedazMobilna` pokrywa się z flagą e-sklepu (21 848 vs 21 851) — prawdopodobnie ustawiane razem przez integrator.
+Pułapki: flagi kartoteki i zapas to stan bieżący (bez historii) — tylko sprzedaż zależy od `[@od, @do)`, więc flagi dzisiejsze zestawiane są ze sprzedażą z okresu; flaga `tw_SklepInternet` jest flagą Subiekta (dla Vendero/Sello, nieużywanych na instancji) — to, czy towar faktycznie jest w sklepie, decyduje integrator (`sublinker_*`); flaga nie mówi, w którym sklepie/marketplace (to kategorie dokumentów, `sl_Kategoria`); sprzedaż „bez flagi" może pochodzić ze sprzedaży stacjonarnej (terminale Sanok/Krosno) albo z towaru dodanego do e-sklepu po sprzedaży; `tw_SprzedazMobilna` pokrywa się z flagą e-sklepu (21 848 vs 21 851) — prawdopodobnie ustawiane razem przez integrator.
 
 Interpretacja (2026-09-14, sprzedaż 2025): flagę e-sklepu ma 21 851 aktywnych SKU (27,4% kartoteki), ale skupiają 82,7% wartości zapasu (1,44 mln zł) i 4 342 z 5 682 SKU na stanie; 49 951 aktywnych bez flagi (62,7%) to w większości pozycje historyczne — 1 340 na stanie (303 tys. zł), a 4 992 z nich sprzedano w 2025 (30 tys. szt.) — wart sprawdzenia kanał tej sprzedaży; 540 zablokowanych z flagą sprzedano w 2025, czyli blokada nastąpiła po sprzedaży. Serwis aukcyjny: 4 346 SKU (podzbiór e-sklepu).

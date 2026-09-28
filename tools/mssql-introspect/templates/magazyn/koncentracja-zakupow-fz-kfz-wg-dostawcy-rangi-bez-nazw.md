@@ -4,7 +4,8 @@ title: Koncentracja zakupów (FZ + KFZ) wg dostawcy — rangi bez nazw
 area: magazyn
 order: 130
 questions:
-  - "Jak policzyć: Koncentracja zakupów (FZ + KFZ) wg dostawcy — rangi bez nazw?"
+  - "Jaki procent zakupów w 2025 roku przypadł na największego dostawcę i na pięciu największych?"
+  - "Czy jesteśmy za bardzo uzależnieni od jednego dostawcy?"
 params:
   od:
     type: date
@@ -14,7 +15,7 @@ params:
     type: date
     description: koniec zakresu (wyłącznie)
     example: 2026-01-01
-verified: 2026-09-14
+verified: 2026-09-28
 ---
 Definicja: udział największych dostawców w wartości netto zakupów (FZ pomniejszone o korekty KFZ) w okresie, skumulowany udział Top 1/3/5/10 i indeks HHI; dostawcy występują wyłącznie jako rangi (katalog: Z1 „Zakupy wg dostawców", Z8 „Koncentracja Top5/HHI", raport 11.6.1).
 

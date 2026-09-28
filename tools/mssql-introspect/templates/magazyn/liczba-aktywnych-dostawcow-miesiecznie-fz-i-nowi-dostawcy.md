@@ -4,7 +4,8 @@ title: Liczba aktywnych dostawców miesięcznie (FZ) i nowi dostawcy
 area: magazyn
 order: 140
 questions:
-  - "Jak policzyć: Liczba aktywnych dostawców miesięcznie (FZ) i nowi dostawcy?"
+  - "Od ilu dostawców kupowaliśmy w każdym miesiącu 2025 roku i ilu z nich było nowych?"
+  - "Ile średnio kupujemy miesięcznie od jednego dostawcy?"
 params:
   od:
     type: date
@@ -14,7 +15,7 @@ params:
     type: date
     description: koniec zakresu (wyłącznie)
     example: 2026-01-01
-verified: 2026-09-14
+verified: 2026-09-28
 ---
 Definicja: ilu różnych dostawców wystawiło FZ w miesiącu, ilu z nich dostarczyło towar (FZ z wartością magazynową), ilu pojawiło się po raz pierwszy w historii bazy, plus liczba FZ, wartość netto, wartość towarowa i średnia wartość na dostawcę (katalog: Z1 uzupełnienie, raport 11.6.10 „dual sourcing").
 

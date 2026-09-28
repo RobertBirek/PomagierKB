@@ -4,9 +4,10 @@ title: Wartość zapasu wg magazynu (FIFO z otwartych dostaw vs cena kartotekowa
 area: magazyn
 order: 10
 questions:
-  - "Jak policzyć: Wartość zapasu wg magazynu (FIFO z otwartych dostaw vs cena kartotekowa)?"
+  - "Ile pieniędzy mamy zamrożonych w towarze na każdym magazynie?"
+  - "Jaka jest wartość zapasu według kosztu dostaw FIFO, a jaka według ceny kartotekowej?"
 params: {}
-verified: 2026-09-14
+verified: 2026-09-28
 ---
 Definicja: kapitał zamrożony w towarze na każdym magazynie, wyceniony po rzeczywistym koszcie warstw FIFO oraz — kontrolnie — po cenie kartotekowej zakupu (katalog: M3 „Wartość magazynu", M17 „Zapas wg magazynów").
 
@@ -44,6 +45,6 @@ GROUP BY m.mag_Id, m.mag_Symbol, m.mag_Nazwa
 ORDER BY value_fifo DESC
 ```
 
-Pułapki: `qty_tw_stan` i `qty_fifo` muszą być równe — rozjazd oznacza niespójność bazy (np. przerwana operacja) i unieważnia wycenę FIFO; wartość kartotekowa zaniża tam, gdzie `tc_CenaNetto0 = 0` (kolumna `sku_in_stock_without_card_price`); `st_StanRez` to rezerwacje z ZK — zapas dostępny = `st_Stan − st_StanRez`; zapas na magazynie AZZ (skład marki Azzardo) jest wyceniony po cenie wprowadzenia i może być towarem powierzonym — do potwierdzenia u właściciela.
+Pułapki: stan bieżący z definicji — `tw_Stan` i `mr_Pozostalo` nie mają historii, więc szablon nie przyjmuje daty, a wynik zależy od chwili wykonania (zapas na datę z przeszłości daje szablon „Rotacja zapasu"); `qty_tw_stan` i `qty_fifo` muszą być równe — rozjazd oznacza niespójność bazy (np. przerwana operacja) i unieważnia wycenę FIFO; wartość kartotekowa zaniża tam, gdzie `tc_CenaNetto0 = 0` (kolumna `sku_in_stock_without_card_price`); `st_StanRez` to rezerwacje z ZK — zapas dostępny = `st_Stan − st_StanRez`; zapas na magazynie AZZ (skład marki Azzardo) jest wyceniony po cenie wprowadzenia i może być towarem powierzonym — do potwierdzenia u właściciela.
 
 Interpretacja (2026-09-14): MAG 4 388 SKU / 35 702 szt. / 1,264 mln zł (kartotekowo 1,242 mln); AZZ 1 053 SKU / 5 930 szt. / 352 tys.; RKR 510 SKU / 3 281 szt. / 112 tys.; EIL 145 SKU / 263 szt. / 20 tys.; KOS pusty. Razem ok. 1,75 mln zł w 6 096 pozycjach ze stanem. Wartość zablokowanych towarów na stanie = 0 (blokada = wycofanie z oferty, nie zamrożenie). Porównuj z miesięcznym kosztem sprzedaży (~0,7–1,0 mln zł, KPI „Bilans ruchów") — zapas to niecałe 2 miesiące sprzedaży.

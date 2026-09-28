@@ -4,9 +4,10 @@ title: Struktura asortymentu wg rodzaju (tw_Rodzaj)
 area: magazyn
 order: 100
 questions:
-  - "Jak policzyć: Struktura asortymentu wg rodzaju (tw_Rodzaj)?"
+  - "Ile mamy w kartotece towarów, usług, kompletów i opakowań?"
+  - "Ile towarów ma przypisanego dostawcę domyślnego, a ile jest oznaczonych do e-sklepu?"
 params: {}
-verified: 2026-09-14
+verified: 2026-09-28
 ---
 Definicja: liczność kartoteki, towarów aktywnych, zablokowanych, w e-sklepie, z dostawcą domyślnym, na stanie i wartość zapasu w podziale na rodzaje pozycji (towar, usługa, opakowanie, komplet, opłata) (katalog: 6.7 „Towary/Usługi", checklista jakości).
 
@@ -41,6 +42,6 @@ GROUP BY t.tw_Rodzaj
 ORDER BY t.tw_Rodzaj
 ```
 
-Pułapki: rodzaj jest kopiowany na pozycje (`ob_TowRodzaj`) w chwili wystawienia — zmiana rodzaju w kartotece nie zmienia historii; komplet (8) ma stan tylko po PW kompletu, składniki liczą się osobno — nie sumować kompletu i składników; `tw_IdPodstDostawca` wskazuje `kh__Kontrahent` (dane osobowe — nigdy nie dołączać nazw, tylko liczyć).
+Pułapki: stan bieżący — kartoteka i zapas nie mają historii, wynik dotyczy chwili wykonania; rodzaj jest kopiowany na pozycje (`ob_TowRodzaj`) w chwili wystawienia — zmiana rodzaju w kartotece nie zmienia historii; komplet (8) ma stan tylko po PW kompletu, składniki liczą się osobno — nie sumować kompletu i składników; `tw_IdPodstDostawca` wskazuje `kh__Kontrahent` (dane osobowe — nigdy nie dołączać nazw, tylko liczyć).
 
 Interpretacja (2026-09-14): towary 79 685 (71 802 aktywne, 7 883 zablokowane, 26 208 z flagą e-sklepu, 21 021 z dostawcą domyślnym, 5 682 na stanie, 1,748 mln zł); usługi 3 (wszystkie w e-sklepie — usługi transportu/montażu sprzedawane online); opakowanie 1; komplety 2 (1 na stanie, 77 zł); opłat 0. Kartoteka to w 99,99% towary — analizy rodzajowe z katalogu (usługi vs towary) nie mają tu zastosowania; dostawca domyślny jest wypełniony tylko u 26% towarów, więc analizy „per dostawca" trzeba prowadzić po FZ, nie po kartotece.
