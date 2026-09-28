@@ -72,6 +72,6 @@ Pułapki:
 - KFZ ujemne obniżają mianownik; należność z KFZ nie pomniejsza licznika (patrz KPI 4).
 - Zobowiązania ręczne/dekretowe (`nzf_IdDokumentAuto IS NULL`) są liczone jako „dostawca" — w instancji ich nie ma.
 - Wydłużanie DPO kosztem relacji z dostawcami to ryzyko, nie sukces (katalog N2).
-- Saldo AP na koniec przeszłego okresu jest odtwarzane z dat spłat (`nzs_Data` = data dokumentu zapłaty): zapłaty zaksięgowane później z wcześniejszą datą obniżają je wstecz, a FZ wprowadzone później z wcześniejszą datą podnoszą — DPO za przeszły okres może różnić się od wyliczonego wtedy z salda w programie. Interpretacja niżej pochodzi z salda w programie z 2026-09-14.
+- Saldo AP liczone jest na koniec dnia przed `@do` z dat zapłat (`nzs_Data`), a nie z chwili, w której patrzono do programu — zapłaty i faktury zakupu wprowadzone później zmieniają wynik względem salda widocznego wtedy w programie; dla zobowiązań rozkładu takiej różnicy nie badano (dla należności patrz `_zasady.md`).
 
-Interpretacja (2026-09-14): DPO 33,8 dnia (AP dostawcy 1,043 mln / zakupy 11,26 mln PLN z 9 552 dokumentów). Przy DSO 21,5 (a bez operatorów 3,3) firma finansuje się dostawcami dłużej, niż kredytuje klientów — cykl konwersji gotówki (CCC = DIO + DSO − DPO) zależy więc głównie od rotacji zapasu (DIO, poza tym dokumentem).
+Interpretacja (2026-09-14, saldo w programie ok. 10:20 tego dnia — szablon uruchomiony dziś dla tego okresu da inną liczbę, patrz Pułapki): DPO 33,8 dnia (AP dostawcy 1,043 mln / zakupy 11,26 mln PLN z 9 552 dokumentów). Przy DSO 21,5 (a bez operatorów 3,3) firma finansuje się dostawcami dłużej, niż kredytuje klientów — cykl konwersji gotówki (CCC = DIO + DSO − DPO) zależy więc głównie od rotacji zapasu (DIO, poza tym dokumentem).
