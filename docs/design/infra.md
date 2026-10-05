@@ -71,7 +71,7 @@ x-logging: &logging
 ```
 
 **Obrazy (tag → przy wdrożeniu przypiąć digest `@sha256:` + komentarz z datą, wzorzec optimaKB):**
-- `caddy:2.10` (oficjalny; pin digest)
+- `caddy:2.11` (oficjalny; pin digest; od 2026-10-05: 2.11.6)
 - `ghcr.io/goauthentik/server:2026.8` — jeden obraz dla server i worker (od 2026-10-05: 2026.8.3; najnowszy patch bieżącej linii przypięty digestem)
 - `postgres:16-alpine`
 
