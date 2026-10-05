@@ -18,7 +18,7 @@
     },
     {
       "customType": "regex",
-      "description": "docker: obraz bazowy Node oraz frontend BuildKit w services/*/Dockerfile. FROM to ${NODE_IMAGE}, więc wbudowany manager dockerfile nic tu nie zobaczy — trzeba celować w ARG i w dyrektywę syntax.",
+      "description": "docker: obraz bazowy Node oraz frontend BuildKit w services/*/Dockerfile. (services/tika/Dockerfile bierze obraz bazowy z TIKA_IMAGE — śledzi go manager .env.example; wartość domyślna ARG TIKA_BASE_IMAGE w Dockerfile to tylko zapas dla ręcznego docker build i podnosi się ją razem z .env.example.) FROM to ${NODE_IMAGE}, więc wbudowany manager dockerfile nic tu nie zobaczy — trzeba celować w ARG i w dyrektywę syntax.",
       "managerFilePatterns": ["services/*/Dockerfile"],
       "matchStrings": [
         "ARG NODE_IMAGE=(?<depName>[^:@\\s]+):(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[0-9a-f]{64})",
