@@ -203,3 +203,40 @@ describe('status cockpit', () => {
     expect(data.overall).toBe('warn');
   });
 });
+
+describe('sonda bazy w cockpicie nie blokuje pętli zdarzeń', () => {
+  let ctx: TestCtx;
+  beforeAll(async () => {
+    vi.stubGlobal('fetch', makeFetchMock());
+    ctx = await makeTestApp();
+  });
+  afterAll(async () => {
+    vi.unstubAllGlobals();
+    await ctx.app.close();
+    ctx.db.close();
+  });
+
+  it('nie uruchamia pełnego sprawdzania integralności (quick_check/integrity_check) w ścieżce żądania', async () => {
+    // Regresja 2026-10-05: PRAGMA quick_check na bazie 1,17 GB trwał 13–32 s, a better-sqlite3
+    // jest synchroniczny — na ten czas zamierał CAŁY panel (każde żądanie, także /ask).
+    const prepared: string[] = [];
+    const original = ctx.db.prepare.bind(ctx.db);
+    const spy = vi.spyOn(ctx.db, 'prepare').mockImplementation((sql: string) => {
+      prepared.push(sql);
+      return original(sql);
+    });
+    try {
+      const res = await ctx.app.inject({ method: 'GET', url: '/api/v1/status', headers: as('viewer') });
+      expect(res.statusCode).toBe(200);
+      const dbComp = (res.json().data.components as { id: string; status: string; detail: string }[]).find(
+        (c) => c.id === 'db',
+      );
+      expect(dbComp?.status).toBe('ok');
+      expect(dbComp?.detail).toMatch(/odpowiada/);
+      expect(prepared.length).toBeGreaterThan(0);
+      expect(prepared.filter((sql) => /quick_check|integrity_check/i.test(sql))).toEqual([]);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});

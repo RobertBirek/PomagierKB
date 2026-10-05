@@ -226,12 +226,16 @@ export function createStatusService(deps: StatusServiceDeps): StatusService {
   async function collect(): Promise<StatusCockpit> {
     const fetchImpl = deps.fetchImpl ?? globalThis.fetch;
 
+    // Sonda bazy = TANIE zapytanie kontrolne, nigdy pełne sprawdzanie integralności.
+    // better-sqlite3 jest synchroniczny: `PRAGMA quick_check` na bazie 1,17 GB trwał 13–32 s
+    // i na ten czas zamierał cały proces (każde żądanie panelu; limit czasu sondy nie mógł
+    // zadziałać, bo pętla zdarzeń stała). Integralność pliku sprawdza weryfikacja odtwarzania
+    // backupu (verify_backup.sh → sonda `backup-verify` niżej), nie ścieżka żądania.
     const dbProbe = timedProbe('db', 'Baza danych (SQLite)', async () => {
-      const row = db.prepare('PRAGMA quick_check(1)').get() as Record<string, string> | undefined;
-      const verdict = row !== undefined ? Object.values(row)[0] : undefined;
-      return verdict === 'ok'
-        ? { status: 'ok', detail: 'quick_check: ok' }
-        : { status: 'down', detail: `quick_check: ${String(verdict ?? 'brak wyniku')}` };
+      const row = db.prepare('SELECT COUNT(*) AS n FROM kb_registry').get() as { n: number } | undefined;
+      return typeof row?.n === 'number'
+        ? { status: 'ok', detail: `odpowiada (baz w rejestrze: ${row.n})` }
+        : { status: 'down', detail: 'brak odpowiedzi na zapytanie kontrolne' };
     });
 
     const openspgProbe = timedProbe('openspg', 'OpenSPG (graf wiedzy)', async () => {
