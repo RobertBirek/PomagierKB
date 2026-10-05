@@ -153,6 +153,13 @@ Cechy towarów (sl_CechaTw → tw_CechaTw): 53 zdefiniowane, 45 użyte; 13 413 t
 - ZK: podtyp 0 — 243 832 (1 zamówienie z zaliczką w 2018). Statusy ZK od 2025-01-01: 8 „zrealizowane" 82 975; 6 „niezrealizowane bez rezerwacji" 1 621; 7 „niezrealizowane z rezerwacją" 402.
 - KFS: podtyp 0 — 4 474; podtyp 1 — 40. KFZ: 3 830 + 6. WZ: podtyp 1 „Wydanie zewnętrzne" 249 681; podtyp 2 „z VAT" 1 044; podtyp 0 — 7.
 
+### 5.2a Statusy zamówienia od klienta (ZK, dok_Typ 16): wartości dok_Status 5, 6, 7, 8 i brak statusu „anulowane"
+- Znaczenie `dok_Status` dla ZK wg dokumentacji producenta (inne niż dla faktur, gdzie 1 = wykonany, 2 = unieważniony): 5 = niezrealizowane; 6 = niezrealizowane bez rezerwacji (otwarte); 7 = niezrealizowane z rezerwacją (otwarte, towar zarezerwowany); 8 = zrealizowane.
+- Wartości faktycznie występujące w tej instancji (cała historia, pomiar 2026-10-05): 8 — 243 149; 6 — 3 692 (od 2018); 7 — 673 (od 2022). Status 5 nie występuje ani razu. Innych wartości (0, 1, 2, 3) na ZK nie ma.
+- Status 6 NIE oznacza zamówienia anulowanego — to zamówienie otwarte bez rezerwacji towaru. Anulowane zamówienie nie ma osobnego statusu: w `dok_Status` ZK nie istnieje wartość „anulowane" ani „unieważnione" (wartość 2 „unieważniony" dotyczy faktur i nie występuje na ZK). Co się dzieje z zamówieniem wycofanym przez klienta (usunięcie dokumentu, pozostawienie w statusie 6 albo oznaczenie flagą własną/kategorią przez integrator) — DO POTWIERDZENIA; z samego `dok_Status` nie da się odróżnić zamówienia anulowanego od otwartego.
+- Stopień realizacji pokazuje `dok_StatusEx` (flagi sumowalne: 1 częściowo, 2 różnicowo, 4 całkowicie, 8 faktura zaliczkowa pośrednia, 16 faktura zaliczkowa końcowa). ZK od 2025-01-01 (pomiar 2026-10-05): status 8 z flagą 4 „całkowicie" — 85 982; status 8 z flagami 8+16 (zaliczki) — 223; status 8 z flagą 1 „częściowo" — 43; status 7 bez flag — 640; status 7 z flagą 8 (wystawiona zaliczka) — 26; status 6 bez flag — 1 712.
+- Otwarte zamówienia w zapytaniach: `dok_Typ = 16 AND dok_Status IN (5, 6, 7)`; zrealizowane: `dok_Status = 8` (szablony „Realizacja zamówień od klientów (ZK)" i „Otwarte zamówienia od klientów (ZK) starsze niż N dni").
+
 ### 5.3 Zmiana konwencji od marca 2026 (paragony → faktury) — potwierdzone przez właściciela 2026-09-28
 Miesięczne liczby PA / FS / KFS / ZW:
 - 2025: PA od 2 541 (czerwiec) do 5 212 (grudzień) miesięcznie; FS 725–1 483; KFS 38–91; ZW 217–546.
