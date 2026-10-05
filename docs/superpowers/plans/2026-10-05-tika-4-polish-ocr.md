@@ -595,4 +595,12 @@ Po zielonym CI (w tym nowy job `image-build (tika…)`) — merge do `main`, usu
 
 ## Dziennik wykonania
 
-(uzupełniany w trakcie: data, wyniki `tika-extract-check`, liczby ze skanu, odstępstwa od planu)
+**2026-10-05 — Task 1–4 wykonane, PR #4 zmergowany; Task 5 Step 1–2 wykonane (panel z nowym kodem na produkcji, commit `55d3774`, smoke 6/6, E2E 10/10). Tika na produkcji nadal 3.3.1 — czeka na Step 3 (edycja `deploy/kag/.env` przez właściciela).**
+
+- Odstępstwa od planu:
+  - Task 2: rozpoznanie formatu także po początku treści (`<?xml`, `<!doctype`, `<html`), nie tylko po `content-type` — istniejący test kaskady PDF zwracał XHTML bez nagłówka i ujawnił, że sam nagłówek to za mało. Dodany osobny test tej ścieżki.
+  - Task 1: `\u0000` usuwane przez `replaceAll`, nie wyrażeniem regularnym (reguła lint `no-control-regex`).
+  - Task 3: Dockerfile dostał bezpiecznik `test -d /opt/tika-server` — baza z linii 3.x (stary `TIKA_IMAGE` w `.env`) daje błąd budowania zamiast obrazu, który nie wstanie; katalog `/etc/tika` tworzony jawnie (`COPY --chmod=0444` nadawał 0444 także katalogowi i plik był nieczytelny).
+  - Task 4: `sample.docx` ma dodatkowy akapit z `dok_Status` i `dok__Dokument`; skrypt łapie też błąd połączenia.
+- Pomiary kandydata (`kag-tika:candidate`): `tika-extract-check` 4/4 OK (docx 5,8 s przy zimnym starcie, html 0,2 s, skan PNG 1,4 s, skan PDF 2,1 s); pamięć 369 MiB, 40 PID-ów; `/pipes` 404; Trivy 0 CRITICAL / 0 HIGH. Ta sama próba na produkcyjnej Tice 3.3.1: docx/html OK, oba skany FAIL.
+- Pozostało: Task 5 Step 3–6, Task 6.
