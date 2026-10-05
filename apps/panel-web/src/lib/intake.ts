@@ -20,6 +20,11 @@ export const UPLOAD_EXTENSIONS = [
   'json',
   'xml',
   'yaml',
+  'png',
+  'jpg',
+  'jpeg',
+  'tif',
+  'tiff',
 ] as const;
 
 export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;

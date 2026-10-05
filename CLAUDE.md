@@ -53,7 +53,7 @@ node tools/kb-import/{prepare-md,prepare-instance}.mjs   # Markdown→fragmenty 
 deploy/scripts/refresh_ilovekb.sh   # miesięczne odświeżenie IloveKB (timer kag-ilovekb-refresh, 5. dzień 02:30): agregaty+słowniki+dostawcy oraz KPI+konwencje z repo (prepare-kpi, tylko zacommitowany katalog)
 node tools/kb-import/set-limits.mjs 1500 1500   # limity szkiców na czas importu (PRZYWRÓĆ: 100 25)
 node tools/kb-import/quality-gate.mjs <NS>        # sama bramka jakości bez builda (po purge nagrobków)
-node tools/eval/tika-extract-check.mjs --url http://<ip kag-tika>:9998   # ekstrakcja docx/html/skan PNG/PDF przez żywą Tikę, w tym polski OCR (po każdej zmianie obrazu Tiki; wymaga npm run build)
+node tools/eval/tika-extract-check.mjs --url http://<ip kag-tika>:9998   # ekstrakcja docx/html/skan PNG/JPG/TIFF/PDF przez żywą Tikę, w tym polski OCR (po każdej zmianie obrazu Tiki; wymaga npm run build)
 node tools/eval/gaps.mjs list|probes <plik>|resolve <id>|ignore <id>   # luki wiedzy z CLI (pętla uczenia)
 bash .claude/skills/kag-daily-ops/scripts/status.sh   # stan produkcji jednym poleceniem (tylko odczyt)
 ```

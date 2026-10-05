@@ -56,6 +56,12 @@ export const ALLOWED_EXTENSIONS = [
   'json',
   'xml',
   'yaml',
+  // obrazy → OCR pol+eng w Tice 4 (zmiana decyzji 2026-10-05; wcześniej „obrazy poza v1”)
+  'png',
+  'jpg',
+  'jpeg',
+  'tif',
+  'tiff',
 ] as const;
 
 const EXT_TO_MIME: Record<(typeof ALLOWED_EXTENSIONS)[number], string> = {
@@ -71,6 +77,11 @@ const EXT_TO_MIME: Record<(typeof ALLOWED_EXTENSIONS)[number], string> = {
   json: 'application/json',
   xml: 'application/xml',
   yaml: 'application/x-yaml',
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  tif: 'image/tiff',
+  tiff: 'image/tiff',
 };
 
 /** Rozszerzenie z nazwy pliku (lowercase, bez kropki) albo null. */

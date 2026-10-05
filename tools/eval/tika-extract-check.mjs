@@ -21,6 +21,8 @@ const CASES = [
   { file: 'sample.docx', mime: DOCX, must: ['Procedura zwrotu towaru', 'dok_Status', 'dok__Dokument', '<strefa zwrotów>', 'zrealizowane'] },
   { file: 'sample.html', mime: 'text/html', must: ['Montaż żyrandola', 'Zażółć gęślą jaźń', 'E27'] },
   { file: 'skan.png', mime: 'image/png', must: ['PROTOKÓŁ REKLAMACJI', 'sześcioramienny', 'zgłoszenie nr 4471'], ocr: true },
+  { file: 'skan.jpg', mime: 'image/jpeg', must: ['PROTOKÓŁ REKLAMACJI', 'zgłoszenie nr 4471'], ocr: true },
+  { file: 'skan.tiff', mime: 'image/tiff', must: ['PROTOKÓŁ REKLAMACJI', 'zgłoszenie nr 4471'], ocr: true },
   { file: 'skan.pdf', mime: 'application/pdf', must: ['PROTOKÓŁ REKLAMACJI', 'Żyrandol', '1 249,00 zł'], ocr: true },
 ];
 let failed = 0;

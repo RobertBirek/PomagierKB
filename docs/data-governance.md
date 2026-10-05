@@ -41,7 +41,7 @@ panel-api i mcp-server), **pliki na dysku** (`/srv/kag-data/kag/panel/*`), **Ope
 
 | Dane | Gdzie |
 |---|---|
-| oryginalne pliki/bloby intake'u | pliki `uploads/` (content-addressed po sha256) |
+| oryginalne pliki/bloby intake'u (od 2026-10-05 także zdjęcia i skany PNG/JPG/TIFF — obraz dokumentu może zawierać dane osobowe również poza rozpoznanym tekstem: podpisy, pieczątki, wizerunek; polityka PII działa na tekście po OCR, sam obraz zostaje w blobie do czasu retencji lub ręcznego usunięcia) | pliki `uploads/` (content-addressed po sha256) |
 | tekst po ekstrakcji i czyszczeniu, szkice | SQLite `intakes`, `drafts.content_md` |
 | chunki + indeks pełnotekstowy | SQLite `chunks_mirror` + FTS5 |
 | eksporty CSV przekazywane builderowi | pliki `exports/` + rejestr `export_runs`/`export_files` |

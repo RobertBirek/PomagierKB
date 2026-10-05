@@ -4,13 +4,14 @@
  * ponowny convert → Tika → uczciwy fail 'extraction_below_quality_threshold'.
  * txt/md/csv/json/xml/yaml — odczyt bezpośredni (walidacja UTF-8);
  * html/docx/xlsx/pptx — Tika (4.x: Markdown po normalizacji; 3.x: strip XHTML).
+ * png/jpg/tiff — Tika 4 z OCR pol+eng (provider 'tika_ocr'); brak tekstu → 'image_without_text'.
  *
  * Wszystkie wywołania HTTP przez wstrzykiwalny fetchImpl (testowalność),
  * timeout 30 s na wywołanie, semafor max 2 równoległych OCR (prosta kolejka
  * w module — OCR jest najcięższym krokiem Stirlinga).
  */
 
-export type ExtractProvider = 'stirling' | 'stirling_ocr' | 'tika' | 'raw';
+export type ExtractProvider = 'stirling' | 'stirling_ocr' | 'tika' | 'tika_ocr' | 'raw';
 
 export interface ExtractResult {
   text: string;
@@ -39,7 +40,7 @@ export interface ExtractDeps {
 }
 
 /** Kody błędów ekstrakcji — mają wpisy w services/messages.ts (INTAKE_ERROR_CODES). */
-export type ExtractErrorCode = 'extraction_below_quality_threshold' | 'invalid_encoding';
+export type ExtractErrorCode = 'extraction_below_quality_threshold' | 'invalid_encoding' | 'image_without_text';
 
 export class ExtractError extends Error {
   readonly code: ExtractErrorCode;
@@ -246,14 +247,24 @@ async function stirlingOcr(deps: ExtractDeps, buffer: Buffer, filename: string):
 }
 
 /** Tika: dowolny dokument → tekst (3.x: strip XHTML; 4.x: Markdown po normalizacji). Retry przejściowych; null przy porażce. */
-async function tikaExtract(deps: ExtractDeps, buffer: Buffer, mime: string): Promise<string | null> {
+async function tikaExtract(
+  deps: ExtractDeps,
+  buffer: Buffer,
+  mime: string,
+  timeoutMs?: number,
+): Promise<string | null> {
   try {
     return await withRetry(async () => {
-      const res = await timedFetch(deps, `${deps.tikaUrl}/tika`, {
-        method: 'PUT',
-        headers: { 'content-type': mime },
-        body: new Uint8Array(buffer),
-      });
+      const res = await timedFetch(
+        deps,
+        `${deps.tikaUrl}/tika`,
+        {
+          method: 'PUT',
+          headers: { 'content-type': mime },
+          body: new Uint8Array(buffer),
+        },
+        timeoutMs,
+      );
       if (RETRYABLE_STATUS.has(res.status)) throw new RetryableError(`tika HTTP ${res.status}`);
       if (!res.ok) return null;
       // Tika 3 odpowiada XHTML (text/xml), Tika 4 — Markdownem (text/plain). Rozpoznanie po
@@ -341,6 +352,16 @@ export async function extractContent(input: ExtractInput, deps: ExtractDeps): Pr
       'extraction_below_quality_threshold',
       'ekstrakcja PDF poniżej progu jakości (Stirling, OCR i Tika)',
     );
+  }
+
+  // png/jpg/tiff — OCR pol+eng w Tice 4 (Tesseract). To najcięższe wywołanie Tiki, więc
+  // dostaje limit czasu OCR i ten sam semafor co OCR Stirlinga (Tika ma 2 procesy potomne).
+  if (mime.startsWith('image/')) {
+    const ocr = await withOcrSlot(() => tikaExtract(deps, buffer, mime, deps.ocrTimeoutMs ?? OCR_TIMEOUT_MS));
+    if (ocr !== null && passesQualityThreshold(ocr)) {
+      return { text: ocr, provider: 'tika_ocr', quality: printableRatio(ocr) };
+    }
+    throw new ExtractError('image_without_text', `OCR obrazu ${mime} nie dał czytelnego tekstu powyżej progu jakości`);
   }
 
   // html/docx/xlsx/pptx i pozostałe typy binarne — Tika.
