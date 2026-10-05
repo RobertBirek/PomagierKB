@@ -30,6 +30,11 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # Narzędzia hostowe (tools/*) mają własne package.json poza workspace'ami, a ich testy
+      # zbiera root vitest — bez tej instalacji 4 pliki tools/kb-import/test padają na
+      # "Cannot find package 'cheerio'" (CI czerwone na main od 2026-09).
+      - run: npm ci --prefix tools/kb-import
+      - run: npm ci --prefix tools/mssql-introspect
 
       # KOLEJNOŚĆ MA ZNACZENIE — nie przestawiaj build za typecheck/test (D11-01).
       # Dwie NIEZALEŻNE zależności od artefaktów builda, obie zweryfikowane w czystym
