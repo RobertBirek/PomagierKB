@@ -95,7 +95,7 @@ describe('tytuły tras', () => {
 describe('pendingDraftsFromStatus()', () => {
   it('parsuje liczbę z detail sondy inbox ("oczekujące: N")', () => {
     expect(pendingDraftsFromStatus([{ id: 'inbox', detail: 'oczekujące: 3' }])).toBe(3);
-    expect(pendingDraftsFromStatus([{ id: 'db', detail: 'quick_check: ok' }, { id: 'inbox', detail: 'oczekujące: 0' }])).toBe(0);
+    expect(pendingDraftsFromStatus([{ id: 'db', detail: 'odpowiada (baz w rejestrze: 5)' }, { id: 'inbox', detail: 'oczekujące: 0' }])).toBe(0);
   });
 
   it('brak sygnału / brak liczby / brak danych → undefined (badge znika)', () => {
