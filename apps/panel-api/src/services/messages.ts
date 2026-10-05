@@ -53,6 +53,7 @@ export const INTAKE_STAGES = [
  */
 export const INTAKE_ERROR_CODES = [
   'extraction_below_quality_threshold',
+  'image_without_text',
   'invalid_encoding',
   'fetch_blocked',
   'fetch_failed',
@@ -162,6 +163,12 @@ export const MESSAGES: Record<string, HumanMessage> = {
     label: 'za mało tekstu w dokumencie',
     description: 'Ekstrakcja dała zbyt mało czytelnego tekstu — to prawdopodobnie skan bez warstwy tekstowej.',
     action: 'To skan bez tekstu — spróbuj inną wersję pliku (z warstwą tekstową) albo wklej treść ręcznie.',
+  },
+  image_without_text: {
+    label: 'brak czytelnego tekstu na obrazie',
+    description:
+      'Rozpoznawanie tekstu (OCR, polski i angielski) nie znalazło na obrazie wystarczającej ilości czytelnego tekstu.',
+    action: 'Zrób wyraźniejsze zdjęcie lub skan (ostro, prosto, dobry kontrast) albo wklej treść ręcznie.',
   },
   invalid_encoding: {
     label: 'nieczytelne kodowanie pliku',

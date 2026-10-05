@@ -45,6 +45,13 @@ describe('validateUploadFile()', () => {
     expect(validateUploadFile('notatka.md', 1)).toEqual({ ok: true });
   });
 
+  it('akceptuje obrazy do OCR: png, jpg, jpeg, tif, tiff', () => {
+    for (const name of ['skan.png', 'zdjecie.JPG', 'zdjecie.jpeg', 'faks.tif', 'faks.TIFF']) {
+      expect(validateUploadFile(name, 2048), name).toEqual({ ok: true });
+    }
+    expect(validateUploadFile('animacja.gif', 10)).toEqual({ ok: false, code: 'extension' });
+  });
+
   it('odrzuca nieobsługiwane rozszerzenie i brak rozszerzenia', () => {
     expect(validateUploadFile('wirus.exe', 10)).toEqual({ ok: false, code: 'extension' });
     expect(validateUploadFile('bez-rozszerzenia', 10)).toEqual({ ok: false, code: 'extension' });

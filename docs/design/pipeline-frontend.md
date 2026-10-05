@@ -225,7 +225,7 @@ CREATE TABLE quality_reports (id INTEGER PRIMARY KEY, kb_namespace TEXT, run_id 
 
 ### Etap 1 — Intake
 
-`POST /api/content` (operator): multipart plik (≤50 MB; pdf/docx/xlsx/pptx/html/txt/md — obrazy poza v1) LUB `{url}` (safe_http: blok prywatnych IPv4/v6, DNS lookup all, re-walidacja redirectów) LUB `{text, title?}`. Zwraca 202 `{intakeId}`; przetwarzanie asynchroniczne in-process (kolejka w tabeli, jeden worker — bez spawnowania procesów na intake; spawn tylko dla buildów).
+`POST /api/content` (operator): multipart plik (≤50 MB; pdf/docx/xlsx/pptx/html/txt/md; od 2026-10-05 także obrazy png/jpg/jpeg/tif/tiff — patrz PLAN.md „Zmiany decyzji") LUB `{url}` (safe_http: blok prywatnych IPv4/v6, DNS lookup all, re-walidacja redirectów) LUB `{text, title?}`. Zwraca 202 `{intakeId}`; przetwarzanie asynchroniczne in-process (kolejka w tabeli, jeden worker — bez spawnowania procesów na intake; spawn tylko dla buildów).
 
 ### Etap 2 — Ekstrakcja (kaskada z progiem jakości)
 
@@ -235,7 +235,7 @@ Dla PDF (kolejność z briefu: Stirling OCR pol → Tika → próg):
 3. Nadal poniżej: Tika `PUT {TIKA_URL}/tika` (`Content-Type: application/pdf`) → próg. Od 2026-10-05 Tika 4.1.0 zwraca Markdown (`normalizeTikaMarkdown` zdejmuje ucieczki: `dok\_Status` → `dok_Status`) i sama robi OCR `pol+eng` stron bez tekstu; odpowiedź XHTML z Tiki 3 nadal idzie przez strip XHTML (kod rozróżnia po `content-type` i początku treści).
 4. Nadal poniżej: `status='failed'`, `error='extraction_below_quality_threshold'` — widoczne w UI (bez własnego parsera PDF jak w optimaKB; uczciwy błąd zamiast śmieciowego tekstu).
 
-Inne typy: txt/md → odczyt bezpośredni (walidacja UTF-8); html/docx/xlsx/pptx → Tika (4.1.0: nagłówki i tabele zachowane jako Markdown; obrazy osadzone rozpoznawane OCR `pol+eng`); URL → safe_http fetch, potem wg content-type. Timeout 30 s na wywołanie zewnętrzne, zapis `extract_provider` ('stirling'|'stirling_ocr'|'tika'|'raw') i `extract_quality` (ratio z looksHumanText).
+Obrazy (`image/png`, `image/jpeg`, `image/tiff`): Tika 4 z Tesseractem `pol+eng` → `extract_provider = tika_ocr`; wywołanie ma limit czasu OCR (5 min) i wspólny z OCR Stirlinga semafor 2 równoległych; brak tekstu powyżej progu jakości → błąd `image_without_text` (własny ludzki komunikat). Inne typy: txt/md → odczyt bezpośredni (walidacja UTF-8); html/docx/xlsx/pptx → Tika (4.1.0: nagłówki i tabele zachowane jako Markdown; obrazy osadzone rozpoznawane OCR `pol+eng`); URL → safe_http fetch, potem wg content-type. Timeout 30 s na wywołanie zewnętrzne, zapis `extract_provider` ('stirling'|'stirling_ocr'|'tika'|'raw') i `extract_quality` (ratio z looksHumanText).
 
 ### Etap 3 — Czyszczenie
 

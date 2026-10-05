@@ -215,7 +215,7 @@ po zmianie `docker compose up -d` (przetworzy tylko zmienione usługi):
 | release-openspg-server | `OPENSPG_SERVER_XMX=3072m` → `2560m`; NAJPIERW jednak `BUILDER_MODEL_EXECUTE_NUM=4` → `2` (mniejsza równoległość buildera to najtańsza ulga) |
 | release-openspg-neo4j | `NEO4J_HEAP=2G` → `1G` i/lub `NEO4J_PAGECACHE=1G` → `512M` (wolniejsze zapytania, ale stabilnie) |
 | kag-stirling (OCR) | `JAVA_OPTS=-Xmx1g` bez zmian; ogranicz równoległe OCR do 1 (ustawienie panelu) — skoki RAM robi wielkość skanu, nie heap |
-| kag-tika | mem_limit 1.5g (pomiar Tiki 4.1.0: ~410 MiB po rozgrzaniu, 40 PID-ów); parsowanie w procesach potomnych — pad jednego pliku kończy się 503 i restartem procesu potomnego, nie kontenera; pierwsze żądanie po starcie trwa ~5 s; powtarzalne 503 = podejrzany pojedynczy plik — odrzuć go z Inboxa. Kontrola: `node tools/eval/tika-extract-check.mjs --url http://<ip kag-tika>:9998` (cztery `OK`) |
+| kag-tika | mem_limit 1.5g (pomiar Tiki 4.1.0: ~410 MiB po rozgrzaniu, 40 PID-ów); parsowanie w procesach potomnych — pad jednego pliku kończy się 503 i restartem procesu potomnego, nie kontenera; pierwsze żądanie po starcie trwa ~5 s; powtarzalne 503 = podejrzany pojedynczy plik — odrzuć go z Inboxa. Kontrola: `node tools/eval/tika-extract-check.mjs --url http://<ip kag-tika>:9998` (sześć `OK`) |
 | kag-panel / kag-mcp | 512m/384m; wzrost zużycia = zgłoś bug (nie podnoś limitu w ciemno) |
 
 **UWAGA:** suma limitów (~21g) jest dobrana pod 24 GB RAM — podnosząc jeden limit,

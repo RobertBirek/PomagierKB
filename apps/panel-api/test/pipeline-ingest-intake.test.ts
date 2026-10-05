@@ -194,6 +194,29 @@ describe('upload multipart', () => {
     expect(body.error.details?.allowedExtensions).toContain('pdf');
   });
 
+  it('obrazy png/jpg/jpeg/tif/tiff są przyjmowane (202) z właściwym mime', async () => {
+    const cases: [string, string][] = [
+      ['skan.png', 'image/png'],
+      ['zdjecie.JPG', 'image/jpeg'],
+      ['zdjecie.jpeg', 'image/jpeg'],
+      ['faks.tif', 'image/tiff'],
+      ['faks.tiff', 'image/tiff'],
+    ];
+    for (const [name, mime] of cases) {
+      const boundary = `testboundaryimg${name.length}${mime.length}`;
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/content',
+        headers: { ...as('operator'), 'content-type': `multipart/form-data; boundary=${boundary}` },
+        payload: multipartPayload(name, Buffer.from(`fake-image-bytes-${name}`), boundary),
+      });
+      expect(res.statusCode, name).toBe(202);
+      const id = (res.json() as { data: { intakeId: string } }).data.intakeId;
+      const row = app.db.prepare('SELECT mime FROM intakes WHERE id = ?').get(id) as { mime: string };
+      expect(row.mime, name).toBe(mime);
+    }
+  });
+
   it('plik .md → 202, worker robi z niego szkic (provider raw)', async () => {
     const boundary = 'testboundarymd';
     const md = `# Konserwacja opraw\n\n${TEXT} Przegląd wykonuje się co dwanaście miesięcy.`;
