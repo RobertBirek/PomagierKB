@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # refresh_ilovekb.sh — cykliczne odświeżenie IloveKB z produkcyjnej instancji Subiekta GT (Magnum_Profi):
-# TYLKO słowniki z allow-listy, agregaty z progiem k=10 i lista dostawców-osób prawnych. Katalog schematu,
-# konwencje i szablony KPI NIE są regenerowane (dokumenty redakcyjne; ich wpisy w manifeście zostają —
-# prepare-instance scala manifest). Poświadczenie: /etc/kag/mssql-ilovelighting.env (0600), przez WireGuard.
+# TYLKO słowniki z allow-listy, agregaty z progiem k=10 i lista dostawców-osób prawnych. Szablony KPI
+# i konwencje są renderowane z repo (tools/mssql-introspect/templates, instance/) przez prepare-kpi —
+# tylko ZACOMMITOWANY katalog (niezatwierdzone zmiany = odmowa i przerwanie; celowo bez --allow-dirty);
+# katalog schematu NIE jest regenerowany. Oba prepare-* scalają manifest. Poświadczenie: /etc/kag/mssql-ilovelighting.env (0600), przez WireGuard.
 # Governance: docs/data-governance.md §1.2 (IloveKB) i §1.3 droga 3. Uruchamiane z timera kag-ilovekb-refresh.
 set -euo pipefail
 cd /kag
@@ -29,6 +30,7 @@ node tools/kb-import/prepare-dicts.mjs --dicts "$E/out/schema-live/dictionaries.
   --product "Subiekt GT ($DB)" --source-base "$SB"
 node tools/kb-import/prepare-instance.mjs --aggregates "$E/out/schema-live/aggregates.json" \
   --suppliers "$E/out/schema-live/suppliers.json" --out "$E/out/docs" --source-base "$SB" --k 10
+node tools/kb-import/prepare-kpi.mjs --out "$E/out/docs" --source-base "$SB"
 
 # Bramka: żaden wygenerowany plik nie może zawierać adresu hosta bazy.
 if grep -rlE '192\.168\.|INSERTGT|DESKTOP-' "$E/out/dicts" "$E/out/docs" >/dev/null; then
