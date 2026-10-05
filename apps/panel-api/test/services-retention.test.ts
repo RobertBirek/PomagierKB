@@ -160,6 +160,39 @@ describe('retention', () => {
     expect(rows[0]?.finished_at).not.toBeNull();
   });
 
+  it('osierocone build_jobs: wiek liczony z biegu eksportu (UTC), nie z tekstowego porównania gmt_create', () => {
+    // Regresja 2026-10-05: gmt_create pochodzi z OpenSPG w formacie 'RRRR-MM-DD GG:MM:SS' i w czasie
+    // LOKALNYM serwera, a kod porównywał go tekstowo z odcięciem ISO w UTC. Spacja sortuje się przed
+    // 'T', więc po 12:00 UTC każde zadanie z bieżącej doby wyglądało na starsze niż 12 h — także
+    // build uruchomiony 10 minut wcześniej (test padał codziennie między 12:00 a 24:00 UTC).
+    const now = Date.UTC(2026, 9, 5, 18, 0, 0);
+    db.prepare(
+      "INSERT INTO kb_registry (namespace, name, job_prefix, status, created_at, updated_at) VALUES ('OrphKb','OrphKb','orph','active',?,?)",
+    ).run(new Date(now).toISOString(), new Date(now).toISOString());
+    const run = db.prepare("INSERT INTO export_runs (namespace, status, started_at) VALUES ('OrphKb','running',?)");
+    const freshRun = Number(run.run(new Date(now - 12 * 60_000).toISOString()).lastInsertRowid);
+    const oldRun = Number(run.run(new Date(now - 2 * 86_400_000).toISOString()).lastInsertRowid);
+    const ins = db.prepare(
+      `INSERT INTO build_jobs (namespace, run_id, file_name, file_sha256, openspg_job_id, job_name, entity_type, status, gmt_create)
+       VALUES ('OrphKb', ?, 'chunk.csv', ?, ?, 'OrphKb Chunk', 'Chunk', ?, ?)`,
+    );
+    // trwa od 10 minut; gmt_create w czasie lokalnym CEST (19:50 = 17:50 UTC), ta sama doba co odcięcie
+    ins.run(freshRun, 'd'.repeat(64), 911, 'RUNNING', '2026-10-05 19:50:00');
+    // bieg sprzed 2 dni, gmt_create nigdy nie zapisany (akcja zginęła przed odpowiedzią OpenSPG)
+    ins.run(oldRun, 'e'.repeat(64), 912, 'INIT', null);
+    // bez wiersza biegu: 13 h temu w czasie lokalnym — w granicy niepewności strefy, zostaje
+    ins.run(999_001, 'f'.repeat(64), 913, 'RUNNING', '2026-10-05 07:00:00');
+    // bez wiersza biegu: 30 h temu — martwy niezależnie od strefy
+    ins.run(999_002, '0'.repeat(64), 914, 'WAITING', '2026-10-04 12:00:00');
+
+    const r = runRetention(db, dataDir, now);
+    const rows = db
+      .prepare('SELECT openspg_job_id AS j, status FROM build_jobs WHERE openspg_job_id BETWEEN 911 AND 914 ORDER BY j')
+      .all() as { j: number; status: string }[];
+    expect(rows.map((x) => x.status)).toEqual(['RUNNING', 'TERMINATE', 'RUNNING', 'TERMINATE']);
+    expect(r.buildJobOrphans).toBe(2);
+  });
+
   it('manifesty eksportów: kasuje stare, ZOSTAWIA najnowszy bieg bazy', () => {
     db.prepare(
       "INSERT INTO kb_registry (namespace, name, job_prefix, status, created_at, updated_at) VALUES ('RetKb','RetKb','ret','active',?,?)",
