@@ -154,7 +154,7 @@ sudo chown -R 10001:10001 /srv/kag-data/kag/panel
 
 ```bash
 cd /kag/deploy/edge
-docker compose up -d postgres redis
+docker compose up -d postgres
 watch docker compose ps                       # postgres healthy
 
 sudo /kag/deploy/scripts/restore.sh --snapshot "$SNAP" --only authentik-pg

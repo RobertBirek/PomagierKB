@@ -378,7 +378,7 @@ sudo /kag/deploy/scripts/update_check.sh   # skopeo/manifest inspect vs digesty 
 z `/etc/kag/alerts.env`) i skonfrontuj go z `runbooks/openspg-frozen.md` — obrazy
 `spg-registry.*` są zamrożone celowo i ich nowsze tagi to informacja, nie zadanie.
 
-Procedura standardowa (Caddy, Postgres, Redis, Tika, Stirling):
+Procedura standardowa (Caddy, Postgres, Tika, Stirling):
 
 1. `sudo systemctl start kag-backup.service` (świeży snapshot),
 2. podnieś digest w odpowiednim `.env` (zostaw komentarz z wersją i datą),
@@ -390,7 +390,7 @@ Zasady szczególne:
 - **OpenSPG (mysql/neo4j/minio/server): ZAMROŻONY.** Upstream martwy od 06/2025,
   migracje nieznane, model embeddingu nietykalny. Aktualizacja tylko jako osobna,
   świadoma operacja: pełny snapshot + próba na kopii danych, nigdy „przy okazji".
-- **Authentik:** tylko po przeczytaniu release notes danej linii (2025.x); **zawsze
+- **Authentik:** tylko po przeczytaniu release notes danej linii; linii nie wolno pomijać, a zmianę linii poprzedza próba na kopii bazy (`deploy/scripts/authentik_upgrade_rehearsal.sh`); **zawsze
   backup Postgresa przed** (`kag-backup.service` albo ręczny `pg_dump`); server+worker
   aktualizowane razem (jeden obraz/digest); migracje DB robi sam przy starcie;
   po aktualizacji sprawdź logowanie do panelu i forward-auth (`smoke.sh`).

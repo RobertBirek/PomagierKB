@@ -536,4 +536,16 @@ Zrzuty `pre-<N>-*.sql.zst` zostają 14 dni (do pierwszej udanej niedzielnej wery
 
 ## Dziennik wykonania
 
-(uzupełniany w trakcie: data, wynik próby generalnej z czasami, wynik sprawdzenia `email_verified` per aplikacja, czasy skoków, odstępstwa od planu)
+**Wykonano 2026-10-05, jedno okno 11:21–11:30 CEST (ok. 9 minut łącznej niedostępności logowania, w pięciu krótkich przerwach).**
+
+- Preflight: stan zdrowy, smoke 6/6, E2E 10/10; aplikacje: `kag-panel` (OIDC) i `status-monitor` (proxy) — żadna nie czyta `email_verified`. Pełny backup `2026-10-05_110935` z kopią off-site przed startem.
+- Próba generalna na snapshocie `2026-10-05_032332`: 2025.10.4 24 s, 2025.12.6 40 s, 2026.2.7 29 s, 2026.5.7 24 s, 2026.8.3 68 s; discovery 200 po każdym; `users=4 groups=5 oauth2=2`, migracje 611 → 777. Pierwsze podejście dało fałszywy FAIL na 2025.12.6 (kontrola discovery ścigała się ze startem aplikacji) — skrypt dostał ponawianie.
+- Produkcja: po każdym skoku `healthy healthy`, discovery 200, smoke 6/6, E2E 10/10, `status.*` 302, 4 użytkowników, 17 połączeń do PG. Zrzuty `pre-1…pre-5` w `/srv/kag-data/backups/authentik-upgrade/`.
+- Odstępstwa i obserwacje:
+  - Skok 2: w logu workera dwa wyjątki `UndefinedColumn … pagination_default_page_size` SPRZED zwolnienia blokady migracji (worker odpytał bazę, zanim serwer skończył migrację dodającą tę kolumnę). Jednorazowe, kolumna istnieje, bez powtórek.
+  - Zrzut bazy skurczył się z 60 MB do 11 MB po skoku 1 (migracja 2025.10 czyści stare tabele zadań/sesji); liczności kont, grup i providerów bez zmian.
+  - Grup jest 6, nie 5: wydania 2026.x dokładają wbudowane `authentik Read-only` i `authentik Agent-Users` (bez uprawnień superużytkownika). Próba tego nie pokazała, bo uruchamiała sam serwer bez workera (blueprinty stosuje worker).
+  - Zmienne nasłuchu i `TRUSTED_PROXY_CIDRS` okazały się niepotrzebne (IPv6 w kontenerze, sieć Caddy w domyślnym zakresie zaufanych).
+  - **Cel CVE osiągnięty częściowo**: obraz 13 CRITICAL / 209 HIGH → 3 / 72, ale `CVE-2026-102268` zostaje — 2026.8.3 niesie `PyJWT` 2.13.0 (poprawka w 2.14.0). Założenie planu, że najnowsze wydanie ma poprawkę, było błędne; do zamknięcia kolejnym patchem linii 2026.8.
+  - `deploy/edge/.env`: zmienne `AUTHENTIK_IMAGE_CHECK_TAG` (ma być `2026.8`) i `REDIS_IMAGE_CHECK_TAG` (do usunięcia) poprawia właściciel — edycja zablokowana dla agenta.
+- Do wykonania przez właściciela: Task 8 Step 1–2 (wersja w interfejsie, ręczne logowanie `akadmin` z MFA).

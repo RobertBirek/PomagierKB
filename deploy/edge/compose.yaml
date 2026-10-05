@@ -215,6 +215,6 @@ networks:
   # wspólna sieć proxy dla obecnych i przyszłych appek (caddy ↔ kag-panel/kag-mcp)
   edge-net:
     external: true
-  # izolacja Postgresa/Redisa od świata (bez NAT, bez internetu)
+  # izolacja Postgresa od świata (bez NAT, bez internetu)
   edge-internal:
     internal: true

@@ -126,7 +126,7 @@ MON = [
   "Dostawca tożsamości. Jego awaria odcina logowanie do panelu I do status.*."),
  ("Authentik — readiness (edge-net)", "http", "http://edge-authentik-server:9000/-/health/ready/", None,
   60, 60, 2, 48, '["200-299"]', 10, None,
-  "Readiness sprawdza Postgres i Redis Authentika — odróżnia „proces żyje” od „proces działa”."),
+  "Readiness sprawdza Postgres Authentika — odróżnia „proces żyje” od „proces działa”."),
  ("Bramka SSO na status.*", "http", f"https://{status}/", None,
   300, 120, 2, 48, '["302"]', 0, None,
   "maxredirects=0, bo sprawdzamy właśnie przekierowanie: 302 do Authentika = forward_auth działa. 200 oznaczałoby monitoring stojący otworem."),

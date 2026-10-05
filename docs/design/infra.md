@@ -19,7 +19,7 @@ INTERNET ── 80/443(+udp) ──► [edge-caddy]
         │ edge-internal        │        └──────────┬──────────┘
         ▼                      │                   │ kag-datastores (internal: true)
 [edge-postgres]                │                   ▼
-[edge-redis]                   │     [release-openspg-server:8887] [release-openspg-mysql]
+                               │     [release-openspg-server:8887] [release-openspg-mysql]
                                │     [release-openspg-neo4j]       [release-openspg-minio]
                                │ kag-internal (internal: true)
                                ▼
@@ -32,7 +32,7 @@ INTERNET ── 80/443(+udp) ──► [edge-caddy]
 | Sieć | Typ | Członkowie | Po co |
 |---|---|---|---|
 | `edge-net` | external bridge (tworzona poza compose, wspólna dla przyszłych appek) | caddy, authentik-server, authentik-worker, kag-panel, kag-mcp, (profil `monitoring`: uptime-kuma) | ruch Caddy→aplikacje; egress panel/mcp do LLM |
-| `edge-internal` | `internal: true` (stack edge) | authentik-server, worker, postgres, redis | izolacja PG/Redis od świata |
+| `edge-internal` | `internal: true` (stack edge) | authentik-server, worker, postgres | izolacja PG od świata |
 | `kag-datastores` | `internal: true` (stack kag) | release-openspg-{server,mysql,neo4j,minio}, kag-panel, kag-mcp | OpenSPG :8887 (BEZ auth) widzą tylko panel i mcp — parsery niezaufanych uploadów nie mają tam drogi |
 | `kag-internal` | `internal: true` (stack kag) | kag-tika, kag-stirling, kag-panel | parsery treści bez internetu; panel jest w obu sieciach, bo woła i parsery, i OpenSPG |
 | `kag-egress` | bridge (stack kag) | TYLKO release-openspg-server | serwer OpenSPG musi wołać API LLM (wektoryzacja, ekstrakcja); reszta datastores zostaje odcięta |
@@ -72,9 +72,8 @@ x-logging: &logging
 
 **Obrazy (tag → przy wdrożeniu przypiąć digest `@sha256:` + komentarz z datą, wzorzec optimaKB):**
 - `caddy:2.10` (oficjalny; pin digest)
-- `ghcr.io/goauthentik/server:2025.8` — jeden obraz dla server i worker (Authentik 2025.x; wziąć najnowszy patch linii 2025.x i przypiąć digest)
+- `ghcr.io/goauthentik/server:2026.8` — jeden obraz dla server i worker (od 2026-10-05: 2026.8.3; najnowszy patch bieżącej linii przypięty digestem)
 - `postgres:16-alpine`
-- `redis:7-alpine`
 
 **Usługi:**
 
@@ -84,10 +83,9 @@ x-logging: &logging
 | authentik-server (`command: server`) | edge-authentik-server | 1g | edge-net, edge-internal | `ak healthcheck` (wbudowany) |
 | authentik-worker (`command: worker`) | edge-authentik-worker | 1g | edge-internal, edge-net (egress SMTP) | `ak healthcheck` |
 | postgres | edge-postgres | 512m | edge-internal | `pg_isready -U $POSTGRES_USER -d $POSTGRES_DB` |
-| redis | edge-redis | 256m | edge-internal | `redis-cli ping` |
 
 - caddy: `cap_add: [NET_BIND_SERVICE]`, wolumeny `${DATA_ROOT}/edge/caddy/data:/data`, `.../caddy/config:/config`, `./Caddyfile:/etc/caddy/Caddyfile:ro`.
-- authentik-server/worker: wolumeny `${DATA_ROOT}/edge/authentik/media:/media`, `.../custom-templates:/templates`, `.../certs:/certs`. **BEZ montowania docker.sock** (używamy tylko embedded outpost — worker nie zarządza kontenerami outpostów). Env: `AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:?required}`, `AUTHENTIK_POSTGRESQL__HOST: edge-postgres`, `__USER/__NAME/__PASSWORD` z `:?required`, `AUTHENTIK_REDIS__HOST: edge-redis`, `AUTHENTIK_ERROR_REPORTING__ENABLED: "false"`, `AUTHENTIK_DISABLE_UPDATE_CHECK: "true"`, `AUTHENTIK_DISABLE_STARTUP_ANALYTICS: "true"`, opcjonalnie `AUTHENTIK_EMAIL__*`. `depends_on: postgres/redis: service_healthy`.
+- authentik-server/worker: wolumeny `${DATA_ROOT}/edge/authentik/data:/data` (media w `data/media`; od Authentika 2025.12), `.../custom-templates:/templates`, `.../certs:/certs`. **BEZ montowania docker.sock** (używamy tylko embedded outpost — worker nie zarządza kontenerami outpostów). Env: `AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:?required}`, `AUTHENTIK_POSTGRESQL__HOST: edge-postgres`, `__USER/__NAME/__PASSWORD` z `:?required`, `AUTHENTIK_REDIS__HOST: edge-redis`, `AUTHENTIK_ERROR_REPORTING__ENABLED: "false"`, `AUTHENTIK_DISABLE_UPDATE_CHECK: "true"`, `AUTHENTIK_DISABLE_STARTUP_ANALYTICS: "true"`, opcjonalnie `AUTHENTIK_EMAIL__*`. `depends_on: postgres/redis: service_healthy`.
 - postgres: wolumen `${DATA_ROOT}/edge/authentik/postgres:/var/lib/postgresql/data`, `POSTGRES_PASSWORD: ${AUTHENTIK_PG_PASSWORD:?required}`.
 
 ### Caddyfile (deploy/edge/Caddyfile)
@@ -238,9 +236,8 @@ TZ=Europe/Warsaw
 DATA_ROOT=/srv/kag-data
 ACME_EMAIL=jarekapka@gmail.com
 CADDY_IMAGE=caddy@sha256:...            # pin przy wdrożeniu, komentarz z wersją/datą
-AUTHENTIK_IMAGE=ghcr.io/goauthentik/server@sha256:...   # 2025.x
+AUTHENTIK_IMAGE=ghcr.io/goauthentik/server@sha256:...   # 2026.8
 POSTGRES_IMAGE=postgres@sha256:...      # 16-alpine
-REDIS_IMAGE=redis@sha256:...            # 7-alpine
 AUTHENTIK_SECRET_KEY=change-me          # openssl rand -base64 48
 AUTHENTIK_PG_USER=authentik
 AUTHENTIK_PG_DB=authentik
@@ -326,7 +323,7 @@ Dysk: min. 250 GB NVMe (dane + 14 dni backupów lokalnych; neo4j+minio rosną z 
 
 
 ## FILE LAYOUT
-- deploy/edge/compose.yaml — stack edge: Caddy + Authentik server/worker + PostgreSQL + Redis, sieci edge-net(external)/edge-internal, healthchecki, mem_limity
+- deploy/edge/compose.yaml — stack edge: Caddy + Authentik server/worker + PostgreSQL (Redis usunięty 2026-10-05, Authentik ≥ 2025.10), sieci edge-net(external)/edge-internal, healthchecki, mem_limity
 - deploy/edge/Caddyfile — vhosty auth.* i kag.*, routing /mcp (bez forward-auth, flush_interval -1), /outpost.goauthentik.io, opcjonalny /openspg za forward-auth, fallback na panel
 - deploy/edge/.env.example — obrazy z digestami, ACME_EMAIL, sekrety Authentika/PG z :?required
 - deploy/kag/compose.yaml — 5 usług OpenSPG (release-openspg-*) + tika + stirling + panel + mcp; x-security-defaults, cap_add minimalne, digest-pinning, kag-datastores + kag-internal (obie internal:true) / kag-egress, zero portów na host
