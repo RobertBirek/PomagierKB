@@ -1,4 +1,4 @@
-# Stack EDGE (PomagierKB): Caddy (TLS/ingress) + Authentik (SSO) + Postgres + Redis.
+# Stack EDGE (PomagierKB): Caddy (TLS/ingress) + Authentik (SSO) + Postgres.
 # Jedyne porty na hoście: 80/tcp, 443/tcp, 443/udp (Caddy, HTTP/3).
 # Sieć edge-net tworzona raz, poza compose: docker network create edge-net
 #
@@ -33,7 +33,6 @@ x-authentik-env: &authentik_env
   AUTHENTIK_POSTGRESQL__USER: ${AUTHENTIK_PG_USER:?AUTHENTIK_PG_USER is required}
   AUTHENTIK_POSTGRESQL__NAME: ${AUTHENTIK_PG_DB:?AUTHENTIK_PG_DB is required}
   AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_PG_PASSWORD:?AUTHENTIK_PG_PASSWORD is required}
-  AUTHENTIK_REDIS__HOST: edge-redis
   AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
   AUTHENTIK_DISABLE_UPDATE_CHECK: "true"
   AUTHENTIK_DISABLE_STARTUP_ANALYTICS: "true"
@@ -97,7 +96,7 @@ services:
     environment: *authentik_env
     # BEZ docker.sock — używamy wyłącznie embedded outpostu (nic nie zarządza kontenerami).
     volumes:
-      - ${DATA_ROOT}/edge/authentik/media:/media
+      - ${DATA_ROOT}/edge/authentik/data:/data
       - ${DATA_ROOT}/edge/authentik/custom-templates:/templates
       - ${DATA_ROOT}/edge/authentik/certs:/certs
     healthcheck:
@@ -108,8 +107,6 @@ services:
       start_period: 60s
     depends_on:
       postgres:
-        condition: service_healthy
-      redis:
         condition: service_healthy
     networks:
       - edge-net
@@ -127,7 +124,7 @@ services:
     environment: *authentik_env
     # BEZ docker.sock — embedded outpost żyje w procesie authentik-server.
     volumes:
-      - ${DATA_ROOT}/edge/authentik/media:/media
+      - ${DATA_ROOT}/edge/authentik/data:/data
       - ${DATA_ROOT}/edge/authentik/custom-templates:/templates
       - ${DATA_ROOT}/edge/authentik/certs:/certs
     healthcheck:
@@ -138,8 +135,6 @@ services:
       start_period: 60s
     depends_on:
       postgres:
-        condition: service_healthy
-      redis:
         condition: service_healthy
     networks:
       - edge-internal
@@ -174,30 +169,6 @@ services:
       timeout: 10s
       retries: 5
       start_period: 20s
-    networks:
-      - edge-internal
-
-  redis:
-    <<: [*security_defaults, *logging]
-    image: ${REDIS_IMAGE:?REDIS_IMAGE is required}
-    container_name: edge-redis
-    restart: always
-    mem_limit: 256m
-    pids_limit: 256     # baseline 6 (Redis jednowątkowy + wątki I/O)
-    cpus: 1
-    cap_add:
-      # entrypoint zrzuca uprawnienia do usera redis (su-exec)
-      - SETGID
-      - SETUID
-    command: --save 60 1 --loglevel warning
-    environment:
-      TZ: ${TZ:-Europe/Warsaw}
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 30s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
     networks:
       - edge-internal
 
@@ -244,6 +215,6 @@ networks:
   # wspólna sieć proxy dla obecnych i przyszłych appek (caddy ↔ kag-panel/kag-mcp)
   edge-net:
     external: true
-  # izolacja Postgresa/Redisa od świata (bez NAT, bez internetu)
+  # izolacja Postgresa od świata (bez NAT, bez internetu)
   edge-internal:
     internal: true

@@ -17,7 +17,6 @@ docker ps --filter name=edge- --format '{{.Names}}\t{{.Status}}'
 docker logs --tail 200 edge-authentik-server
 docker logs --tail 200 edge-authentik-worker
 docker logs --tail 100 edge-postgres
-docker logs --tail 50  edge-redis
 docker inspect --format '{{json .State.Health}}' edge-authentik-server
 df -h /srv /var/lib/docker        # pełny dysk to częsta przyczyna padu PG
 ```
@@ -109,6 +108,11 @@ Agenci korzystający z MCP pracują dalej (Bearer) — poinformuj tylko użytkow
 Kiedy: nieudany upgrade, uszkodzona baza, skasowana konfiguracja. Backup nocny zawiera
 `pg_dump` (snapshot w `/srv/kag-data/backups/nightly/<stamp>/` — nazwę pliku sprawdź
 w `_manifest.json`).
+
+Authentik NIE wspiera downgrade'u — powrót na starsze wydanie to zawsze poprzedni digest
+ORAZ zrzut bazy sprzed podbicia (podbicie 2025.8.6 → 2026.8.3 z 2026-10-05:
+`/srv/kag-data/backups/authentik-upgrade/pre-<N>-<tag>.sql.zst`). Od 2025.10 stack nie ma
+Redis (cache, zadania i sesje są w Postgresie), a pliki leżą w `…/edge/authentik/data` (`/data`).
 
 **UWAGA — nieodwracalne:** restore nadpisuje bieżącą bazę SSO. Konta/grupy/tokeny
 utworzone PO dacie backupu przepadną. Najpierw zrób zrzut stanu bieżącego:

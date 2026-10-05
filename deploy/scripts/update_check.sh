@@ -79,7 +79,7 @@ local_repo_tag() {
 #  2) tag lokalnego obrazu o TYM digeście (RepoTags) — faktyczna linia, z której wzięto pin;
 #  3) dla obrazów FROZEN (spg-registry.*) — "latest" (wynik i tak tylko informacyjny).
 # NIGDY nie zakładamy "latest" dla obrazów przypiętych do linii: to dawało fałszywe "NOWY"
-# i sugerowało operatorowi skok majora (postgres 16->18, redis 7->8) albo wręcz DOWNGRADE
+# i sugerowało operatorowi skok majora (postgres 16->18) albo wręcz DOWNGRADE
 # (goauthentik/server:latest = 2025.2 przy pinie 2025.8) — patrz audyt D1-04/D11-04.
 # Wypisuje "tag<TAB>źródło" (wołane w podstawieniu komendy, więc wynik NIE może iść
 # przez zmienną globalną — podpowłoka jej nie propaguje).
@@ -200,6 +200,6 @@ fi
 if [[ ${UPDATES} -gt 0 ]]; then
   echo "Procedura aktualizacji: backup.sh -> podnieś digest w .env -> docker compose pull && up -d -> smoke.sh"
   echo "UWAGA: procedura dotyczy WYŁĄCZNIE aktualizacji w obrębie tej samej linii wydań."
-  echo "  Zmiana majora (np. postgres 16->18, redis 7->8, authentik 2025.8->2026.x) = osobny runbook:"
+  echo "  Zmiana majora (np. postgres 16->18, authentik 2026.8->2026.11) = osobny runbook:"
   echo "  release notes + migracja katalogu danych + test odtworzenia z backupu."
 fi

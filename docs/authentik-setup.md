@@ -2,7 +2,7 @@
 
 Instrukcja wg `docs/design/infra.md` §2. Wykonuje się ją **raz**, po pierwszym starcie
 stacka edge (patrz `docs/deployment.md` krok 3), przez WWW na
-`https://auth.ilovelighting.sanok.pl`. Ścieżki menu wg Authentik 2025.x — w innych
+`https://auth.ilovelighting.sanok.pl`. Ścieżki menu wg Authentik 2025.x (instancja od 2026-10-05 działa na 2026.8.3 — nazwy pozycji menu mogą się nieznacznie różnić) — w innych
 wydaniach nazwy mogą się minimalnie różnić.
 
 Na razie **bez SMTP** — Authentik nie wysyła maili (reset hasła, zaproszenia). Konta

@@ -82,7 +82,8 @@ install -d -m 755 -o 0 -g 0 \
   "${DATA_ROOT}/edge/authentik"
 install -d -m 700 -o 70 -g 70 "${DATA_ROOT}/edge/authentik/postgres"
 install -d -m 755 -o 1000 -g 1000 \
-  "${DATA_ROOT}/edge/authentik/media" \
+  "${DATA_ROOT}/edge/authentik/data" \
+  "${DATA_ROOT}/edge/authentik/data/media" \
   "${DATA_ROOT}/edge/authentik/certs" \
   "${DATA_ROOT}/edge/authentik/custom-templates"
 install -d -m 755 -o 0 -g 0 "${DATA_ROOT}/edge/kuma"   # Uptime Kuma (profil monitoring)
