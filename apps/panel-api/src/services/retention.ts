@@ -174,6 +174,8 @@ export interface RetentionRunResult {
 
 /** Po tylu godzinach wiersz build_jobs w stanie nieterminalnym uznajemy za osierocony (unit builda ma limit 2 h). */
 const BUILD_JOB_ORPHAN_HOURS = 12;
+/** Największe przesunięcie strefy czasowej względem UTC — margines dla dat bez strefy z OpenSPG. */
+const MAX_TZ_OFFSET_HOURS = 14;
 
 function emptyResult(): RetentionRunResult {
   return {
@@ -299,14 +301,28 @@ function purgeRows(db: Db, policy: RetentionPolicy, now: number, result: Retenti
     // został w INIT/RUNNING na zawsze — backup.sh liczył go jako „trwający build" przy każdym
     // snapshocie, a retencja go omijała. Żaden build nie trwa dłużej niż limit unitu (2 h), więc
     // po BUILD_JOB_ORPHAN_HOURS wiersz jest martwy: TERMINATE (stan OpenSPG i tak jest w mysql joba).
+    // Wiek liczymy z NASZEGO znacznika biegu eksportu (export_runs.started_at, ISO w UTC).
+    // gmt_create pochodzi z OpenSPG: format 'RRRR-MM-DD GG:MM:SS' w czasie LOKALNYM serwera, więc
+    // tekstowe porównanie z odcięciem ISO było błędne (spacja < 'T': po 12:00 UTC każde zadanie
+    // z bieżącej doby wyglądało na osierocone — regresja wykryta 2026-10-05). gmt_create zostaje
+    // tylko zapasem dla wierszy bez biegu: po ujednoliceniu formatu i z marginesem 14 h na
+    // nieznaną strefę czasową. Wiersz bez biegu i bez gmt_create jest osierocony (jak dotąd).
     const orphanCut = new Date(now - BUILD_JOB_ORPHAN_HOURS * 3_600_000).toISOString();
+    const orphanCutNoRun = new Date(now - (BUILD_JOB_ORPHAN_HOURS + MAX_TZ_OFFSET_HOURS) * 3_600_000)
+      .toISOString()
+      .slice(0, 19);
     const nowIso = new Date(now).toISOString();
     result.buildJobOrphans += db
       .prepare(
         `UPDATE build_jobs SET status = 'TERMINATE', gmt_modified = ?, finished_at = ?
-          WHERE status IN ('INIT','WAITING','RUNNING') AND COALESCE(gmt_create, '') < ?`,
+          WHERE status IN ('INIT','WAITING','RUNNING')
+            AND CASE
+                  WHEN (SELECT r.started_at FROM export_runs r WHERE r.id = build_jobs.run_id) IS NOT NULL
+                    THEN (SELECT r.started_at FROM export_runs r WHERE r.id = build_jobs.run_id) < ?
+                  ELSE COALESCE(replace(substr(gmt_create, 1, 19), ' ', 'T'), '') < ?
+                END`,
       )
-      .run(nowIso, nowIso, orphanCut).changes;
+      .run(nowIso, nowIso, orphanCut, orphanCutNoRun).changes;
     const buildCut = cutoffIso(now, policy.buildJobRowsDays);
     result.buildJobRows += db
       .prepare(
