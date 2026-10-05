@@ -1,0 +1,22 @@
+{
+  "server": {
+    "port": 9998,
+    "endpoints": ["tika", "rmeta", "status"]
+  },
+  "engines": {
+    "tesseract": {
+      "tesseract-ocr-parser": {
+        "language": "pol+eng",
+        "timeoutMillis": 120000
+      }
+    }
+  },
+  "text-recognizers": [{ "engine": "tesseract" }],
+  "pipes": { "numClients": 2 },
+  "parse-context": {
+    "timeout-limits": {
+      "totalTaskTimeoutMillis": 300000,
+      "progressTimeoutMillis": 60000
+    }
+  }
+}

@@ -122,6 +122,8 @@ jobs:
             dockerfile: services/panel/Dockerfile
           - name: mcp
             dockerfile: services/mcp/Dockerfile
+          - name: tika
+            dockerfile: services/tika/Dockerfile
     env:
       IMAGE: kag-${{ matrix.name }}:ci
       TRIVY_CACHE_DIR: ${{ github.workspace }}/.trivycache

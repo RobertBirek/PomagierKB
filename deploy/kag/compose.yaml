@@ -254,7 +254,16 @@ services:
 
   tika:
     <<: [*security_defaults, *logging]
-    image: ${TIKA_IMAGE:?TIKA_IMAGE is required}
+    image: kag-tika:local
+    build:
+      context: ../..
+      dockerfile: services/tika/Dockerfile
+      args:
+        # obraz BAZOWY producenta (pin digestem w .env); nasz obraz dokłada Tesseract `pol` i config.
+        # Dockerfile odrzuca bazę z linii 3.x (bezpiecznik), więc stary pin = błąd budowania.
+        TIKA_BASE_IMAGE: ${TIKA_IMAGE:?TIKA_IMAGE is required}
+        GIT_SHA: ${GIT_SHA:-unknown}
+        BUILT_AT: ${BUILT_AT:-unknown}
     container_name: kag-tika
     restart: unless-stopped
     mem_limit: ${TIKA_MEM_LIMIT:-1536m}
@@ -264,7 +273,7 @@ services:
     environment:
       TZ: ${TZ:-Europe/Warsaw}
     healthcheck:
-      # obraz nie ma curl/wget — test TCP przez basha
+      # obraz nie ma curl/wget — test TCP przez basha (sprawdzone także dla 4.1.0)
       test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/9998"]
       interval: 30s
       timeout: 10s

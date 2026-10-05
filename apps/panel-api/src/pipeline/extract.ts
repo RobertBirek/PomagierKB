@@ -3,7 +3,7 @@
  * Kaskada dla PDF: Stirling convert → (poniżej progu) Stirling OCR pol →
  * ponowny convert → Tika → uczciwy fail 'extraction_below_quality_threshold'.
  * txt/md/csv/json/xml/yaml — odczyt bezpośredni (walidacja UTF-8);
- * html/docx/xlsx/pptx — Tika (strip XHTML).
+ * html/docx/xlsx/pptx — Tika (4.x: Markdown po normalizacji; 3.x: strip XHTML).
  *
  * Wszystkie wywołania HTTP przez wstrzykiwalny fetchImpl (testowalność),
  * timeout 30 s na wywołanie, semafor max 2 równoległych OCR (prosta kolejka
@@ -123,6 +123,22 @@ export function stripXhtml(xhtml: string): string {
     .trim();
 }
 
+/**
+ * Tika 4 zwraca Markdown z ucieczkami interpunkcji (`dok\_Status`, `\<tekst\>`, `a\*b`).
+ * Do bazy wiedzy idzie tekst DOSŁOWNY — inaczej identyfikatory z podkreśleniem przestają
+ * trafiać w wyszukiwanie po tokenie. Zostaje wyłącznie `\|` (kreska w komórce tabeli):
+ * bez ucieczki tabela Markdown się rozpada. Odwrotny ukośnik przed literą/cyfrą nie jest
+ * ucieczką Markdownu (ścieżki Windows) i zostaje nietknięty.
+ */
+export function normalizeTikaMarkdown(md: string): string {
+  return md
+    .replaceAll('\u0000', '')
+    .replace(/\\([!"#$%&'()*+,\-./:;<=>?@[\]^_`{}~])/g, '$1')
+    .replace(/[ \t]+$/gm, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 // ── Semafor OCR: max 2 równoległe wywołania (prosta kolejka w module) ───────
 
 const MAX_PARALLEL_OCR = 2;
@@ -229,7 +245,7 @@ async function stirlingOcr(deps: ExtractDeps, buffer: Buffer, filename: string):
   });
 }
 
-/** Tika: dowolny dokument → tekst (strip XHTML). Retry przejściowych; null przy porażce. */
+/** Tika: dowolny dokument → tekst (3.x: strip XHTML; 4.x: Markdown po normalizacji). Retry przejściowych; null przy porażce. */
 async function tikaExtract(deps: ExtractDeps, buffer: Buffer, mime: string): Promise<string | null> {
   try {
     return await withRetry(async () => {
@@ -240,7 +256,14 @@ async function tikaExtract(deps: ExtractDeps, buffer: Buffer, mime: string): Pro
       });
       if (RETRYABLE_STATUS.has(res.status)) throw new RetryableError(`tika HTTP ${res.status}`);
       if (!res.ok) return null;
-      return stripXhtml(await res.text());
+      // Tika 3 odpowiada XHTML (text/xml), Tika 4 — Markdownem (text/plain). Rozpoznanie po
+      // content-type (a gdy go brak lub jest ogólny — po początku treści) sprawia, że ten sam
+      // kod działa przed podbiciem, po nim i po powrocie. Markdown z Tiki 4 nie zaczyna się
+      // od surowego znacznika: `<` w treści dokumentu wychodzi jako `\<`.
+      const body = await res.text();
+      const type = (res.headers.get('content-type') ?? '').toLowerCase();
+      const isXhtml = /xml|html/.test(type) || /^\s*<(\?xml|!doctype|html)\b/i.test(body);
+      return isXhtml ? stripXhtml(body) : normalizeTikaMarkdown(body);
     });
   } catch {
     return null;
