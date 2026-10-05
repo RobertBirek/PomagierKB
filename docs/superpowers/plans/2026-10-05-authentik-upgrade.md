@@ -548,4 +548,4 @@ Zrzuty `pre-<N>-*.sql.zst` zostają 14 dni (do pierwszej udanej niedzielnej wery
   - Zmienne nasłuchu i `TRUSTED_PROXY_CIDRS` okazały się niepotrzebne (IPv6 w kontenerze, sieć Caddy w domyślnym zakresie zaufanych).
   - **Cel CVE osiągnięty częściowo**: obraz 13 CRITICAL / 209 HIGH → 3 / 72, ale `CVE-2026-102268` zostaje — 2026.8.3 niesie `PyJWT` 2.13.0 (poprawka w 2.14.0). Założenie planu, że najnowsze wydanie ma poprawkę, było błędne; do zamknięcia kolejnym patchem linii 2026.8.
   - `deploy/edge/.env`: zmienne `AUTHENTIK_IMAGE_CHECK_TAG` (ma być `2026.8`) i `REDIS_IMAGE_CHECK_TAG` (do usunięcia) poprawia właściciel — edycja zablokowana dla agenta.
-- Do wykonania przez właściciela: Task 8 Step 1–2 (wersja w interfejsie, ręczne logowanie `akadmin` z MFA).
+- Task 8 Step 2: właściciel potwierdził 2026-10-05 ok. 12:24, że ręczne logowanie działa.
