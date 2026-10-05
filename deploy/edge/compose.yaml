@@ -96,7 +96,7 @@ services:
     environment: *authentik_env
     # BEZ docker.sock — używamy wyłącznie embedded outpostu (nic nie zarządza kontenerami).
     volumes:
-      - ${DATA_ROOT}/edge/authentik/media:/media
+      - ${DATA_ROOT}/edge/authentik/data:/data
       - ${DATA_ROOT}/edge/authentik/custom-templates:/templates
       - ${DATA_ROOT}/edge/authentik/certs:/certs
     healthcheck:
@@ -124,7 +124,7 @@ services:
     environment: *authentik_env
     # BEZ docker.sock — embedded outpost żyje w procesie authentik-server.
     volumes:
-      - ${DATA_ROOT}/edge/authentik/media:/media
+      - ${DATA_ROOT}/edge/authentik/data:/data
       - ${DATA_ROOT}/edge/authentik/custom-templates:/templates
       - ${DATA_ROOT}/edge/authentik/certs:/certs
     healthcheck:
