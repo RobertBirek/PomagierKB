@@ -89,6 +89,11 @@ describe('D7-01 — tożsamość dokumentu', () => {
     const first = seed(db, NS, { title: 'Notatka', content: 'Pierwsza wersja notatki.', sourceRef: 'README.md' });
     const second = seed(db, NS, { title: 'Notatka', content: 'Zupełnie inna treść.', sourceRef: 'README.md' });
     expect(docIdFor(NS, first)).not.toBe(docIdFor(NS, second));
+    // Jawna kolejność w czasie: oba szkice powstają jeden po drugim i na szybkiej maszynie trafiają
+    // w tę samą milisekundę — wtedy „nowszego” wybiera remis po id (losowy skrót), a test padał
+    // co drugi raz w CI (2026-10-05). Precedencja ma tu działać po czasie, nie po remisie.
+    db.prepare('UPDATE drafts SET promoted_at = ? WHERE id = ?').run('2026-01-01T10:00:00.000Z', first.id);
+    db.prepare('UPDATE drafts SET promoted_at = ? WHERE id = ?').run('2026-01-01T10:00:01.000Z', second.id);
 
     const exp = runExport({ db, dataDir }, NS);
     const docs = records(exp, 'reference_document.csv').filter(
