@@ -387,6 +387,12 @@ Procedura standardowa (Caddy, Postgres, Tika, Stirling):
 
 Zasady szczególne:
 
+- **Tika:** `TIKA_IMAGE` w `.env` to obraz BAZOWY (minimalny `apache/tika` 4.x); produkcja działa na
+  własnym `kag-tika:local` (`services/tika`: + Tesseract pol/eng + `tika-config.json`). Po zmianie
+  digestu: `docker compose build tika && docker compose up -d tika`, potem
+  `node tools/eval/tika-extract-check.mjs --url http://<ip kag-tika>:9998` (cztery `OK`, w tym polski OCR).
+  Baza z linii 3.x daje błąd budowania (bezpiecznik w Dockerfile).
+
 - **OpenSPG (mysql/neo4j/minio/server): ZAMROŻONY.** Upstream martwy od 06/2025,
   migracje nieznane, model embeddingu nietykalny. Aktualizacja tylko jako osobna,
   świadoma operacja: pełny snapshot + próba na kopii danych, nigdy „przy okazji".

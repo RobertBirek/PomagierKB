@@ -232,10 +232,10 @@ CREATE TABLE quality_reports (id INTEGER PRIMARY KEY, kb_namespace TEXT, run_id 
 Dla PDF (kolejność z briefu: Stirling OCR pol → Tika → próg):
 1. Stirling: `POST {STIRLING_URL}/api/v1/convert/pdf/markdown` (multipart `fileInput`, nagłówek `X-API-KEY`) → markdown; **próg jakości**: `length ≥ 120 && looksHumanText(text)` (looksHumanText: ratio znaków drukowalnych ≥0.72, ≥3 znaki literowe, weird ≤ printable — czysta funkcja z testami).
 2. Poniżej progu (skan bez warstwy tekstu): `POST /api/v1/misc/ocr-pdf` z `languages=pol` → OCR-owany PDF → ponownie convert/markdown → próg.
-3. Nadal poniżej: Tika `PUT {TIKA_URL}/tika` (`Content-Type: application/pdf`) → strip XHTML → próg.
+3. Nadal poniżej: Tika `PUT {TIKA_URL}/tika` (`Content-Type: application/pdf`) → próg. Od 2026-10-05 Tika 4.1.0 zwraca Markdown (`normalizeTikaMarkdown` zdejmuje ucieczki: `dok\_Status` → `dok_Status`) i sama robi OCR `pol+eng` stron bez tekstu; odpowiedź XHTML z Tiki 3 nadal idzie przez strip XHTML (kod rozróżnia po `content-type` i początku treści).
 4. Nadal poniżej: `status='failed'`, `error='extraction_below_quality_threshold'` — widoczne w UI (bez własnego parsera PDF jak w optimaKB; uczciwy błąd zamiast śmieciowego tekstu).
 
-Inne typy: txt/md → odczyt bezpośredni (walidacja UTF-8); html/docx/xlsx/pptx → Tika; URL → safe_http fetch, potem wg content-type. Timeout 30 s na wywołanie zewnętrzne, zapis `extract_provider` ('stirling'|'stirling_ocr'|'tika'|'raw') i `extract_quality` (ratio z looksHumanText).
+Inne typy: txt/md → odczyt bezpośredni (walidacja UTF-8); html/docx/xlsx/pptx → Tika (4.1.0: nagłówki i tabele zachowane jako Markdown; obrazy osadzone rozpoznawane OCR `pol+eng`); URL → safe_http fetch, potem wg content-type. Timeout 30 s na wywołanie zewnętrzne, zapis `extract_provider` ('stirling'|'stirling_ocr'|'tika'|'raw') i `extract_quality` (ratio z looksHumanText).
 
 ### Etap 3 — Czyszczenie
 

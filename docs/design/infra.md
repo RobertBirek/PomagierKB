@@ -182,7 +182,7 @@ OPENSPG_MYSQL_IMAGE=spg-registry.us-west-1.cr.aliyuncs.com/spg/openspg-mysql@sha
 OPENSPG_NEO4J_IMAGE=spg-registry.us-west-1.cr.aliyuncs.com/spg/openspg-neo4j@sha256:4bc5b7f6b83d333b1d2c8f60ac145c068d77d50bca65b3a07c927f9e2a541eb9    # 2024-11-20 (DozerDB 5.25.1.0-alpha.1)
 OPENSPG_MINIO_IMAGE=spg-registry.us-west-1.cr.aliyuncs.com/spg/openspg-minio@sha256:9493c8e8f77edb10d556255d49ba8b5761b0fe57889235dfd10619c0513da007   # 2024-12-19
 OPENSPG_SERVER_IMAGE=spg-registry.us-west-1.cr.aliyuncs.com/spg/openspg-server@sha256:fe6708deef9ebb8da8da7b1cb643e83b827769a5be8811961311639aa1f2cb88 # 2025-07-03, ==0.8/latest
-TIKA_IMAGE=apache/tika@sha256:90b7fa1dc018434075fce9e1d9b88b1e3d0ea6979d0cf86e116c79a8073ae973
+TIKA_IMAGE=apache/tika@sha256:06bcdbd09aca073293e5a171ad161418cc93c91d58d9e4e205064eade84889d4   # 4.1.0 — obraz BAZOWY; działa kag-tika:local (services/tika)
 STIRLING_IMAGE=docker.io/stirlingtools/stirling-pdf:<najnowszy-1.x>   # przypiąć digest przy wdrożeniu
 PANEL_IMAGE=kag-panel:local    # build lokalny (services/panel/Dockerfile)
 MCP_IMAGE=kag-mcp:local        # build lokalny (services/mcp/Dockerfile)
@@ -196,7 +196,7 @@ MCP_IMAGE=kag-mcp:local        # build lokalny (services/mcp/Dockerfile)
 | neo4j | release-openspg-neo4j | CHOWN, DAC_OVERRIDE, FOWNER, SETUID, SETGID | 5g | kag-datastores | `cypher-shell 'RETURN 1;'` |
 | minio | release-openspg-minio | — | 768m | kag-datastores | `mc ready local` |
 | server | release-openspg-server | — | 5g | kag-datastores, **kag-egress** | `curl -fsS -I http://127.0.0.1:8887/`, start_period 120s |
-| tika | kag-tika | — | 1.5g | kag-internal | `bash -c 'exec 3<>/dev/tcp/127.0.0.1/9998'` (obraz bez curl/wget) |
+| tika (obraz własny `kag-tika:local`: Tika 4.1.0 + Tesseract pol/eng, build `services/tika`) | kag-tika | — | 1.5g | kag-internal | `bash -c 'exec 3<>/dev/tcp/127.0.0.1/9998'` (obraz bez curl/wget) |
 | stirling | kag-stirling | — | 2g | kag-internal | `curl -f http://127.0.0.1:8080/api/v1/info/status` |
 | panel | kag-panel | — | 512m | kag-internal, kag-datastores, edge-net | `wget -qO /dev/null http://127.0.0.1:8080/healthz` |
 | mcp | kag-mcp | — | 384m | kag-datastores, edge-net | `wget -qO /dev/null http://127.0.0.1:3001/healthz` |
@@ -326,6 +326,7 @@ Dysk: min. 250 GB NVMe (dane + 14 dni backupów lokalnych; neo4j+minio rosną z 
 - deploy/edge/compose.yaml — stack edge: Caddy + Authentik server/worker + PostgreSQL (Redis usunięty 2026-10-05, Authentik ≥ 2025.10), sieci edge-net(external)/edge-internal, healthchecki, mem_limity
 - deploy/edge/Caddyfile — vhosty auth.* i kag.*, routing /mcp (bez forward-auth, flush_interval -1), /outpost.goauthentik.io, opcjonalny /openspg za forward-auth, fallback na panel
 - deploy/edge/.env.example — obrazy z digestami, ACME_EMAIL, sekrety Authentika/PG z :?required
+- services/tika/{Dockerfile,tika-config.json} — obraz Tiki: minimalna Tika 4.1.0 + Tesseract (pol, eng) + konfiguracja JSON (OCR `pol+eng`, 2 procesy potomne, limit 5 min na dokument)
 - deploy/kag/compose.yaml — 5 usług OpenSPG (release-openspg-*) + tika + stirling + panel + mcp; x-security-defaults, cap_add minimalne, digest-pinning, kag-datastores + kag-internal (obie internal:true) / kag-egress, zero portów na host
 - deploy/kag/.env.example — digesty OpenSPG, MYSQL_APP_USER, warianty *_URLENCODED, heapy (NEO4J_HEAP, OPENSPG_SERVER_XMX), OIDC panelu
 - deploy/kag/mysql-init/10-create-app-user.sh — tworzy użytkownika openspg_app przy pierwszej inicjalizacji wolumenu MySQL
