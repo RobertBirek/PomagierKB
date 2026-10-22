@@ -130,3 +130,51 @@ status.ilovelighting.sanok.pl {
 		reverse_proxy edge-uptime-kuma:3001
 	}
 }
+
+# ── Trilium — sejf dokumentacji maszyny pim i projektu PIM ───────────────────
+# Kontener trilium-pim (compose: /opt/trilium-pim, kopia w /pim/deploy/trilium) na sieci edge-net.
+# Interfejs webowy publiczny (logowanie Trilium). ETAPI i MCP niosą token w nagłówku, więc przez
+# domenę są zamknięte dla wszystkich — jedyni klienci API (trilium-sync.py, MCP Claude) stoją
+# na tym hoście i pukają wprost pod 127.0.0.1:8081, omijając Caddy'ego.
+manual.pim.ilovelighting.sanok.pl {
+	import access_log manual-pim
+	encode zstd gzip
+
+	@zdalne-api path /etapi/* /mcp*
+	handle @zdalne-api {
+		header -Server
+		respond "" 403
+	}
+
+	handle {
+		header {
+			Strict-Transport-Security "max-age=31536000; includeSubDomains"
+			X-Content-Type-Options nosniff
+			Referrer-Policy no-referrer
+			-Server
+		}
+		# Bez X-Frame-Options / CSP: Trilium używa ramek we własnym interfejsie.
+		reverse_proxy trilium-pim:8080 {
+			lb_try_duration 8s
+			lb_try_interval 250ms
+		}
+	}
+}
+
+# ── PIM — katalog produktów (projekt /pim, stos deploy/pim/compose.yaml) ──────
+# pim-api (Fastify + web w środku) na sieci edge-net; żaden port nie jest publikowany na hoście.
+# Sesja: cookie po OIDC Authentika (aplikacja pim-app) — Caddy nie robi forward_auth, logowanie
+# jest w aplikacji (/auth/login → Authentik → /auth/callback). Klucze API kont serwisowych idą
+# w nagłówku Authorization do /api/v1/*.
+pim.ilovelighting.sanok.pl {
+	import security_headers "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'"
+	import access_log pim
+	encode zstd gzip
+	request_body {
+		max_size 64MB # upload XLS/CSV, zdjęć i feedów (SEED_MAX_BYTES ogranicza po stronie API)
+	}
+	reverse_proxy pim-api:3000 {
+		lb_try_duration 8s
+		lb_try_interval 250ms
+	}
+}

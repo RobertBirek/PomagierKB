@@ -31,7 +31,7 @@ INTERNET ── 80/443(+udp) ──► [edge-caddy]
 **Sieci:**
 | Sieć | Typ | Członkowie | Po co |
 |---|---|---|---|
-| `edge-net` | external bridge (tworzona poza compose, wspólna dla przyszłych appek) | caddy, authentik-server, authentik-worker, kag-panel, kag-mcp, (profil `monitoring`: uptime-kuma) | ruch Caddy→aplikacje; egress panel/mcp do LLM |
+| `edge-net` | external bridge (tworzona poza compose, wspólna dla przyszłych appek) | caddy, authentik-server, authentik-worker, kag-panel, kag-mcp, (profil `monitoring`: uptime-kuma); goście spoza repo z vhostem w Caddyfile: `pim-api` (projekt `pim`), `trilium-pim` — lista w `EDGE_NET_GUEST_PROJECTS` (drift_check) | ruch Caddy→aplikacje; egress panel/mcp do LLM |
 | `edge-internal` | `internal: true` (stack edge) | authentik-server, worker, postgres | izolacja PG od świata |
 | `kag-datastores` | `internal: true` (stack kag) | release-openspg-{server,mysql,neo4j,minio}, kag-panel, kag-mcp | OpenSPG :8887 (BEZ auth) widzą tylko panel i mcp — parsery niezaufanych uploadów nie mają tam drogi |
 | `kag-internal` | `internal: true` (stack kag) | kag-tika, kag-stirling, kag-panel | parsery treści bez internetu; panel jest w obu sieciach, bo woła i parsery, i OpenSPG |
