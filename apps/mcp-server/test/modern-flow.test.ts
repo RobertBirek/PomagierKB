@@ -78,6 +78,14 @@ describe('era 2026-07-28', () => {
     expect((res.json() as RpcResponse).error?.code).toBe(-32020);
   });
 
+  it('brak nagłówka MCP-Protocol-Version → 400 + -32020 (wymóg SDK server 2.3)', async () => {
+    const res = await mcpModernRequest(h.bundle.app, 'default', raw, 'tools/list', {}, {
+      protocolVersionHeader: null,
+    });
+    expect(res.statusCode).toBe(400);
+    expect((res.json() as RpcResponse).error?.code).toBe(-32020);
+  });
+
   it('auth PRZED SDK na ścieżce modern: brak tokenu → 401 (-32001)', async () => {
     const res = await mcpModernRequest(h.bundle.app, 'default', null, 'tools/list');
     expect(res.statusCode).toBe(401);

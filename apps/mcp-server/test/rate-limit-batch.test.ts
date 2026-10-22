@@ -137,6 +137,7 @@ describe('limiter globalny: batch liczony per wywołanie, nie per żądanie HTTP
         'content-type': 'application/json',
         accept: 'application/json',
         'mcp-method': 'tools/list',
+        'mcp-protocol-version': '2026-07-28',
         authorization: `Bearer ${raw}`,
       },
       payload: [
