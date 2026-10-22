@@ -165,12 +165,16 @@ export async function mcpModernRequest(
   key: string | null,
   method: string,
   params: object = {},
-  opts: { mcpMethodHeader?: string; mcpName?: string; id?: number } = {},
+  opts: { mcpMethodHeader?: string; mcpName?: string; id?: number; protocolVersionHeader?: string | null } = {},
 ): Promise<LightMyRequestResponse> {
   const headers: Record<string, string> = {
     'content-type': 'application/json',
     accept: 'application/json',
     'mcp-method': opts.mcpMethodHeader ?? method,
+    // od @modelcontextprotocol/server 2.3 nagłówek jest wymagany (brak = -32020)
+    ...(opts.protocolVersionHeader === null
+      ? {}
+      : { 'mcp-protocol-version': opts.protocolVersionHeader ?? '2026-07-28' }),
     ...(opts.mcpName !== undefined ? { 'mcp-name': opts.mcpName } : {}),
   };
   if (key !== null) headers.authorization = `Bearer ${key}`;
