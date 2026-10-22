@@ -2,7 +2,7 @@
 # drift_check.sh — wykrywa dryf między konfiguracją compose a stanem faktycznym:
 #  1) etykieta com.docker.compose.config-hash działających kontenerów vs `docker compose config --hash`
 #     dla obu stacków (edge, kag) — łapie też ręczne grzebanie w kontenerach i zmiany .env bez `up -d`;
-#  2) kontenery-sieroty w sieci edge-net (spoza projektów edge/kag);
+#  2) kontenery-sieroty w sieci edge-net (spoza projektów edge/kag i listy gości EDGE_NET_GUEST_PROJECTS);
 #  3) obrazy działających kontenerów o digestach innych niż przypięte w .env (przez RepoDigests);
 #  4) kontrakt portów hosta: publikować je może WYŁĄCZNIE edge-caddy. Kontener z innego
 #     stacka łamiący ten kontrakt = DRYF; kontener spoza obu stacków = UWAGA (świadoma
@@ -32,6 +32,10 @@ for stack in edge kag; do
   PROJECT_OF[${stack}]=$(env_get "${REPO_ROOT}/deploy/${stack}/.env" COMPOSE_PROJECT_NAME "${stack}")
 done
 unset stack   # nie zostawiaj globalnej zmiennej o tej samej nazwie co lokalna w check_stack
+
+# Projekty spoza edge/kag, którym wolno siedzieć w edge-net (każdy ma vhost w deploy/edge/Caddyfile).
+# Nadpisanie: EDGE_NET_GUEST_PROJECTS w deploy/edge/.env (lista rozdzielona spacjami).
+EDGE_NET_GUESTS=$(env_get "${REPO_ROOT}/deploy/edge/.env" EDGE_NET_GUEST_PROJECTS "pim trilium-pim")
 
 # id działającego kontenera usługi w projekcie (pusty gdy brak)
 service_cid() {
@@ -135,6 +139,8 @@ check_orphans() {
     name=$(docker inspect -f '{{.Name}}' "${id}" | sed 's|^/||')
     if [[ "${proj}" == "${PROJECT_OF[edge]}" || "${proj}" == "${PROJECT_OF[kag]}" ]]; then
       ok "edge-net: ${name} (projekt ${proj})"
+    elif [[ -n "${proj}" && " ${EDGE_NET_GUESTS} " == *" ${proj} "* ]]; then
+      ok "edge-net: ${name} (gość: projekt ${proj} z EDGE_NET_GUEST_PROJECTS)"
     else
       drift "sierota w edge-net: ${name} (projekt: ${proj:-brak — kontener spoza compose})"
     fi
@@ -177,7 +183,7 @@ HOST_LISTEN_ALLOW="22/tcp 80/tcp 443/tcp 443/udp 8080/tcp 51820/udp"
 check_host_listeners() {
   echo "== nasłuchy hosta (poza loopbackiem) =="
   if ! command -v ss >/dev/null 2>&1; then
-    warn "brak `ss` — nie mogę sprawdzić nasłuchów hosta"
+    warn "brak polecenia ss — nie mogę sprawdzić nasłuchów hosta"
     return
   fi
   local unexpected=()

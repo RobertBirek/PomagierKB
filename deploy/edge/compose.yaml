@@ -83,6 +83,9 @@ services:
           # bramki SSO rozwiązywał nazwę na PUBLICZNY adres hosta i wisiał do timeoutu
           # (brak NAT reflection dla ruchu kontener→własny adres publiczny).
           - status.ilovelighting.sanok.pl
+          # pim.* dołączony 2026-10-20 (projekt /pim): monitor Kumy „PIM — przez ingress” i hairpin
+          # OIDC z pim-api — ten sam powód co status.*
+          - pim.ilovelighting.sanok.pl
 
   authentik-server:
     <<: [*security_defaults, *logging]
