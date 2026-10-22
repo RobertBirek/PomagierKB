@@ -3,7 +3,7 @@
 # Wgrywa ostatni nocny pg_dump do efemerycznego Postgresa w sieci --internal i po kolei
 # uruchamia serwer każdego wydania ze ścieżki (migracje startują w entrypoincie). Niczego
 # nie dotyka na produkcji; sekrety tylko w pliku env 0600 w katalogu roboczym (nie w argv).
-# Użycie: sudo deploy/scripts/authentik_upgrade_rehearsal.sh [<katalog snapshotu>]
+# Użycie: sudo [AK_STEPS="…"] deploy/scripts/authentik_upgrade_rehearsal.sh [<katalog snapshotu>]
 set -euo pipefail
 
 REPO="ghcr.io/goauthentik/server"
@@ -14,6 +14,11 @@ STEPS=(
   "2026.5.7 sha256:76bf433fd434c067cb25dc3e197cee793998441cda912441ea275293e76cc32c"
   "2026.8.3 sha256:ab9b4e8cc4ab3f8d1198d2db6aeea66bafea1963b3f2843589e0d163f97d9849"
 )
+# Kolejne podbicia: AK_STEPS="<wersja> sha256:<digest>[;<wersja> sha256:<digest>…]" zastępuje
+# ścieżkę powyżej (zapisaną dla migracji 2025.8 → 2026.8.3 z 2026-10-05).
+if [[ -n "${AK_STEPS:-}" ]]; then
+  IFS=';' read -r -a STEPS <<<"${AK_STEPS}"
+fi
 BACKUPS="${BACKUPS:-/srv/kag-data/backups/nightly}"
 SNAP="${1:-$(find "${BACKUPS}" -mindepth 1 -maxdepth 1 -type d | sort | tail -n1)}"
 DUMP="${SNAP}/authentik-pg.sql.zst"
