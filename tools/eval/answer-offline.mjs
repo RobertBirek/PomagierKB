@@ -9,7 +9,7 @@
 //   [--limit N] [--ns SubiektKB] [--out raport.json])
 // Wymaga zbudowanego dist packages/shared (npm run build -w packages/shared) — jak run-eval.mjs.
 
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import Database from 'better-sqlite3';
@@ -44,6 +44,12 @@ const copyPath = join(tmp, 'kag.db');
   src.close();
 }
 const db = openDb(copyPath);
+// Kopia to pełna baza produkcyjna (sesje, ustawienia) — sprzątamy ją przy każdym wyjściu.
+process.on('exit', () => {
+  try { db.close(); } catch { /* już zamknięta */ }
+  rmSync(tmp, { recursive: true, force: true });
+});
+for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => process.exit(130));
 
 const encKey = process.env.TOKEN_ENC_KEY;
 const read = (key) => {

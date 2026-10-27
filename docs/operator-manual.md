@@ -47,6 +47,9 @@ Powstają automatycznie: odmowa odpowiedzi, niska pewność, ocena 👎. Sortuj 
 2. Klucz: TTL 1-365 dni, scope `read` (wyszukiwanie/odpowiedzi/feedback/status
    draftów/pełne źródła) lub `write` (+zgłaszanie szkiców). **Sekret pokazywany RAZ.**
 3. Snippet konfiguracyjny dla Claude Code/Cursora: zakładka „Snippety".
+4. **Rotacja klucza** (zrotować klucz API MCP `sk-…`): /mcp → menu klucza → **Rotuj** — nowy
+   sekret pokazany raz, stary od razu nieważny; profil, scope i data wygaśnięcia bez zmian; wyciek → **Unieważnij**
+   i wydaj nowy (`docs/runbooks/secret-rotation.md` §6).
 Limity: 60 zapytań/min na klucz (10/min kb_answer), 25 szkiców/dzień na zgłaszającego.
 
 ## 6. Zdrowie systemu (/overview)
@@ -89,6 +92,8 @@ Klucz `retention` (domyślnie: logi akcji 90 dni, usage MCP 180, eksporty CSV 30
 bloby nieudanych intake'ów 30) — pełne znaczenie i zakres: `docs/data-governance.md` §2.
 
 ## 9. Dane osobowe: usuwanie, offboarding, żądania osób
+
+Jak usunąć dane osobowe użytkownika (RODO, prawo do usunięcia) albo dokument z danymi osobowymi.
 
 Treść żyje w kilku miejscach naraz (SQLite, graf OpenSPG, MinIO, pliki, backupy),
 więc „usunięcie" to procedura, nie jeden przycisk. Komplet:
