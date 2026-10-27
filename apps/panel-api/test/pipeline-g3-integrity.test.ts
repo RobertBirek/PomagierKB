@@ -158,6 +158,12 @@ describe('D7-02/D14-01 — propagacja wycofania do grafu (nagrobki)', () => {
     }
     // Dokument też jest nadpisywany (kb_entity_get nie wyciągnie już treści).
     expect(records(second, 'reference_document.csv').some((r) => r['semanticType'] === TOMBSTONE_SEMANTIC_TYPE)).toBe(true);
+    // Liczniki (manifest, export_runs → kb_list.documentCount) liczą stan docelowy, nie wiersze nagrobków:
+    // SubiektOntologia 2026-10-27 pokazywała 25 dokumentów przy 19 żywych (6 nagrobków DOC_).
+    expect(second.docCount).toBe(1);
+    expect(second.params.docCount).toBe(1);
+    expect(second.chunkCount).toBe(records(second, 'chunk.csv').length - oldChunkIds.length);
+    expect(second.params.tombstoneCount).toBe(second.tombstones.length);
 
     // Przed potwierdzeniem: rozjazd graf↔stan docelowy widoczny w rejestrze.
     expect(pendingTombstones(db, NS).length).toBe(second.tombstones.length);
