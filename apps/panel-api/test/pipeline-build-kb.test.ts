@@ -209,6 +209,39 @@ describe('runBuildKb — E2E na mocku OpenSPG', () => {
     expect(jobs.every((j) => j.status === 'FINISH')).toBe(true);
   });
 
+  it('po buildzie wersje wycofane regułą precedencji dostają status withdrawn (dirty zostaje 0, bramka bez ostrzeżenia)', async () => {
+    const olderId = createDraft(db, {
+      title: 'Dokument wersjonowany',
+      content: '# Dokument wersjonowany\n\nPierwsza wersja opisu oprawy awaryjnej.',
+      sourceType: 'text',
+      namespace: NS,
+      sourceRef: 'https://example.test/docs/wersjonowany.md',
+      tags: ['Oświetlenie'],
+      analysis: { summary: 'Krótki opis.', language: 'pl' },
+    }).id;
+    promoteDraft(db, olderId, 'u-test');
+    const newerId = createDraft(db, {
+      title: 'Dokument wersjonowany',
+      content: '# Dokument wersjonowany\n\nDruga, poprawiona wersja opisu oprawy awaryjnej.',
+      sourceType: 'text',
+      namespace: NS,
+      sourceRef: 'https://example.test/docs/wersjonowany.md',
+      tags: ['Oświetlenie'],
+      analysis: { summary: 'Krótki opis.', language: 'pl' },
+    }).id;
+    promoteDraft(db, newerId, 'u-test');
+
+    const result = await runBuildKb(buildDeps(db, config, mock, NS));
+
+    const statusOf = (id: string): string =>
+      (db.prepare('SELECT status FROM drafts WHERE id = ?').get(id) as { status: string }).status;
+    expect(statusOf(olderId)).toBe('withdrawn');
+    expect(statusOf(newerId)).toBe('promoted');
+    expect(getKbOrThrow(db, NS).dirty).toBe(0); // wycofanie po buildzie nie brudzi bazy — graf już tego nie ma
+    expect(result.report.checks.find((c) => c.id === 'superseded_documents')?.ok).toBe(true);
+    expect(result.report.verdict).toBe('OK');
+  });
+
   it('job ERROR → JobFailure z ludzkim komunikatem PL i zapisem statusu w build_jobs', async () => {
     const NS2 = 'BuildErrDocs';
     const errMock = makeBuilderMock(NS2, { jobStatus: 'ERROR' });

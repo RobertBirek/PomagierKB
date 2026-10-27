@@ -388,6 +388,23 @@ export function withdrawDraft(db: Db, id: string, decidedBy: string): DraftRow {
   return decide(db, id, 'promoted', 'withdrawn', decidedBy);
 }
 
+/**
+ * Porządek po buildzie: wersja wycofana regułą precedencji (nowsza wersja tego samego
+ * źródła albo jawne `supersedes`) dostaje status withdrawn BEZ brudzenia bazy — graf już
+ * jej nie zawiera, więc stan inboxu i grafu pozostają zgodne. Zwraca false, gdy szkic
+ * w międzyczasie zmienił status (np. ktoś wycofał go ręcznie w trakcie builda).
+ */
+export function withdrawSupersededDraft(db: Db, id: string, decidedBy: string): boolean {
+  const now = nowIso();
+  const res = db
+    .prepare(
+      `UPDATE drafts SET status = 'withdrawn', decided_by = ?, decided_at = ?, updated_at = ?
+       WHERE id = ? AND status = 'promoted'`,
+    )
+    .run(decidedBy, now, now, id);
+  return res.changes === 1;
+}
+
 export type BulkOp = 'promote' | 'reject';
 export type BulkDryRunResult = { id: string; ok: true } | { id: string; ok: false; reason: string };
 
