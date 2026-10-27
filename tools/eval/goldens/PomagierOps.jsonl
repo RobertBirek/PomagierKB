@@ -1,13 +1,13 @@
-{"question": "jak zrotować klucz MCP dla agenta", "expectedIds": ["CHUNK_4AFE60C4C42D7CF7_005"], "namespaces": ["PomagierOps"], "expectedNamespace": "PomagierOps", "kind": "operator"}
-{"question": "czy AUTHENTIK_SECRET_KEY wolno rotować", "expectedIds": ["CHUNK_656066C83CC58071_002"], "mustContain": ["NIE ROTOWAĆ"], "namespaces": ["PomagierOps"], "expectedNamespace": "PomagierOps", "kind": "sekrety"}
-{"question": "ile kopii ma klucz LLM u dostawcy", "expectedIds": ["CHUNK_656066C83CC58071_002"], "mustContain": ["DWIE"], "namespaces": ["PomagierOps"], "expectedNamespace": "PomagierOps", "kind": "sekrety"}
+{"question": "jak zrotować klucz MCP dla agenta", "expectedIds": ["CHUNK_B0F89AEF0016A398_005", "CHUNK_05408C3FCAEC2197_009"], "namespaces": ["PomagierOps"], "expectedNamespace": "PomagierOps", "kind": "operator"}
+{"question": "czy AUTHENTIK_SECRET_KEY wolno rotować", "expectedIds": ["CHUNK_05408C3FCAEC2197_003"], "mustContain": ["NIE ROTOWAĆ"], "namespaces": ["PomagierOps"], "expectedNamespace": "PomagierOps", "kind": "sekrety"}
+{"question": "ile kopii ma klucz LLM u dostawcy", "expectedIds": ["CHUNK_05408C3FCAEC2197_002", "CHUNK_05408C3FCAEC2197_008"], "mustContain": ["DWIE"], "namespaces": ["PomagierOps"], "expectedNamespace": "PomagierOps", "kind": "sekrety"}
 {"question": "co zrobić gdy mysql_restore fałszywie zgłasza awarię", "expectedIds": ["CHUNK_DB8AF7220E600A69_005"], "mustContain": ["skip-networking"], "namespaces": ["PomagierOps"], "expectedNamespace": "PomagierOps", "kind": "awaria"}
 {"question": "jak odtworzyć bazę wiedzy gdy graf jest uszkodzony", "expectedIds": ["CHUNK_B1B87523FCDC0D98_001"], "namespaces": ["PomagierOps"], "expectedNamespace": "PomagierOps", "kind": "odtworzenie"}
 {"question": "czym jest rampa zjazdowa dla OpenSPG", "expectedIds": ["CHUNK_9B7DFDA6B1987C20_006"], "namespaces": ["PomagierOps"], "expectedNamespace": "PomagierOps", "kind": "strategia"}
 {"question": "jak wygląda front-matter lekcji agenta", "expectedIds": ["CHUNK_BCCFE9FF30989B6D_001"], "namespaces": ["PomagierOps"], "expectedNamespace": "PomagierOps", "kind": "konwencja"}
-{"question": "jak zatwierdzić szkic w inboxie", "expectedIds": ["CHUNK_4AFE60C4C42D7CF7_002"], "namespaces": ["PomagierOps"], "expectedNamespace": "PomagierOps", "kind": "operator"}
-{"question": "skąd biorą się luki wiedzy", "expectedIds": ["CHUNK_4AFE60C4C42D7CF7_004"], "namespaces": ["PomagierOps"], "expectedNamespace": "PomagierOps", "kind": "operator"}
-{"question": "jak usunąć dane osobowe użytkownika", "expectedIds": ["CHUNK_4AFE60C4C42D7CF7_009"], "namespaces": ["PomagierOps"], "expectedNamespace": "PomagierOps", "kind": "rodo"}
+{"question": "jak zatwierdzić szkic w inboxie", "expectedIds": ["CHUNK_B0F89AEF0016A398_002"], "namespaces": ["PomagierOps"], "expectedNamespace": "PomagierOps", "kind": "operator"}
+{"question": "skąd biorą się luki wiedzy", "expectedIds": ["CHUNK_B0F89AEF0016A398_004"], "namespaces": ["PomagierOps"], "expectedNamespace": "PomagierOps", "kind": "operator"}
+{"question": "jak usunąć dane osobowe użytkownika", "expectedIds": ["CHUNK_B0F89AEF0016A398_009"], "namespaces": ["PomagierOps"], "expectedNamespace": "PomagierOps", "kind": "rodo"}
 {"question": "przepis na bigos staropolski", "negative": true, "namespaces": ["PomagierOps"], "kind": "off-topic"}
 {"question": "jaka jest stolica Australii", "negative": true, "namespaces": ["PomagierOps"], "kind": "off-topic"}
 {"question": "jak wymienić olej w samochodzie", "negative": true, "namespaces": ["PomagierOps"], "kind": "off-topic"}
@@ -15,6 +15,6 @@
 {"question": "jakie są objawy grypy", "negative": true, "namespaces": ["PomagierOps"], "kind": "off-topic"}
 {"question": "jak skonfigurować ingress w Kubernetes", "negative": true, "namespaces": ["PomagierOps"], "kind": "near-miss"}
 {"question": "jak skalować klaster Elasticsearch", "negative": true, "namespaces": ["PomagierOps"], "kind": "near-miss"}
-{"question": "rotacja klucza LLM a zamrożony model embeddingów", "expectedIds": ["DOC_656066C83CC58071", "DOC_9B7DFDA6B1987C20"], "requireAllDocs": true, "namespaces": ["PomagierOps"], "expectedNamespace": "PomagierOps", "kind": "multihop", "requires": "full"}
+{"question": "rotacja klucza LLM a zamrożony model embeddingów", "expectedIds": ["DOC_05408C3FCAEC2197", "DOC_9B7DFDA6B1987C20"], "requireAllDocs": true, "namespaces": ["PomagierOps"], "expectedNamespace": "PomagierOps", "kind": "multihop", "requires": "full"}
 {"question": "diagnoza awarii backupu i odtworzenie pojedynczej bazy wiedzy", "expectedIds": ["DOC_DB8AF7220E600A69", "DOC_B1B87523FCDC0D98"], "requireAllDocs": true, "namespaces": ["PomagierOps"], "expectedNamespace": "PomagierOps", "kind": "multihop", "requires": "full"}
-{"question": "lekcja z sesji agenta jako szkic i recenzja Inboxu", "expectedIds": ["DOC_BCCFE9FF30989B6D", "DOC_4AFE60C4C42D7CF7"], "requireAllDocs": true, "namespaces": ["PomagierOps"], "expectedNamespace": "PomagierOps", "kind": "multihop", "requires": "full"}
+{"question": "lekcja z sesji agenta jako szkic i recenzja Inboxu", "expectedIds": ["DOC_BCCFE9FF30989B6D", "DOC_B0F89AEF0016A398"], "requireAllDocs": true, "namespaces": ["PomagierOps"], "expectedNamespace": "PomagierOps", "kind": "multihop", "requires": "full"}

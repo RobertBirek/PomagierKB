@@ -97,7 +97,7 @@ Kolejność przy rotacji:
 5. unieważnij stary klucz u dostawcy;
 6. nowy backup (snapshoty sprzed rotacji nadal zawierają stary klucz — patrz §10).
 
-## 6. Klucze MCP (sk-…)
+## 6. Klucze MCP (sk-…) — rotacja i unieważnienie klucza API serwera MCP
 
 /mcp → menu klucza → **Rotuj** (nowy sekret raz, stary unieważniony, TTL bez
 przedłużenia). Kompromitacja: **Unieważnij** i wydaj nowy; wpisy audytu
