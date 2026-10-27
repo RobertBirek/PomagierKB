@@ -7,6 +7,7 @@ import {
   recordBuildJob,
   saveUploadRecord,
   updateBuildJobStatus,
+  withdrawSupersededDraft,
 } from '@pomagierkb/shared/db';
 import {
   getSchemaGraph,
@@ -230,6 +231,10 @@ export async function runBuildKb(deps: BuildKbDeps): Promise<BuildKbResult> {
   //    → quality gate → progress final.
   const confirmed = confirmTombstones(db, namespace, exp.runId);
   if (confirmed > 0) deps.log(`nagrobki potwierdzone w grafie: ${confirmed}`);
+  // Wersje wycofane regułą precedencji są już poza grafem — zmieniamy im status na
+  // withdrawn (bez dirty), żeby nie wracały w każdym kolejnym buildzie i bramce jakości.
+  const withdrawn = exp.superseded.filter((s) => withdrawSupersededDraft(db, s.draftId, 'build')).length;
+  if (withdrawn > 0) deps.log(`precedencja: ${withdrawn} zastąpionych wersji oznaczono jako wycofane`);
   const settled = settleDirtyAfterBuild(db, dirtySnapshot);
   if (settled.cleared) {
     deps.log('dirty=0 — graf zsynchronizowany ze stanem inboxu');

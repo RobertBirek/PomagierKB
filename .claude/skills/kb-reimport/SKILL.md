@@ -51,8 +51,9 @@ poprawiasz plik, żeby następne odświeżenie nie cofnęło stanu, i NIE buduje
    nie zawieszony job (runbook typowe-awarie §2) — heap w `deploy/kag/.env` (`NEO4J_HEAP`).
 7. **Po buildzie** bramka pokaże `graph_stale_nodes: WARN` (nagrobki wycofanych wersji) —
    to normalne: `sudo deploy/scripts/purge_graph_nodes.sh --namespace <NS> --limit 4000 --apply`,
-   potem `node tools/kb-import/quality-gate.mjs <NS>`. `superseded_documents: WARN` jest
-   informacyjne.
+   potem `node tools/kb-import/quality-gate.mjs <NS>`. Od 2026-10-27 udany build sam oznacza
+   wersje wycofane regułą precedencji jako `withdrawn` (bez dirty), więc `superseded_documents`
+   po buildzie powinno być OK; WARN oznacza wersje promowane PO buildzie — zbuduj ponownie.
 8. **Goldens**: re-import daje NOWY `DOC_…` (id zależy od draftu, nie od sourceUrl). Goldens dla
    dokumentów odświeżanych kotwicz przez `expectedSourceRefs: ["#dokumentacja/<fragment>"]`
    (README goldens), nigdy przez `DOC_`. Po buildzie:
