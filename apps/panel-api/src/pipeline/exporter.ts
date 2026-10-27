@@ -612,10 +612,12 @@ export function runExport(
     const drafts = allPromotedDrafts(db, namespace);
     const rows = buildExportRows(namespace, drafts, opts);
 
+    // Kopie: do plików dochodzą jeszcze nagrobki (krok 2), a liczniki docCount/chunkCount
+    // (manifest, export_runs → kb_list) mają liczyć tylko stan docelowy.
     const byFile: Record<ExportFileName, Record<string, string>[]> = {
-      'topic.csv': rows.topics,
-      'reference_document.csv': rows.documents,
-      'chunk.csv': rows.chunks,
+      'topic.csv': [...rows.topics],
+      'reference_document.csv': [...rows.documents],
+      'chunk.csv': [...rows.chunks],
     };
 
     // 1) Twarda bramka tożsamości — PRZED plikami, mirrorem i buildem.

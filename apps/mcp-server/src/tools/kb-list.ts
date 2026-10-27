@@ -4,13 +4,21 @@ import type { KbRow } from '@pomagierkb/shared/db';
 import { parseInput } from './common.js';
 import type { KbTool, ToolCtx } from './types.js';
 
-/** kb_list — rejestr KB przycięty do namespaces profilu (+documentCount z manifestów). */
+/** kb_list — rejestr KB przycięty do namespaces profilu (+documentCount: mirror, a gdy pusty — manifest). */
 
 const inputZod = z.strictObject({});
 
-/** Ostatni udany eksport (manifesty w DB) → liczba dokumentów; brak → undefined. */
+/**
+ * Liczba dokumentów: najpierw mirror FTS (to samo źródło co kb_list_documents, więc oba
+ * narzędzia zgadzają się co do liczby), a gdy mirror jest pusty — ostatni udany eksport
+ * (manifest w DB). Brak obu → undefined (KB nigdy nie zbudowana).
+ */
 function documentCount(ctx: ToolCtx, namespace: string): number | undefined {
   try {
+    const mirror = ctx.db
+      .prepare('SELECT COUNT(DISTINCT doc_id) AS n FROM chunks_mirror WHERE namespace = ?')
+      .get(namespace) as { n: number } | undefined;
+    if (mirror !== undefined && mirror.n > 0) return mirror.n;
     const row = ctx.db
       .prepare(
         `SELECT doc_count FROM export_runs

@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { finishExportRun, recordAnswer, startExportRun } from '@pomagierkb/shared/db';
+import { finishExportRun, recordAnswer, replaceForDocument, startExportRun } from '@pomagierkb/shared/db';
 import type { Db } from '@pomagierkb/shared/db';
 import { kbFeedbackTool, kbListTool } from '../src/tools/index.js';
-import { makeCtx, seedKb, testDb } from './helpers-tools.js';
+import { makeCtx, seedKb, seedLightingChunks, testDb } from './helpers-tools.js';
 
 function seedAnswer(db: Db, apiKeyId?: string): string {
   return recordAnswer(db, {
@@ -118,6 +118,22 @@ describe('kb_list', () => {
     expect(out.kbs[0]?.documentCount).toBe(3);
     expect(res.text).toContain('AlphaDocs');
     expect(res.text).not.toContain('BetaDocs');
+  });
+
+  it('documentCount bierze z mirroru (zgodnie z kb_list_documents), manifest tylko gdy mirror pusty', async () => {
+    const db = testDb();
+    seedKb(db, 'LightingDocs');
+    // Manifest liczył też wiersze nagrobków (SubiektOntologia 2026-10-27: 25 przy 19 żywych).
+    const run = startExportRun(db, 'LightingDocs');
+    finishExportRun(db, run.id, 'success', { docCount: 25, chunkCount: 9 });
+    seedLightingChunks(db, { docId: 'DOC_a' });
+    replaceForDocument(db, 'LightingDocs', 'DOC_b', [{ id: 'CHUNK_b_001', title: 'Drugi dokument', content: 'Treść drugiego dokumentu.' }]);
+    const ctx = makeCtx(db, { namespaces: ['LightingDocs'] });
+
+    const res = await kbListTool.handler(ctx, {});
+    const out = res.structured as ListOut;
+    expect(out.kbs[0]?.documentCount).toBe(2);
+    expect(res.text).toContain('dokumentów: 2');
   });
 
   it('bez ograniczenia profilu zwraca wszystkie aktywne KB', async () => {
