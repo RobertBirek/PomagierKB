@@ -1,0 +1,9 @@
+{
+  "namespace": "SubiektOntologia",
+  "name": "SubiektOntologia — słowniki encji subiektAPI",
+  "description": "Słowniki ontologii encji REST API subiektAPI nad Subiektem GT: pojęcia i synonimy, trasy API, pola → kolumny Subiekta, relacje między encjami, reguły (PII, idempotencja, limity), przykłady wywołań. Źródło: repo RobertBirek/subiektapi, docs/dokumentacja/ontologia. Wersjonowane per encja.",
+  "documentTypes": [
+    { "name": "słownik encji API", "description": "Słownik ontologii jednej encji subiektAPI (front-matter kind: ontology, entity, version): pojęcia i synonimy, trasy, pola → kolumny Subiekta GT, relacje, reguły, przykłady wywołań." }
+  ],
+  "routingKeywords": ["subiektapi", "api", "rest", "endpoint", "openapi", "json", "get", "patch", "nextcursor", "kursor", "scope", "x-client", "idempotency", "performedby", "verified", "insufficient", "mostek", "bridge", "ontolog", "encj"]
+}

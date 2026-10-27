@@ -165,3 +165,25 @@ Limity draftów podnoszone na czas biegu i przywracane w `trap`. Awaria → `kag
 | 2 700 mini-rozdziałów z jednego CHM | plan schodził do liści | `planChapters` grupuje rodzeństwo („Absencja – Gratyfikant") |
 | definicje widoków/procedur puste | obiekty `WITH ENCRYPTION` w żywej bazie | definicje ze `Skrypty_SQL_*.zip` (`attachDefinitions`) |
 | `payload_too_large` | fragment >100 000 zn. po czyszczeniu | `packSections`/`splitLargeSection` tnie do 80 000 |
+
+## 7. Wariant: pusta baza zasilana szkicami MCP (bez importu masowego)
+
+Przykład: `SubiektOntologia` (2026-10-27) — dokumenty przychodzą jako `kb_submit_draft` od agenta
+z innego hosta, właściciel recenzuje je w Inboxie i buduje bazę.
+
+1. Spec w `tools/kb-import/specs/<ns>.json` (namespace, name, description, documentTypes,
+   routingKeywords), potem `node tools/kb-import/create-kb.mjs --spec …` **bez** `--draft-limits`
+   (25 szkiców/dobę na zgłaszającego wystarcza dla partii ≤ 25). Projekt OpenSPG i schemat
+   (wspólny szablon: ConceptTaxonomy/Topic/ReferenceDocument/Chunk) powstają w akcji `create_kb`.
+2. **Słowa routingu — pułapki:** API przyjmuje **max 20**; wyszukiwanie (`answer/routing.ts`) dopasowuje
+   je do POJEDYNCZYCH tokenów zapytania prefiksowo (≥ 3 znaki, tokeny = litery/cyfry). Słowa ze
+   slashem (`/towary`), z podkreśleniem (`insufficient_stock`) i wielowyrazowe nigdy nie trafią —
+   wpisuj tokeny lub rdzenie (`ontolog`, `encj`). Unikaj słów ogólnych domeny sąsiedniej bazy
+   (np. `kasa`, `towary`), bo podbijają nową bazę przy cudzych pytaniach. Tokeny nazwy wyświetlanej
+   są dodawane do routingu automatycznie.
+3. Dostęp: w /mcp dopisz namespace do profili (PATCH profilu nie rotuje kluczy; cache MCP
+   unieważniany od razu). Profil współdzielony przez kilka kluczy rozszerzaj świadomie.
+4. Weryfikacja bez sekretów docelowych kluczy: tymczasowy klucz (TTL 1 dzień) na TYM SAMYM profilu →
+   `kb_list` / testowy `kb_submit_draft` → odrzucenie szkicu w Inboxie → **revoke** klucza.
+5. Goldens: `tools/eval/goldens/<ns>.jsonl` z samymi negatywami do pierwszego buildu (sam plik
+   uruchomiony osobno kończy się „brak pozytywów" — to oczekiwane), pozytywy po buildzie.

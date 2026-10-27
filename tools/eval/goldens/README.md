@@ -115,3 +115,9 @@ Konsekwencje, o których trzeba pamiętać czytając raport:
 4. Docelowo: ≥20 pytań na bazę, ≥30 % negatywów (w tym adwersarialne dzielące
    słownictwo z korpusem). StagingSmoke ten warunek spełnia; PomagierOps nie może,
    dopóki jest pusta.
+
+**SubiektOntologia** (założona 2026-10-27, pusta) — `SubiektOntologia.jsonl` ma na razie
+same negatywy (off-topic). Dokumenty (słowniki ontologii encji subiektAPI) przychodzą jako
+szkice MCP z hosta pomagier; **po pierwszym buildzie dopisz pozytywy z `expectedIds`**,
+np. „jak API liczy marżę w /raporty/marza", „co znaczy verified:false w odpowiedzi
+POST /zamowienia", „skąd pochodzi kwota dokumentu KP w /kasa".
