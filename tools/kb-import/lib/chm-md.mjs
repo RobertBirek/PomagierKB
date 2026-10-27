@@ -116,7 +116,8 @@ export function flattenTables($) {
 }
 
 /** HTML jednej strony → Markdown (bez nagłówka nawigacyjnego, bez obrazków). */
-export function htmlToMarkdown(html, { dropSelectors = ['.header', 'nav', '.nav', '#nav', '.footer'] } = {}) {
+// '.header' bez komórek tabeli: strony „Składowe obiektu" Sfery trzymają nazwy atrybutów/metod w <td class="header">.
+export function htmlToMarkdown(html, { dropSelectors = ['.header:not(td):not(th)', 'nav', '.nav', '#nav', '.footer'] } = {}) {
   const $ = cheerio.load(html);
   for (const sel of dropSelectors) $(sel).remove();
   $('img').remove();
