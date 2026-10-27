@@ -1,0 +1,3 @@
+{"question": "przepis na pierogi ruskie", "negative": true, "namespaces": ["SubiektOntologia"], "kind": "off-topic", "_comment": "Baza pusta do pierwszego buildu (słowniki ontologii przyjdą jako szkice MCP). Pozytywne wiersze (z expectedIds) dopisze operator po pierwszym buildzie, np.: 'jak API liczy marżę w /raporty/marza', 'co znaczy verified:false w odpowiedzi POST /zamowienia', 'skąd pochodzi kwota dokumentu KP w /kasa'."}
+{"question": "jaka jest stolica Australii", "negative": true, "namespaces": ["SubiektOntologia"], "kind": "off-topic"}
+{"question": "jak wymienić olej w samochodzie", "negative": true, "namespaces": ["SubiektOntologia"], "kind": "off-topic"}
