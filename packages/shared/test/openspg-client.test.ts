@@ -91,4 +91,31 @@ describe('OpenSpgClient', () => {
     const client = makeClient(impl);
     await expect(client.login()).rejects.toThrow(/Set-Cookie/);
   });
+  it('EPIPE (zapis w martwe gniazdo keep-alive) → jedna ponowna próba, także dla POST', async () => {
+    let apiHits = 0;
+    const { impl, calls } = makeMockFetch((path) => {
+      if (path === '/v1/accounts/login') return loginResponse();
+      apiHits += 1;
+      if (apiHits === 1) throw new TypeError('fetch failed', { cause: Object.assign(new Error('write EPIPE'), { code: 'EPIPE' }) });
+      return jsonResponse({ success: true, result: 'http://minio/x.csv' });
+    });
+    const client = makeClient(impl);
+    const result = await client.requestResult('/public/v1/reasoner/dialog/uploadFile', { method: 'POST', body: 'x' });
+    expect(result).toBe('http://minio/x.csv');
+    expect(calls.map((c) => c.path)).toEqual([
+      '/v1/accounts/login', '/public/v1/reasoner/dialog/uploadFile', '/public/v1/reasoner/dialog/uploadFile',
+    ]);
+  });
+
+  it('inny błąd transportu → bez ponowienia, kod przyczyny w komunikacie', async () => {
+    let apiHits = 0;
+    const { impl } = makeMockFetch((path) => {
+      if (path === '/v1/accounts/login') return loginResponse();
+      apiHits += 1;
+      throw new TypeError('fetch failed', { cause: Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }) });
+    });
+    const client = makeClient(impl);
+    await expect(client.requestResult('/v1/model/list/')).rejects.toThrow(/fetch failed \(ECONNREFUSED\)/);
+    expect(apiHits).toBe(1);
+  });
 });

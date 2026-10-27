@@ -27,6 +27,12 @@ interface SessionState {
 /** Komunikaty {success:false} wskazujące na wygaśniętą/nieobecną sesję produktową. */
 const SESSION_MSG_RE = /log[- ]?in|logged|session|auth|token|expired|登录/i;
 
+/** Kod przyczyny błędu fetch (undici chowa go w err.cause) → " (EPIPE)"; brak → "". */
+function causeCode(err: unknown): string {
+  const cause = (err as { cause?: { code?: unknown } } | null)?.cause;
+  return typeof cause?.code === 'string' ? ` (${cause.code})` : '';
+}
+
 function extractMessage(body: unknown): string {
   if (body && typeof body === 'object') {
     const o = body as Record<string, unknown>;
@@ -84,8 +90,22 @@ export class OpenSpgClient {
     return typeof any === 'function' ? any([timeout, external]) : timeout;
   }
 
-  /** Fetch z timeoutem (AbortSignal); withCookie dokleja aktualne cookie sesji. */
+  /**
+   * Fetch z jedną ponowną próbą po EPIPE. Node 22.23.4 potrafi wysłać żądanie w gniazdo keep-alive,
+   * które serwer zamknął (timeout=60 s), gdy pętla zdarzeń była długo zablokowana (eksport buildu).
+   * EPIPE = zapis się nie udał, serwer nie dostał żądania — powtórka jest bezpieczna także dla POST.
+   */
   private async doFetch(path: string, init: RequestInit, withCookie: boolean): Promise<Response> {
+    try {
+      return await this.doFetchOnce(path, init, withCookie);
+    } catch (err) {
+      if (!(err instanceof UpstreamError) || !/\(EPIPE\)$/.test(err.message)) throw err;
+      return await this.doFetchOnce(path, init, withCookie);
+    }
+  }
+
+  /** Fetch z timeoutem (AbortSignal); withCookie dokleja aktualne cookie sesji. */
+  private async doFetchOnce(path: string, init: RequestInit, withCookie: boolean): Promise<Response> {
     const headers = new Headers(init.headers);
     if (withCookie && this.session.cookie !== null) headers.set('cookie', this.session.cookie);
     const controller = new AbortController();
@@ -106,7 +126,7 @@ export class OpenSpgClient {
         ? external?.aborted === true && !controller.signal.aborted
           ? 'anulowane przez wołającego'
           : 'timeout'
-        : (err as Error).message;
+        : `${(err as Error).message}${causeCode(err)}`;
       throw new UpstreamError('openspg', path, undefined, `OpenSPG fetch failed: ${reason}`);
     } finally {
       clearTimeout(timer);

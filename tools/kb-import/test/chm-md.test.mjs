@@ -65,6 +65,13 @@ describe('chm: htmlToMarkdown', () => {
     expect(markdown).toContain('Tylko opis');
     expect(markdown).not.toContain('<table');
   });
+  it('zachowuje komórki tabeli z klasą header (nazwy składowych obiektu Sfery)', () => {
+    const html = `<html><head><title>Składowe obiektu Kontrahent</title></head><body><div class="header">Sfera 1.0</div>
+      <h4>Atrybuty</h4><table><tr><td class="header"><a href="Kontrahent_AdrDostUlica.htm">AdrDostUlica</a></td><td>Nazwa ulicy z adresu dostawy.</td></tr></table></body></html>`;
+    const { markdown } = htmlToMarkdown(html);
+    expect(markdown).not.toContain('Sfera 1.0');
+    expect(markdown).toContain('AdrDostUlica | Nazwa ulicy z adresu dostawy.');
+  });
   it('flattenTables radzi sobie z zagnieżdżeniem', () => {
     const $ = cheerio.load('<table><tr><td><table><tr><td>a</td><td>b</td></tr></table></td><td>c</td></tr></table>');
     flattenTables($);
