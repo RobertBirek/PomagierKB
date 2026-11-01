@@ -104,6 +104,15 @@ export interface CreateKeyFormInput {
   /** Nazwa nowego konta serwisowego (istotna przy identity='new'). */
   newServiceName: string;
   ttlDays: number;
+  /** Admin może wystawić klucz do 10 lat (zmiana decyzji 2026-11-01); pozostali do 365 dni. */
+  isAdmin?: boolean;
+}
+
+export const MAX_TTL_DAYS = 365;
+export const MAX_TTL_DAYS_ADMIN = 3650;
+
+export function maxTtlDays(isAdmin: boolean): number {
+  return isAdmin ? MAX_TTL_DAYS_ADMIN : MAX_TTL_DAYS;
 }
 
 export type CreateKeyErrorField = 'label' | 'profile' | 'service' | 'serviceName' | 'ttl';
@@ -115,7 +124,7 @@ export interface CreateKeyFormResult {
 
 /**
  * Walidacja formularza klucza — błędy PRZY POLACH (koniec zbiorczego komunikatu):
- * etykieta niepusta, profil wybrany, tożsamość kompletna, TTL całkowite 1–365.
+ * etykieta niepusta, profil wybrany, tożsamość kompletna, TTL całkowite 1–365 (admin 1–3650).
  */
 export function validateCreateKeyForm(input: CreateKeyFormInput): CreateKeyFormResult {
   const errors: CreateKeyErrorField[] = [];
@@ -123,7 +132,7 @@ export function validateCreateKeyForm(input: CreateKeyFormInput): CreateKeyFormR
   if (input.profileId === '') errors.push('profile');
   if (input.identity === 'service' && input.serviceId === '') errors.push('service');
   if (input.identity === 'new' && input.newServiceName.trim() === '') errors.push('serviceName');
-  if (!Number.isInteger(input.ttlDays) || input.ttlDays < 1 || input.ttlDays > 365) {
+  if (!Number.isInteger(input.ttlDays) || input.ttlDays < 1 || input.ttlDays > maxTtlDays(input.isAdmin === true)) {
     errors.push('ttl');
   }
   return { ok: errors.length === 0, errors };

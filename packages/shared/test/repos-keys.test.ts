@@ -5,6 +5,8 @@ import {
   createProfile,
   deleteProfile,
   expireSweep,
+  extendKey,
+  MAX_KEY_TTL_DAYS,
   listAllKeys,
   listKeysForUser,
   revokeKey,
@@ -15,7 +17,7 @@ import {
 import { testDb, seedUser } from './helpers.js';
 
 describe('repos/apiKeys + mcpProfiles', () => {
-  it('createKey: raw sk-... raz, verify bez zapisu, ttl 1..365', () => {
+  it('createKey: raw sk-... raz, verify bez zapisu, ttl 1..MAX_KEY_TTL_DAYS', () => {
     const db = testDb();
     const uid = seedUser(db);
     const { row, raw } = createKey(db, uid, 'agent testowy', ['read'], 'default', 90);
@@ -29,7 +31,33 @@ describe('repos/apiKeys + mcpProfiles', () => {
     expect(verifyKey(db, 'sk-zupelnie-zly-token-000000000')).toBeNull();
 
     expect(() => createKey(db, uid, 'x', ['read'], 'default', 0)).toThrowError(/ttlDays/);
-    expect(() => createKey(db, uid, 'x', ['read'], 'default', 366)).toThrowError(/ttlDays/);
+    expect(() => createKey(db, uid, 'x', ['read'], 'default', MAX_KEY_TTL_DAYS + 1)).toThrowError(/ttlDays/);
+    expect(() => createKey(db, uid, 'x', ['read'], 'default', 1.5)).toThrowError(/ttlDays/);
+    // granica absolutna repo = 10 lat (rolę sprawdza serwis panel-api)
+    const long = createKey(db, uid, 'serwisowy', ['read'], 'default', MAX_KEY_TTL_DAYS);
+    const days = (Date.parse(long.row.expires_at) - Date.now()) / 86_400_000;
+    expect(days).toBeGreaterThan(MAX_KEY_TTL_DAYS - 1);
+    expect(days).toBeLessThanOrEqual(MAX_KEY_TTL_DAYS);
+  });
+
+  it('extendKey: nowy termin od teraz, ten sam sekret i id; nieaktywny → conflict', () => {
+    const db = testDb();
+    const uid = seedUser(db);
+    const { row, raw } = createKey(db, uid, 'do przedłużenia', ['read'], 'default', 5);
+    const extended = extendKey(db, row.id, MAX_KEY_TTL_DAYS);
+    expect(extended.id).toBe(row.id);
+    expect(Date.parse(extended.expires_at)).toBeGreaterThan(Date.now() + (MAX_KEY_TTL_DAYS - 1) * 86_400_000);
+    expect(verifyKey(db, raw)?.id).toBe(row.id); // klient nic nie podmienia
+    expect(() => extendKey(db, row.id, 0)).toThrowError(/ttlDays/);
+    expect(() => extendKey(db, row.id, MAX_KEY_TTL_DAYS + 1)).toThrowError(/ttlDays/);
+
+    revokeKey(db, row.id);
+    expect(() => extendKey(db, row.id, 30)).toThrowError(AppError);
+
+    // wygasły (status jeszcze active, sweep nie przeszedł) też nie wraca do życia
+    const old = createKey(db, uid, 'wygasły', ['read'], 'default', 1);
+    db.prepare('UPDATE api_keys SET expires_at = ? WHERE id = ?').run('2000-01-01T00:00:00.000Z', old.row.id);
+    expect(() => extendKey(db, old.row.id, 30)).toThrowError(/niewygasły/);
   });
 
   it('rotate: nowy raw działa, stary unieważniony natychmiast, jedna transakcja', () => {

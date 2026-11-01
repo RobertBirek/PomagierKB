@@ -112,6 +112,12 @@ describe('validateCreateKeyForm()', () => {
     expect(validateCreateKeyForm({ ...base, ttlDays: 365 }).ok).toBe(true);
   });
 
+  it('TTL admina: do 3650 dni (10 lat); nie-admin nadal do 365', () => {
+    expect(validateCreateKeyForm({ ...base, isAdmin: true, ttlDays: 3650 }).ok).toBe(true);
+    expect(validateCreateKeyForm({ ...base, isAdmin: true, ttlDays: 3651 }).errors).toEqual(['ttl']);
+    expect(validateCreateKeyForm({ ...base, isAdmin: false, ttlDays: 366 }).errors).toEqual(['ttl']);
+  });
+
   it('tożsamość service wymaga wybranego konta', () => {
     expect(validateCreateKeyForm({ ...base, identity: 'service' }).errors).toEqual(['service']);
     expect(validateCreateKeyForm({ ...base, identity: 'service', serviceId: 'u2' }).ok).toBe(true);

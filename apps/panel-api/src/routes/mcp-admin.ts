@@ -1,6 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 import {
   KNOWN_MCP_TOOLS,
+  MAX_KEY_TTL_DAYS,
+  getKey,
   createProfile,
   deleteProfile,
   listProfiles,
@@ -12,6 +14,7 @@ import {
   buildSnippets,
   checkMcpHealth,
   createKeyForUser,
+  extendKeyAs,
   invalidateMcpCache,
   listKeys,
   revokeKeyAs,
@@ -192,7 +195,8 @@ export default async function mcpAdminRoutes(app: FastifyInstance): Promise<void
               minItems: 1,
               maxItems: 2,
             },
-            ttlDays: { type: 'integer', minimum: 1, maximum: 365, default: 90 },
+            // górna granica schematu = absolutna (admin); limit 365 dla pozostałych ról w serwisie
+            ttlDays: { type: 'integer', minimum: 1, maximum: MAX_KEY_TTL_DAYS, default: 90 },
           },
         },
         response: { 201: successRef },
@@ -231,6 +235,39 @@ export default async function mcpAdminRoutes(app: FastifyInstance): Promise<void
       // Best-effort: cache mcp-servera nie może honorować starego hasha do 60 s.
       await invalidateMcpCache(app.config, { logger: req.log });
       return { ok: true as const, data: { key: view, raw } };
+    },
+  );
+
+  app.post<{ Params: { id: string }; Body: { ttlDays: number } }>(
+    '/mcp/keys/:id/extend',
+    {
+      config: { rbac: 'admin', audit: 'mcp.key.extend', csrf: true, rateLimitGroup: 'mutation' },
+      schema: {
+        params: idParam,
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['ttlDays'],
+          properties: { ttlDays: { type: 'integer', minimum: 1, maximum: MAX_KEY_TTL_DAYS } },
+        },
+        response: { 200: successRef },
+      },
+    },
+    async (req, reply) => {
+      const user = req.user;
+      if (user === null) throw new AppError('unauthorized', 'Wymagane zalogowanie');
+      const prev = getKey(app.db, req.params.id); // brak → extendKeyAs rzuci not_found
+      const row = extendKeyAs(app.db, user, req.params.id, req.body.ttlDays);
+      const view = toKeyView(row);
+      reply.auditContext = {
+        resourceType: 'api_key',
+        resourceId: row.id,
+        ...(prev !== null ? { before: toKeyView(prev) } : {}),
+        after: view,
+      };
+      // cache mcp-servera trzyma wiersz klucza do 60 s — odświeżamy, żeby nowy termin działał od razu
+      await invalidateMcpCache(app.config, { logger: req.log });
+      return { ok: true as const, data: { key: view } };
     },
   );
 

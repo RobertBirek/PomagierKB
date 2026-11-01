@@ -174,6 +174,102 @@ describe('mcp-admin', () => {
     expect(adminWrite.json().data.key).toMatchObject({ userId: 'svc-agent', scopes: ['read', 'write'] });
   });
 
+  it('TTL > 365 dni: tylko admin (do 3650); operator → 403; powyżej 3650 → 400', async () => {
+    const opLong = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/v1/mcp/keys',
+      headers: as('operator'),
+      payload: { label: 'op długi', profileId: 'default', ttlDays: 366 },
+    });
+    expect(opLong.statusCode).toBe(403);
+
+    insertUser(ctx.db, 'svc-long', 'viewer', { kind: 'service' });
+    const adminLong = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/v1/mcp/keys',
+      headers: as('admin'),
+      payload: { label: 'serwisowy 10 lat', profileId: 'default', userId: 'svc-long', ttlDays: 3650 },
+    });
+    expect(adminLong.statusCode).toBe(201);
+    const days = (Date.parse(adminLong.json().data.key.expiresAt) - Date.now()) / 86_400_000;
+    expect(days).toBeGreaterThan(3649);
+
+    const tooLong = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/v1/mcp/keys',
+      headers: as('admin'),
+      payload: { label: 'za długi', profileId: 'default', userId: 'svc-long', ttlDays: 3651 },
+    });
+    expect(tooLong.statusCode).toBe(400);
+  });
+
+  it('extend: admin przedłuża (audyt before/after, invalidate cache); operator → 403; odwołany → 409', async () => {
+    insertUser(ctx.db, 'svc-ext', 'viewer', { kind: 'service' });
+    const created = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/v1/mcp/keys',
+      headers: as('admin'),
+      payload: { label: 'do przedłużenia', profileId: 'default', userId: 'svc-ext', ttlDays: 30 },
+    });
+    const { key, raw } = created.json().data;
+
+    const byOperator = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/v1/mcp/keys/${key.id}/extend`,
+      headers: as('operator'),
+      payload: { ttlDays: 3650 },
+    });
+    expect(byOperator.statusCode).toBe(403);
+
+    fetchMock.mockClear();
+    const ext = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/v1/mcp/keys/${key.id}/extend`,
+      headers: as('admin'),
+      payload: { ttlDays: 3650 },
+    });
+    expect(ext.statusCode).toBe(200);
+    const after = ext.json().data.key;
+    expect(after.id).toBe(key.id);
+    expect(Date.parse(after.expiresAt)).toBeGreaterThan(Date.parse(key.expiresAt));
+    expect(ext.json().data).not.toHaveProperty('raw'); // sekret bez zmian, nic nie zwracamy
+    expect(verifyKey(ctx.db, raw)?.id).toBe(key.id);
+    expect(fetchMock).toHaveBeenCalled();
+
+    const audit = ctx.db
+      .prepare("SELECT resource_id, before_json, after_json FROM audit WHERE action = 'mcp.key.extend' ORDER BY seq DESC LIMIT 1")
+      .get() as { resource_id: string; before_json: string; after_json: string };
+    expect(audit.resource_id).toBe(key.id);
+    expect(JSON.parse(audit.before_json).expiresAt).toBe(key.expiresAt);
+    expect(JSON.parse(audit.after_json).expiresAt).toBe(after.expiresAt);
+    expect(audit.after_json).not.toContain(raw);
+
+    const tooLong = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/v1/mcp/keys/${key.id}/extend`,
+      headers: as('admin'),
+      payload: { ttlDays: 3651 },
+    });
+    expect(tooLong.statusCode).toBe(400);
+
+    await ctx.app.inject({ method: 'POST', url: `/api/v1/mcp/keys/${key.id}/revoke`, headers: as('admin') });
+    const revoked = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/v1/mcp/keys/${key.id}/extend`,
+      headers: as('admin'),
+      payload: { ttlDays: 30 },
+    });
+    expect(revoked.statusCode).toBe(409);
+
+    const missing = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/v1/mcp/keys/key_nieistnieje/extend',
+      headers: as('admin'),
+      payload: { ttlDays: 30 },
+    });
+    expect(missing.statusCode).toBe(404);
+  });
+
   it('viewer widzi tylko własne klucze; admin wszystkie + filtr ?userId=', async () => {
     const viewer = await ctx.app.inject({ method: 'GET', url: '/api/v1/mcp/keys', headers: as('viewer') });
     expect(viewer.statusCode).toBe(200);
