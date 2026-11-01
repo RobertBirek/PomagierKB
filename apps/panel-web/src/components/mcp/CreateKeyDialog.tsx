@@ -19,6 +19,7 @@ import { RadioGroup, RadioGroupItem } from '@/ui/radio-group';
 import { Select } from '@/ui/select';
 import { useToast } from '@/ui/toast';
 import {
+  maxTtlDays,
   validateCreateKeyForm,
   type CreateKeyErrorField,
   type KeyIdentity,
@@ -111,11 +112,12 @@ export function CreateKeyDialog({
   });
 
   function fieldError(field: CreateKeyErrorField): string | undefined {
-    return errors.includes(field) ? t(ERROR_KEY[field]) : undefined;
+    if (!errors.includes(field)) return undefined;
+    return t(field === 'ttl' && isAdmin ? 'mcp.create.err.ttlAdmin' : ERROR_KEY[field]);
   }
 
   function submit(): void {
-    const result = validateCreateKeyForm({ label, profileId, identity, serviceId, newServiceName, ttlDays });
+    const result = validateCreateKeyForm({ label, profileId, identity, serviceId, newServiceName, ttlDays, isAdmin });
     setErrors(result.errors);
     if (result.ok) create.mutate();
   }
@@ -232,14 +234,14 @@ export function CreateKeyDialog({
           </fieldset>
 
           <Field
-            label={t('mcp.create.ttl')}
+            label={t(isAdmin ? 'mcp.create.ttlAdmin' : 'mcp.create.ttl')}
             required
             {...(ttlErr !== undefined ? { error: ttlErr } : {})}
           >
             <Input
               type="number"
               min={1}
-              max={365}
+              max={maxTtlDays(isAdmin)}
               className="max-w-32"
               value={ttlDays}
               onChange={(ev) => setTtlDays(Number(ev.target.value))}

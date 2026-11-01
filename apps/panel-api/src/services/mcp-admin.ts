@@ -1,6 +1,8 @@
 import type { Db } from '@pomagierkb/shared/db';
 import {
+  MAX_KEY_TTL_DAYS_NON_ADMIN,
   createKey,
+  extendKey,
   getKey,
   getProfileOrThrow,
   keyScopes,
@@ -107,7 +109,7 @@ export interface CreateKeyInput {
   userId?: string;
   /** Default ['read']; 'write' — tylko admin. */
   scopes?: string[];
-  /** Wymagane 1..365 (schema daje default 90). */
+  /** 1..365, admin do MAX_KEY_TTL_DAYS (schema daje default 90). */
   ttlDays: number;
 }
 
@@ -143,6 +145,9 @@ export function createKeyForUser(db: Db, actor: AppUser, input: CreateKeyInput):
     if (scopes.some((s) => s !== 'read')) {
       throw new AppError('forbidden', 'Tylko admin może wystawić klucz ze scope write');
     }
+    if (input.ttlDays > MAX_KEY_TTL_DAYS_NON_ADMIN) {
+      throw new AppError('forbidden', `Klucz ważny dłużej niż ${MAX_KEY_TTL_DAYS_NON_ADMIN} dni może wystawić tylko admin`);
+    }
   }
 
   getActiveUserOrThrow(db, targetUserId);
@@ -175,6 +180,13 @@ function getOwnedKeyOrThrow(db: Db, actor: AppUser, id: string): ApiKeyRow {
 export function rotateKeyAs(db: Db, actor: AppUser, id: string): CreateKeyResult {
   getOwnedKeyOrThrow(db, actor, id);
   return rotateKey(db, id, actor.id);
+}
+
+/** Przedłużenie terminu — tylko admin (trasa ma rbac admin; tu druga bramka). */
+export function extendKeyAs(db: Db, actor: AppUser, id: string, ttlDays: number): ApiKeyRow {
+  if (actor.role !== 'admin') throw new AppError('forbidden', 'Termin ważności klucza zmienia tylko admin');
+  getOwnedKeyOrThrow(db, actor, id);
+  return extendKey(db, id, ttlDays);
 }
 
 export function revokeKeyAs(db: Db, actor: AppUser, id: string): ApiKeyRow {

@@ -8,6 +8,20 @@ import { hex8 } from './util.js';
 
 export type ApiKeyStatus = 'active' | 'revoked' | 'expired';
 
+/**
+ * TTL jest obowiązkowy (kolumna NOT NULL), ale górna granica zależy od roli wystawiającego:
+ * admin do 10 lat (klucze serwisowe „praktycznie bez terminu" — PLAN.md, zmiana decyzji 2026-11-01),
+ * pozostali do 365 dni. Repo pilnuje granicy absolutnej, rolę sprawdza warstwa serwisu.
+ */
+export const MAX_KEY_TTL_DAYS = 3650;
+export const MAX_KEY_TTL_DAYS_NON_ADMIN = 365;
+
+function assertTtlDays(ttlDays: number): void {
+  if (!Number.isInteger(ttlDays) || ttlDays < 1 || ttlDays > MAX_KEY_TTL_DAYS) {
+    throw new AppError('validation_error', `ttlDays musi być liczbą całkowitą 1..${MAX_KEY_TTL_DAYS}`);
+  }
+}
+
 /** Pełny wiersz DB — używany tylko wewnętrznie (zawiera hash). */
 interface ApiKeyDbRow {
   id: string;
@@ -48,9 +62,7 @@ export function createKey(
   ttlDays: number,
   createdBy?: string,
 ): CreateKeyResult {
-  if (!Number.isInteger(ttlDays) || ttlDays < 1 || ttlDays > 365) {
-    throw new AppError('validation_error', 'ttlDays musi być liczbą całkowitą 1..365');
-  }
+  assertTtlDays(ttlDays);
   const generated = generateApiKey();
   const now = new Date();
   const id = `key_${hex8()}${hex8()}`;
@@ -146,6 +158,24 @@ export function rotateKey(db: Db, id: string, rotatedBy?: string): CreateKeyResu
     return stripHash(getDbRowOrThrow(db, newId));
   });
   return { row: tx.immediate(), raw: generated.raw };
+}
+
+/**
+ * Nowy termin ważności aktywnego klucza: teraz + ttlDays (może też skrócić). Sekret i id bez zmian —
+ * klient nic nie podmienia. Klucz nie-active → conflict (wygasłego nie wskrzeszamy, wystaw nowy).
+ */
+export function extendKey(db: Db, id: string, ttlDays: number): ApiKeyRow {
+  assertTtlDays(ttlDays);
+  const tx = db.transaction(() => {
+    const row = getDbRowOrThrow(db, id);
+    if (row.status !== 'active' || row.expires_at <= nowIso()) {
+      throw new AppError('conflict', `przedłużyć można tylko aktywny, niewygasły klucz (status: ${row.status})`);
+    }
+    const expiresAt = new Date(Date.now() + ttlDays * 86_400_000).toISOString();
+    db.prepare('UPDATE api_keys SET expires_at = ? WHERE id = ?').run(expiresAt, id);
+    return stripHash(getDbRowOrThrow(db, id));
+  });
+  return tx.immediate();
 }
 
 export function revokeKey(db: Db, id: string): ApiKeyRow {

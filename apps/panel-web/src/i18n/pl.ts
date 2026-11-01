@@ -430,6 +430,7 @@ export const pl = {
   'mcp.create.scopeRead': 'Odczyt — wyszukiwanie i odpowiedzi (kb_search, kb_answer…)',
   'mcp.create.scopeWrite': 'Zapis — proponowanie szkiców (kb_submit_draft); tylko admin',
   'mcp.create.ttl': 'Ważność (dni, 1–365)',
+  'mcp.create.ttlAdmin': 'Ważność (dni, 1–3650; 3650 = 10 lat)',
   'mcp.create.submit': 'Utwórz klucz',
   'mcp.create.validation': 'Uzupełnij wymagane pola: etykieta, profil i tożsamość.',
 
@@ -784,6 +785,7 @@ export const pl = {
   'mcp.create.err.service': 'Wybierz konto serwisowe.',
   'mcp.create.err.serviceName': 'Podaj nazwę nowego konta serwisowego.',
   'mcp.create.err.ttl': 'Ważność musi być liczbą całkowitą od 1 do 365 dni.',
+  'mcp.create.err.ttlAdmin': 'Ważność musi być liczbą całkowitą od 1 do 3650 dni.',
   'mcp.profiles.nsSearchPlaceholder': 'Szukaj bazy…',
   'mcp.profiles.selectVisible': 'Zaznacz widoczne',
   'mcp.profiles.noNsMatches': 'Żadna baza nie pasuje do frazy.',

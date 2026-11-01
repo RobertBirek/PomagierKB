@@ -171,7 +171,8 @@ Zasady: route = schema + wywołanie serwisu; serwis = czysta logika na db; plugi
 | PATCH | `/mcp/profiles/:id` | admin | ✓ | `mcp.profile.update` | |
 | DELETE | `/mcp/profiles/:id` | admin | ✓ | `mcp.profile.delete` | 409 gdy istnieją aktywne klucze profilu |
 | GET | `/mcp/keys` | viewer (własne) / admin (wszystkie) | — | — | nigdy raw — `{id,prefix,scopes,profileId,status,expiresAt,lastUsedAt}` |
-| POST | `/mcp/keys` | operator | ✓ | `mcp.key.create` | 201 `{key:{…},raw:"sk-…"}` — **raw jeden raz**; limit 5 aktywnych/user; `ttlDays` (default 90, max 365); scope `write` tylko admin |
+| POST | `/mcp/keys` | operator | ✓ | `mcp.key.create` | 201 `{key:{…},raw:"sk-…"}` — **raw jeden raz**; limit 5 aktywnych/user; `ttlDays` (default 90, max 365; **admin max 3650** — PLAN.md zmiana 2026-11-01); scope `write` tylko admin |
+| POST | `/mcp/keys/:id/extend` | admin | ✓ | `mcp.key.extend` | `{ttlDays}` (1..3650) → nowy `expires_at` = teraz + ttlDays dla klucza active; sekret i id bez zmian, brak raw w odpowiedzi; invalidate cache mcp-servera |
 | POST | `/mcp/keys/:id/rotate` | viewer (właściciel) / admin | ✓ | `mcp.key.rotate` | nowy raw raz; stary hash unieważniony natychmiast |
 | POST | `/mcp/keys/:id/revoke` | viewer (właściciel) / admin | ✓ | `mcp.key.revoke` | |
 | GET | `/mcp/snippets?profileId` | viewer | — | — | snippety claude-code / cursor / generic JSON |
