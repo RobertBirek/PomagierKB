@@ -145,12 +145,37 @@ MON = [
 ]
 MON = [m + (None,) for m in MON]
 if sapi_token:
+    sapi_auth = {"Authorization": f"Bearer {sapi_token}"}
     MON.append(
      ("subiektAPI — baza Subiekta (host pomagier, przez ingress)", "keyword", f"https://{sapi_host}/health/db", '"ok":true',
       60, 60, 2, 48, '["200-299"]', 10, None,
       "Pełna ścieżka: DNS -> Caddy na pomagierze (token Bearer) -> subiektapi.service -> WireGuard -> SQL Server Subiekta (192.168.1.20). "
       "DOWN = padła usługa, tunel do biura albo SQL Server; 401 = zrotowano token bez aktualizacji SUBIEKTAPI_TOKEN w alerts.env.",
-      json.dumps({"Authorization": f"Bearer {sapi_token}"})))
+      json.dumps(sapi_auth)))
+    # json-query: Kuma liczy wyrażenie JSONata i porównuje wynik z expected jako TEKST.
+    MON.append(
+     ("subiektAPI — KSeF: faktury po terminie / odrzucone (stan biznesowy, nie awaria)", "json-query",
+      f"https://{sapi_host}/ksef/podsumowanie", None,
+      1800, 1800, 0, 48, '["200-299"]', 10, None,
+      "DOWN = w KSeF są faktury sprzedaży po terminie wysyłki (sales.toSendOverdue) albo odrzucone (sales.rejected); "
+      "w komunikacie beatu widać ich sumę. To sprawa dla księgowości, nie awaria — awarię API pokazuje monitor /health/db. "
+      "Bez ponowień: to stan danych, nie chwilowa usterka.",
+      json.dumps(sapi_auth),
+      {"json_path": "sales.toSendOverdue + sales.rejected", "json_path_operator": "==", "expected_value": "0"}))
+    MON.append(
+     ("subiektAPI — MCP + bazy wiedzy kag", "json-query", f"https://{sapi_host}/mcp/odczyt", None,
+      900, 300, 1, 48, '["200-299"]', 10, None,
+      "POST tools/call kb_search przez MCP subiektAPI (profil odczyt) -> subiektAPI woła kag kluczem serwisowym "
+      "(profil kag subiektapi-service, KAG_MCP_KEY w pomagier:/subiektAPI/.env). DOWN przy zdrowym /health/db = "
+      "MCP subiektAPI albo klucz do kag (wygasa 2027-11-01, nie odnawia się sam) albo kag/OpenSPG.",
+      json.dumps({**sapi_auth, "Content-Type": "application/json", "Accept": "application/json, text/event-stream"}),
+      {"method": "POST", "http_body_encoding": "json",
+       "body": json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                           "params": {"name": "kb_search", "arguments": {"query": "dok_Typ", "limit": 1}}}),
+       "json_path": "$exists(result.content) and $count(result[isError = true]) = 0",
+       "json_path_operator": "==", "expected_value": "true"}))
+# 14. pole: opcjonalne ustawienia HTTP (metoda, treść, warunek json-query); domyślnie GET bez treści.
+MON = [m if len(m) == 14 else m + ({},) for m in MON]
 
 L = ["PRAGMA foreign_keys=ON;", "BEGIN;"]
 
@@ -160,14 +185,15 @@ L.append("INSERT INTO notification (name, active, user_id, is_default, config) "
          f"SELECT {q(NOTIF_NAME)}, 1, (SELECT MIN(id) FROM user), 1, {cfg} "
          f"WHERE NOT EXISTS (SELECT 1 FROM notification WHERE name={q(NOTIF_NAME)});")
 
-for (name, typ, url, kw, iv, ri, mr, to, acc, mrd, tok, desc, hdr) in MON:
+for (name, typ, url, kw, iv, ri, mr, to, acc, mrd, tok, desc, hdr, ext) in MON:
     n = q(name)
+    method = ext.get("method", "GET")
     # istniejący monitor: aktualizuj wszystko poza push_token (żeby nie zerwać działającego pingu)
     L.append(
         f"UPDATE monitor SET type={q(typ)}, url={q(url)}, keyword={q(kw)}, `interval`={iv}, "
         f"retry_interval={ri}, maxretries={mr}, timeout={to}, accepted_statuscodes_json={q(acc)}, "
         f"maxredirects={mrd}, description={q(desc)}, headers={q(hdr)}, active=1, upside_down=0, invert_keyword=0, "
-        f"method='GET', expiry_notification={1 if typ != 'push' else 0} WHERE name={n};")
+        f"method={q(method)}, expiry_notification={1 if typ != 'push' else 0} WHERE name={n};")
     if tok:
         L.append(f"UPDATE monitor SET push_token={q(tok)} WHERE name={n} "
                  f"AND (push_token IS NULL OR push_token='');")
@@ -176,8 +202,13 @@ for (name, typ, url, kw, iv, ri, mr, to, acc, mrd, tok, desc, hdr) in MON:
         "timeout, accepted_statuscodes_json, maxredirects, push_token, description, headers, active, user_id, "
         "method, weight, expiry_notification, upside_down, invert_keyword, resend_interval, conditions) "
         f"SELECT {n}, {q(typ)}, {q(url)}, {q(kw)}, {iv}, {ri}, {mr}, {to}, {q(acc)}, {mrd}, {q(tok)}, "
-        f"{q(desc)}, {q(hdr)}, 1, (SELECT MIN(id) FROM user), 'GET', 2000, {1 if typ != 'push' else 0}, 0, 0, 0, '[]' "
+        f"{q(desc)}, {q(hdr)}, 1, (SELECT MIN(id) FROM user), {q(method)}, 2000, {1 if typ != 'push' else 0}, 0, 0, 0, '[]' "
         f"WHERE NOT EXISTS (SELECT 1 FROM monitor WHERE name={n});")
+    # po INSERT, żeby objęło też monitor założony w tym przebiegu; puste ext = NULL jak w monitorach sprzed json-query
+    L.append(
+        f"UPDATE monitor SET body={q(ext.get('body'))}, http_body_encoding={q(ext.get('http_body_encoding'))}, "
+        f"json_path={q(ext.get('json_path'))}, json_path_operator={q(ext.get('json_path_operator'))}, "
+        f"expected_value={q(ext.get('expected_value'))} WHERE name={n};")
 
 # każdy monitor podpięty do kanału ntfy (bez duplikatów)
 L.append("INSERT INTO monitor_notification (monitor_id, notification_id) "
