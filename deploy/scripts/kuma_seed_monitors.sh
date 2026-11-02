@@ -167,7 +167,7 @@ if sapi_token:
       900, 300, 1, 48, '["200-299"]', 10, None,
       "POST tools/call kb_search przez MCP subiektAPI (profil odczyt) -> subiektAPI woła kag kluczem serwisowym "
       "(profil kag subiektapi-service, KAG_MCP_KEY w pomagier:/subiektAPI/.env). DOWN przy zdrowym /health/db = "
-      "MCP subiektAPI albo klucz do kag (wygasa 2027-11-01, nie odnawia się sam) albo kag/OpenSPG.",
+      "MCP subiektAPI albo klucz do kag (odwołany/wygasły — stan w panelu kag /mcp) albo kag/OpenSPG.",
       json.dumps({**sapi_auth, "Content-Type": "application/json", "Accept": "application/json, text/event-stream"}),
       {"method": "POST", "http_body_encoding": "json",
        "body": json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
