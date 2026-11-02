@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { openDb, runMigrations, orphanSweep } from '@pomagierkb/shared/db';
+import { openDb, runMigrations, orphanSweep, expireSweep } from '@pomagierkb/shared/db';
 import { loadConfig } from './config.js';
 import { sweepExpired } from './services/sessions.js';
 import { buildApp } from './app.js';
@@ -45,13 +45,21 @@ async function main(): Promise<void> {
   // Retencja plików aplikacji (dzienna; polityka z settings 'retention') — F11.4.
   const retentionWorker = startRetentionWorker({ db, dataDir: config.dataDir, logger: app.log });
 
-  // Sweep wygasłych sesji co 15 min (unref — nie blokuje zamknięcia procesu).
+  // Sweep wygasłych sesji i kluczy MCP co 15 min (unref — nie blokuje zamknięcia procesu).
+  // Klucze: verifyKey i tak odrzuca po expires_at; sweep tylko porządkuje status (active → expired),
+  // żeby wygasłe nie liczyły się do limitu aktywnych kluczy i nie udawały żywych w panelu.
   const sessionSweepTimer = setInterval(() => {
     try {
       const removed = sweepExpired(db);
       if (removed > 0) app.log.info({ removed }, 'usunięto wygasłe sesje');
     } catch (err) {
       app.log.error({ err }, 'sweep sesji nie powiódł się');
+    }
+    try {
+      const expired = expireSweep(db);
+      if (expired > 0) app.log.info({ expired }, 'oznaczono wygasłe klucze MCP');
+    } catch (err) {
+      app.log.error({ err }, 'sweep kluczy MCP nie powiódł się');
     }
   }, 15 * 60_000);
   sessionSweepTimer.unref();
