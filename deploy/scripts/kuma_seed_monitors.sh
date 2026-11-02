@@ -17,6 +17,9 @@
 # Sekrety: temat ntfy i tokeny push czyta z /etc/kag/alerts.env (0600) i NIGDY ich nie drukuje.
 # Brakujące tokeny push generuje i dopisuje do tego pliku — dzięki temu `backup.sh`
 # i `verify_backup.sh` (EnvironmentFile) dostają URL-e bez ręcznego przepisywania.
+# Przed zapisem robi kopię kuma.db (`kuma-db.bak-<UTC>.db`, 0600) obok katalogu Kumy; kopie
+# zawierają nagłówki Authorization monitorów, więc po udanym seedzie zostają tylko 2 najnowsze
+# (KUMA_BAK_KEEP) — starsze są kasowane.
 #
 # Użycie: kuma_seed_monitors.sh
 set -euo pipefail
@@ -252,5 +255,14 @@ select m.id, substr(m.name,1,44) as monitor, m.type,
        coalesce((select case h.status when 1 then \"UP\" when 0 then \"DOWN\" when 2 then \"PENDING\" end
                  from heartbeat h where h.monitor_id=m.id order by h.id desc limit 1), \"(brak beatu)\") as stan
 from monitor m order by m.id;"'
+
+# Kopie kuma.db zawierają nagłówki Authorization monitorów (tokeny subiektAPI itp.) — po udanym
+# seedzie zostawiamy tylko KUMA_BAK_KEEP najnowszych, żeby stare sekrety nie leżały na dysku bez końca.
+KUMA_BAK_KEEP="${KUMA_BAK_KEEP:-2}"
+mapfile -t old_baks < <(ls -1t "$(dirname "${KUMA_DATA}")"/kuma-db.bak-*.db 2>/dev/null | tail -n +"$((KUMA_BAK_KEEP + 1))")
+if [[ ${#old_baks[@]} -gt 0 ]]; then
+  rm -f -- "${old_baks[@]}"
+  log "usunięto ${#old_baks[@]} starszych kopii bazy (zostają ${KUMA_BAK_KEEP} najnowsze)"
+fi
 
 log "gotowe — ${count} monitorów, kanał ntfy podpięty do wszystkich"
