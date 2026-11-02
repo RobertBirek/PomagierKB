@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # smoke.sh — test dymny po wdrożeniu/aktualizacji (PLAN.md Faza 1.5).
 # Checki: healthz panelu i MCP (docker exec, sieć wewnętrzna), discovery OIDC Authentika,
-# SPA publiczna + API chronione (401), MCP initialize+tools/list (klucz z env SMOKE_MCP_KEY — brak = SKIP),
+# SPA publiczna + API chronione (401), MCP initialize+tools/list (klucz z env SMOKE_MCP_KEY albo /etc/kag/smoke.env — brak = SKIP),
 # sonda search OpenSPG na namespace stagingowym (env SMOKE_STAGING_NS — brak = SKIP).
 # Env dodatkowe: SMOKE_MCP_URL (nadpisuje URL MCP, np. z profilem /mcp/<profil>),
 #                SMOKE_INSECURE=1 (curl -k, TYLKO na czas staging CA),
@@ -12,6 +12,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 KAG_ENV="${REPO_ROOT}/deploy/kag/.env"
+
+# Opcjonalne sekrety smoke (SMOKE_MCP_KEY, SMOKE_STAGING_NS) z pliku operatora — env ma pierwszeństwo.
+SMOKE_ENV="${SMOKE_ENV:-/etc/kag/smoke.env}"
+if [[ -z "${SMOKE_MCP_KEY:-}" && -r "${SMOKE_ENV}" ]]; then
+  # shellcheck source=/dev/null  # plik operatora, poza repo
+  . "${SMOKE_ENV}"
+fi
 
 env_get() { local v; v=$(grep -E "^$2=" "$1" 2>/dev/null | tail -n1 | cut -d= -f2-) || true; printf '%s' "${v:-${3:-}}"; }
 
